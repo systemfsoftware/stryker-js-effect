@@ -3,14 +3,13 @@ import { Boolean } from 'effect'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { StreamFileFirstLine } from './stream-file-head.schema.js'
 
 const StreamOverwriteTypeId = Symbol.for('@systemfsoftware/stryker-js/StreamOverwriteDecision')
 type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
 
-const StreamHeaderLine = S.fromJsonString(S.TaggedStruct('stream', {}))
-
-const startsWithStreamHeader = (text: string) =>
-  Option.isSome(S.decodeOption(StreamHeaderLine)(text.split('\n', 1).join('').trim()))
+const startsWithRunEvent = (text: string) =>
+  Option.isSome(S.decodeOption(StreamFileFirstLine)(text.split('\n', 1).join('').trim()))
 
 export class StreamOverwriteCommand extends S.TaggedClass<StreamOverwriteCommand>()('StreamOverwriteCommand', {
   file: S.String,
@@ -38,10 +37,10 @@ export class OverwriteRefused extends S.TaggedClass<OverwriteRefused>()('Overwri
 export const StreamOverwriteDecision = S.Union([OverwriteAllowed, OverwriteRefused])
 export type StreamOverwriteDecision = typeof StreamOverwriteDecision.Type
 
-const REFUSAL = 'the file exists and does not start with a Stryker stream header, so the run will not overwrite it'
+const REFUSAL = 'the file exists and does not start with a Stryker run event record, so the run will not overwrite it'
 
 const overwritable = (command: StreamOverwriteCommand) =>
-  [!command.regularFile, command.leadingText.length === 0, startsWithStreamHeader(command.leadingText)].some(
+  [!command.regularFile, command.leadingText.length === 0, startsWithRunEvent(command.leadingText)].some(
     (allowed) => allowed,
   )
 

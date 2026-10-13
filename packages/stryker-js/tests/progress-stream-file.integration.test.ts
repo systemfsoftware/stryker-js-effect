@@ -117,6 +117,7 @@ interface Invocation {
 const invoke = (
   root: string,
   args: ReadonlyArray<string>,
+  mode: 'machine' | 'human' = 'machine',
 ): Effect.Effect<Invocation, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
@@ -129,7 +130,7 @@ const invoke = (
           stdin: 'ignore',
           stdout: 'pipe',
           stderr: 'pipe',
-          env: { STRYKER_MODE: 'machine', NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
+          env: { STRYKER_MODE: mode, NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
           extendEnv: true,
         }),
       )
@@ -452,6 +453,30 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             exitCode: s.run.exitCode,
             mutantsTested: eventsOf(s.run.stdout).some((event) => S.is(RunEvent.RunMutantTested)(event)),
           }).toEqual({ exitCode: 0, mutantsTested: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A human run rewrites the stream file a human run left, and the next run re-runs no mutant',
+      Gherkin.Do.pipe(
+        Given('a project with no ignore patterns whose config names its stream file')(
+          'project',
+          () => prepareProject(configNaming(CONFIGURED_STREAM)),
+        ),
+        When('the project is run in human mode')('first', (s) => invoke(s.project, ['run'], 'human')),
+        When('the project is run in human mode again with nothing changed')(
+          'second',
+          (s) => invoke(s.project, ['run'], 'human'),
+        ),
+        When('the files the second run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
+        Then('the second run wrote the stream file, logged no file failure, and reused every reported mutant')(
+          (s, expect) =>
+            expect({
+              exitCodes: [s.first.exitCode, s.second.exitCode],
+              fileFailuresLogged: s.second.stderr.split(DRAIN_FILE_FAILED).length - 1,
+              ...reusedEveryMutant(s.left),
+            }).toEqual({ exitCodes: [0, 0], fileFailuresLogged: 0, ...EVERY_MUTANT_REUSED }),
         ),
       ),
     )

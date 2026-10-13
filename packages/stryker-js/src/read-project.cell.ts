@@ -127,11 +127,35 @@ const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: s
 interface EntryRules {
   readonly ignorePatterns: readonly string[]
   readonly outputPatterns: readonly string[]
+  readonly outputCaseSensitive: boolean
 }
 
-const entryRulesOf = (options: Options.StrykerOptions, basePath: string, pathService: Path.Path): EntryRules => ({
+const swapCase = (name: string) =>
+  name.split('').map((char) =>
+    Boolean.match(char === char.toLowerCase(), {
+      onTrue: () => char.toUpperCase(),
+      onFalse: () => char.toLowerCase(),
+    })
+  ).join('')
+
+const caseSensitiveAt = (fs: FileSystem.FileSystem, pathService: Path.Path, basePath: string) => {
+  const root = pathService.resolve(basePath)
+  const swapped = pathService.join(pathService.dirname(root), swapCase(pathService.basename(root)))
+  return Boolean.match(swapped === root, {
+    onTrue: () => Effect.succeed(false),
+    onFalse: () => fs.exists(swapped).pipe(Effect.map((aliased) => !aliased), Effect.orElseSucceed(() => false)),
+  })
+}
+
+const entryRulesOf = (
+  options: Options.StrykerOptions,
+  basePath: string,
+  pathService: Path.Path,
+  outputCaseSensitive: boolean,
+): EntryRules => ({
   ignorePatterns: [...ALWAYS_IGNORE, ...options.ignorePatterns],
   outputPatterns: strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
+  outputCaseSensitive,
 })
 
 type DirectoryEntry = {
@@ -185,6 +209,7 @@ const isEntryIncluded = (rules: EntryRules, entry: DirectoryEntry): boolean => {
     DiscoveredEntryCommand.make({
       ignorePatterns: [...rules.ignorePatterns],
       outputPatterns: [...rules.outputPatterns],
+      outputCaseSensitive: rules.outputCaseSensitive,
       entryName: entry.name,
       entryPath: entry.entryPath,
       isDirectory: entry.isDirectory,
@@ -370,7 +395,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
   const inputFileNames = yield* resolveInputFileNames(
-    entryRulesOf(options, input.basePath, pathService),
+    entryRulesOf(options, input.basePath, pathService, yield* caseSensitiveAt(fs, pathService, input.basePath)),
     input.basePath,
   )
   const defaults = yield* defaultOptions

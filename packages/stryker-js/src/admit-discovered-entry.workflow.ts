@@ -84,6 +84,7 @@ const isIncluded = (
 export class DiscoveredEntryCommand extends S.TaggedClass<DiscoveredEntryCommand>()('DiscoveredEntryCommand', {
   ignorePatterns: S.Array(S.String),
   outputPatterns: S.Array(S.String),
+  outputCaseSensitive: S.Boolean,
   entryName: S.String,
   entryPath: S.String,
   isDirectory: S.Boolean,
@@ -119,7 +120,7 @@ export const admitDiscoveredEntry = Workflow.make({
         isIncluded(
           [
             ...command.ignorePatterns.map(compileIgnoreRule(true)),
-            ...command.outputPatterns.map(compileIgnoreRule(false)),
+            ...command.outputPatterns.map(compileIgnoreRule(!command.outputCaseSensitive)),
           ],
           command.entryName,
           command.entryPath,

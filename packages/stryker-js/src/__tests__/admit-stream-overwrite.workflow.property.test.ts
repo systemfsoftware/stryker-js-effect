@@ -1,5 +1,7 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -12,27 +14,52 @@ import {
 
 const commandArb = Arbitrary.schema(StreamOverwriteCommand)
 
-const decidedAs = (
-  subject: typeof admitStreamOverwrite,
-  decision: typeof OverwriteAllowed | typeof OverwriteRefused,
-  command: StreamOverwriteCommand,
-) => {
+const eventArb = Arbitrary.schema(RunEvent.RunEvent)
+
+const encodeLine = S.encodeOption(RunEvent.RunEventWireLine)
+
+const allowed = (subject: typeof admitStreamOverwrite, command: StreamOverwriteCommand) => {
   const result = subject(command)
-  return Result.isSuccess(result) && S.is(decision)(result.success) && result.success.file === command.file
+  return Result.isSuccess(result) && S.is(OverwriteAllowed)(result.success) && result.success.file === command.file
+}
+
+const refused = (subject: typeof admitStreamOverwrite, command: StreamOverwriteCommand) => {
+  const result = subject(command)
+  return Result.isSuccess(result) && S.is(OverwriteRefused)(result.success) && result.success.file === command.file &&
+    result.success.reason.includes('will not overwrite')
 }
 
 describe('admitStreamOverwrite', () => {
   it.prop(
-    '∀c_RegularFileStartingWithAStreamHeader_≡Allowed',
+    '∀ec_RegularFileStartingWithAnyRunEventRecord_≡Allowed',
+    { of: [Arbitrary.all({ event: eventArb, command: commandArb })], subject: admitStreamOverwrite },
+    (subject, [draw]) =>
+      Option.match(encodeLine(draw.event), {
+        onNone: () => false,
+        onSome: (line) =>
+          allowed(
+            subject,
+            StreamOverwriteCommand.make({
+              file: draw.command.file,
+              regularFile: true,
+              leadingText: `${line}\n${draw.command.leadingText}`,
+            }),
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀c_RegularFileStartingWithAStreamHeaderOfAnyVersion_≡Allowed',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
-      decidedAs(
+      allowed(
         subject,
-        OverwriteAllowed,
         StreamOverwriteCommand.make({
           file: command.file,
           regularFile: true,
-          leadingText: `{"_tag":"stream","schemaVersion":"8.0"}\n${command.leadingText}`,
+          leadingText: `${
+            JSON.stringify({ _tag: 'stream', schemaVersion: command.leadingText })
+          }\n${command.leadingText}`,
         }),
       ),
   )
@@ -41,10 +68,23 @@ describe('admitStreamOverwrite', () => {
     '∀c_RegularFileWhoseFirstLineIsNoJson_≡Refused',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
-      decidedAs(
+      refused(
         subject,
-        OverwriteRefused,
         StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: `x${command.leadingText}` }),
+      ),
+  )
+
+  it.prop(
+    '∀c_RegularFileWhoseFirstLineIsJsonWithAForeignTag_≡Refused',
+    { of: [commandArb], subject: admitStreamOverwrite },
+    (subject, [command]) =>
+      refused(
+        subject,
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          leadingText: `${JSON.stringify({ _tag: `note:${command.leadingText}` })}\n${command.leadingText}`,
+        }),
       ),
   )
 
@@ -52,20 +92,15 @@ describe('admitStreamOverwrite', () => {
     '∀c_EmptyRegularFile_≡Allowed',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
-      decidedAs(
-        subject,
-        OverwriteAllowed,
-        StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: '' }),
-      ),
+      allowed(subject, StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: '' })),
   )
 
   it.prop(
     '∀c_NoRegularFile_≡AllowedWhateverItsText',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
-      decidedAs(
+      allowed(
         subject,
-        OverwriteAllowed,
         StreamOverwriteCommand.make({ file: command.file, regularFile: false, leadingText: command.leadingText }),
       ),
   )

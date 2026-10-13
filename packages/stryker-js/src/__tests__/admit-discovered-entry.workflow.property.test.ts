@@ -25,6 +25,7 @@ describe('admitDiscoveredEntry', () => {
       const command = DiscoveredEntryCommand.make({
         ignorePatterns: [draw.matching ? `${draw.segment}.ts` : NON_MATCHING_PATTERN],
         outputPatterns: [],
+        outputCaseSensitive: true,
         entryName: `${draw.segment}.ts`,
         entryPath: `src/${draw.segment}.ts`,
         isDirectory: false,
@@ -41,6 +42,7 @@ describe('admitDiscoveredEntry', () => {
       const command = DiscoveredEntryCommand.make({
         ignorePatterns: [name],
         outputPatterns: [],
+        outputCaseSensitive: true,
         entryName: name,
         entryPath: name,
         isDirectory: true,
@@ -51,18 +53,46 @@ describe('admitDiscoveredEntry', () => {
   )
 
   it.prop(
-    '∀s_OtherCaseFile_≡OutputPatternKeepsItAndIgnorePatternDropsIt',
-    { of: [segmentArb], subject: admitDiscoveredEntry },
-    (subject, [segment]) => {
-      const otherCase = `src/${segment.toUpperCase()}.ts`
-      const decisionOf = (patterns: { ignorePatterns: string[]; outputPatterns: string[] }) =>
-        subject(
-          DiscoveredEntryCommand.make({ ...patterns, entryName: otherCase, entryPath: otherCase, isDirectory: false }),
-        )
-      const kept = decisionOf({ ignorePatterns: [], outputPatterns: [`src/${segment}.ts`] })
-      const dropped = decisionOf({ ignorePatterns: [`src/${segment}.ts`], outputPatterns: [] })
-      return Result.isSuccess(kept) && S.is(EntryIncluded)(kept.success) && Result.isSuccess(dropped) &&
-        S.is(EntryIgnored)(dropped.success)
+    '∀s_OtherCaseFile_≡OutputPatternKeepsItOnlyWhereCaseIsSensitive',
+    {
+      of: [Arbitrary.all({ segment: segmentArb, outputCaseSensitive: Arbitrary.schema(S.Boolean) })],
+      subject: admitDiscoveredEntry,
+    },
+    (subject, [draw]) => {
+      const otherCaseName = `${draw.segment.toUpperCase()}.ts`
+      const result = subject(
+        DiscoveredEntryCommand.make({
+          ignorePatterns: [],
+          outputPatterns: [`src/${draw.segment}.ts`],
+          outputCaseSensitive: draw.outputCaseSensitive,
+          entryName: otherCaseName,
+          entryPath: `src/${otherCaseName}`,
+          isDirectory: false,
+        }),
+      )
+      return Result.isSuccess(result) && S.is(EntryIncluded)(result.success) === draw.outputCaseSensitive
+    },
+  )
+
+  it.prop(
+    '∀s_OtherCaseFile_≡IgnorePatternDropsItWhateverTheOutputCase',
+    {
+      of: [Arbitrary.all({ segment: segmentArb, outputCaseSensitive: Arbitrary.schema(S.Boolean) })],
+      subject: admitDiscoveredEntry,
+    },
+    (subject, [draw]) => {
+      const otherCaseName = `${draw.segment.toUpperCase()}.ts`
+      const result = subject(
+        DiscoveredEntryCommand.make({
+          ignorePatterns: [`src/${draw.segment}.ts`],
+          outputPatterns: [],
+          outputCaseSensitive: draw.outputCaseSensitive,
+          entryName: otherCaseName,
+          entryPath: `src/${otherCaseName}`,
+          isDirectory: false,
+        }),
+      )
+      return Result.isSuccess(result) && S.is(EntryIgnored)(result.success)
     },
   )
 })

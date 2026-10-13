@@ -89,7 +89,10 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   path the crawl starts from. The stream file the CLI opens before the engine
   reads its config is one the engine excludes, because `pinnedRequestOf` sets
   the resolved name as a command-line option, which wins the engine's config
-  merge. Gate, after `pnpm --filter @systemfsoftware/stryker-js build`:
+  merge. Output entries match with exact case only where the project's file
+  system tells case apart, so a stream under another casing on a
+  case-insensitive volume is still the excluded file. Gate, on Linux (one row
+  needs `/dev/full`), after `pnpm --filter @systemfsoftware/stryker-js build`:
   `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/progress-stream-file.integration.test.ts`
   re-runs the built CLI on a project twice and fails when the second run
   re-runs a mutant.
