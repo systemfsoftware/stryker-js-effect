@@ -94,10 +94,7 @@ export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelo
   }
 
   override get message(): string {
-    return [
-      `stryker gate: ${this.breaches.length} of ${this.projects} project(s) scored below thresholds.break`,
-      ...this.lines,
-    ].join('\n')
+    return `stryker gate: ${this.breaches.length} of ${this.projects} project(s) scored below thresholds.break`
   }
 }
 

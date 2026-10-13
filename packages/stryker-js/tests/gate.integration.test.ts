@@ -98,6 +98,8 @@ ${
 
 const breakLineOf = (project: string): string => `score-below-break: ${project} scored 0.00 < break ${BELOW_BREAK}`
 
+const occurrencesOf = (haystack: string, needle: string): number => haystack.split(needle).length - 1
+
 const MERGED_BREACH_PROJECTS: ReadonlyArray<string> = Array.from({ length: 32 }, (_, index) => `p${index}`)
 
 const BREAK_REMEDIATION_LINE =
@@ -466,15 +468,19 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
           (s) => runGate(s.project.root, 'human', ['--baseline', WRITTEN_BASELINE, '--update-baseline']),
         ),
         When('the written baseline is read back')('written', (s) => readBaselineSurvivors(s.project.reportPath)),
-        Then('the baseline holds this run’s survivors and the process exits 1 naming the break')((s, expect) =>
+        Then('the baseline holds this run’s survivors and the process exits 1 naming the break once')((s, expect) =>
           expect({
             exitCode: s.ran.exitCode,
             written: [...s.written],
-            namesTheBreak: s.ran.stderr.includes(breakLineOf('.')),
+            breakLineAppearances: occurrencesOf(s.ran.stderr, breakLineOf('.')),
+            remediationAppearances: occurrencesOf(s.ran.stderr, BREAK_REMEDIATION_LINE),
+            summaryNamesCount: s.ran.stderr.includes('stryker gate: 1 of 1 project(s) scored below thresholds.break'),
           }).toStrictEqual({
             exitCode: 1,
             written: [COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR],
-            namesTheBreak: true,
+            breakLineAppearances: 1,
+            remediationAppearances: 1,
+            summaryNamesCount: true,
           })
         ),
       ),

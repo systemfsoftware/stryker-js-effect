@@ -73,9 +73,8 @@ describe('gateScoreBreak', () => {
                 }),
                 threshold: breakOf(entry),
               }]) &&
-            refused.message.includes(expectedBreach) &&
-            expectedNotes.every((line) => refused.message.includes(line)) &&
-            lastLineOf(refused.message.split('\n')) === SCORE_BREAK_REMEDIATION &&
+            refused.message ===
+              `stryker gate: ${refused.breaches.length} of ${refused.projects} project(s) scored below thresholds.break` &&
             refused.lines.includes(expectedBreach) &&
             expectedNotes.every((line) => refused.lines.includes(line)) &&
             lastLineOf(refused.lines) === SCORE_BREAK_REMEDIATION
