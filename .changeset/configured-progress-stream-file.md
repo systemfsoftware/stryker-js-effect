@@ -2,7 +2,7 @@
 "@systemfsoftware/stryker-js": major
 ---
 
-A mutation run now writes its event stream to the `progressStreamFile` set in the Stryker config file; the flag still wins. Stream files at that path or at `reports/mutation-stream.jsonl`, and Stryker's output files however their paths are spelled, no longer make the next run re-run every mutant.
+A mutation run now writes its event stream to the `progressStreamFile` set in the Stryker config file; the flag still wins. Stream files at that path or at `reports/mutation-stream.jsonl` no longer make the next run re-run every mutant, nor does an output path spelled with `./`, `//` or a trailing slash.
 
 Breaking:
 
