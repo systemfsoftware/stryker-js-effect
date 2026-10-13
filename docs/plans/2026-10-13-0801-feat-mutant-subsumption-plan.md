@@ -3,7 +3,7 @@ title: Mutant Subsumption and Type-Guided Generation - Plan
 type: feat
 date: 2026-10-13
 topic: mutant-subsumption
-supersedes: docs/plans/2026-10-09-2024-feat-mutant-subsumption-plan.md
+supersedes: docs/plans/2026-10-13-0342-feat-mutant-subsumption-plan.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
@@ -272,7 +272,7 @@ flowchart TB
 
 ### Success Criteria
 
-- On the corpus, S1 drops 76 mutants, and the R16 check on the first kill matrix (available once PR-W lands) reports 0 failures.
+- On #416's corpus, S1 drops 76 mutants. The R16 check on the first kill matrix (available once PR-W lands) reports 0 failures; its drop count is the audit's measured count against that matrix, not the 76.
 - On the corpus, PR-C's audit reports N > 0 `type-invalid` drops with 0 compiling mutants lost. N is at most the 1170-mutant ceiling measured on #406. The baseline is the R18 count of the last main Mutation run before PR-C's release, which already includes PR-A's R4 repair and S1; #416 (4136 CompileError, 47.9%; 3921 s) is the reference before PR-A. The first main Mutation run after PR-C's release shows CompileError falling by N from that baseline, and checker milliseconds over CompileError falling by the baseline cost of those N mutants.
 - The R18 counts appear as a CI artifact for each before/after pair, and the dropped ids match the R16 drop list.
 
@@ -654,7 +654,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 
 **PR-W Definition of Done:**
 
-- `drop-audit` on PR-W's head audits the whole corpus against the newest `kill-matrix-<n>`, reports 0 `Fail`, 0 orphaned tests and no `Unattested` rule, and exits 0, cited by run id. (Main's build against `kill-matrix-457` gives 99 `complement` pairs: 35 `Pass`, 61 `Vacuous`, 3 `AttributionUnverified`, 0 `Fail`.)
+- `drop-audit` on PR-W's head audits the whole corpus against the newest `kill-matrix-<n>`, reports 0 `Fail`, 0 orphaned tests and no `Unattested` rule, and exits 0, cited by run id. (The pair count follows the matrix's corpus, not #416's 76: main's build against `kill-matrix-457` gave 99 `complement` pairs, and PR-W at `048908579` against `kill-matrix-459` gave 100: 36 `Pass`, 61 `Vacuous`, 3 `AttributionUnverified`, 0 `Fail`, run 38344422811.)
 - `check`, `Changeset Check` and every other required check are green on PR-W's head.
 - #288's description states the root's ownership of the job (CONST-E9, CONST-G5) and the code-review receipt.
 
