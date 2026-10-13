@@ -138,9 +138,36 @@ const linkInstalledPackages = (root: string): Effect.Effect<void, never, Service
     yield* fs.symlink(path.join(root, 'lib'), path.join(root, 'node_modules', '@fixture', 'lib'))
   }).pipe(Effect.orDie)
 
+interface ProjectLayout {
+  readonly test: string
+  readonly libFiles: ReadonlyArray<readonly [string, string]>
+}
+
+const ESM_IMPORTER: ProjectLayout = { test: TEST, libFiles: [] }
+
+const COMMONJS_TEST = [
+  "import { createRequire } from 'node:module'",
+  "import { expect, test } from 'vitest'",
+  "import { add } from '../src/math.js'",
+  '',
+  'const require = createRequire(import.meta.url)',
+  "const { double } = require('@fixture/lib')",
+  '',
+  "test('adds a doubled number', () => {",
+  '  expect(add(1, double(2))).toBe(5)',
+  '})',
+  '',
+].join('\n')
+
+const COMMONJS_IMPORTER: ProjectLayout = {
+  test: COMMONJS_TEST,
+  libFiles: [['lib/dist/index.cjs', 'exports.double = (value) => value * 2\n']],
+}
+
 const makeProject = (
   exports: S.Json,
   runner = MODULE_REPORTING_RUNNER,
+  layout = ESM_IMPORTER,
 ): Effect.Effect<string, never, Services | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -151,11 +178,12 @@ const makeProject = (
         ['package.json', '{ "name": "exports-reuse-app", "type": "module", "private": true }\n'],
         ['stryker.config.mjs', configOf(runner)],
         ['src/math.js', SOURCE],
-        ['test/math.test.js', TEST],
+        ['test/math.test.js', layout.test],
         [UNRELATED_FILE, 'export const unrelated = 1\n'],
         ['lib/package.json', libManifest],
         ['lib/dist/index.js', 'export const double = (value) => value * 2\n'],
         ['lib/dist/index.d.ts', 'export declare const double: (value: number) => number\n'],
+        ...layout.libFiles,
       ] as const,
       ([relative, content]) => writeFile(root, relative, content),
       { discard: true },
@@ -179,6 +207,12 @@ const FLAT_TYPES_FIRST_EXPORTS: S.Json = { '.': { types: './dist/index.d.ts', de
 
 const BARE_CONDITIONS_EXPORTS: S.Json = { types: './dist/index.d.ts', import: './dist/index.js' }
 
+const DUAL_EXPORTS: S.Json = {
+  '.': { types: './dist/index.d.ts', import: './dist/index.js', require: './dist/index.cjs' },
+}
+
+const REQUIRE_EDIT: Edit = { file: 'lib/dist/index.cjs', content: 'exports.double = (value) => value + value\n' }
+
 const runTwiceAround = (root: string, edit: Edit): Effect.Effect<RunPair, never, Services> =>
   Effect.gen(function*() {
     const first = yield* spawnRun(root)
@@ -190,7 +224,7 @@ const runTwiceAround = (root: string, edit: Edit): Effect.Effect<RunPair, never,
 Feature('Reusing verdicts for tests that import a linked workspace package', { timeout: 600_000 })
   .withLayer(NodeServices.layer)
   .live('the built stryker binary runs a project twice around an edit')
-  .body(({ scenarioOutline }) => {
+  .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
       'A linked package whose exports use <shape> keeps every verdict on <runner> across an edit no test reaches',
       [
@@ -319,5 +353,33 @@ Feature('Reusing verdicts for tests that import a linked workspace package', { t
             })
           }),
         ),
+    )
+
+    scenario(
+      'A linked package with import and require branches still re-tests its CommonJS importer on a runner that reports no loaded modules when only its require file changes',
+      Gherkin.Do.pipe(
+        Given('a project whose test requires a linked package that lists an import branch before a require branch')(
+          'root',
+          () => makeProject(DUAL_EXPORTS, CLOSURE_ONLY_RUNNER, COMMONJS_IMPORTER),
+        ),
+        When('the binary runs the project, only the package require file changes, and it runs again')(
+          'runs',
+          (s) => runTwiceAround(s.root, REQUIRE_EDIT),
+        ),
+        Then('both runs exit 0 and the second tests again every mutant the first one tested')((s, expect) => {
+          const firstRan = countsOf(s.runs.first.reuse).ran
+          return expect({
+            firstExitCode: s.runs.first.exitCode,
+            firstTestedMutants: firstRan > 0,
+            secondExitCode: s.runs.second.exitCode,
+            second: countsOf(s.runs.second.reuse),
+          }).toEqual({
+            firstExitCode: 0,
+            firstTestedMutants: true,
+            secondExitCode: 0,
+            second: { reused: 0, ran: firstRan, refusedFor: ['closureChanged'] },
+          })
+        }),
+      ),
     )
   })

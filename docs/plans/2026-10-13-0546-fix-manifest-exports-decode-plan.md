@@ -2,7 +2,7 @@
 title: Manifest exports the resolver cannot read stop making the whole package.json unreadable - Plan
 type: fix
 date: 2026-10-13
-supersedes: docs/plans/2026-10-13-0441-fix-manifest-exports-decode-plan.md
+supersedes: docs/plans/2026-10-13-0519-fix-manifest-exports-decode-plan.md
 topic: manifest-exports-decode
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -17,7 +17,7 @@ execution: code
 - **Means.** Decode every manifest key the resolver reads into a tagged entry Type that has a variant for every JSON shape, and choose the target inside the pure decision by the entry's tag, resolving each condition object to the file the runtime loads (KTD1, KTD2).
 - **Authority.** Conductor intent r41 (`.rulings/stream-d-r41-manifest-exports-intent.md`) as clarified by r46 (`.rulings/stream-d-r46-pr330-debate.md`) and the root's r49 ruling on the schema (`.rulings/stream-d-r51b-prompt.md:3-6`) > this plan > the repo's packs and `CONSTITUTION.md`.
 - **Stop.** One PR off `origin/main` (#330), green on its exact head, with a patch changeset for `@systemfsoftware/stryker-js`, the review receipt and per-finding dispositions in its body.
-- **Why superseded.** The 0441 plan replaced the 0239 plan after its review confirmed a P1: the first-value rule closed a `types`-first condition object over a `.d.ts` no runtime loads. r46 clarified that R3 means no correctness regression, not preserving a stale resolution, which changed KTD2, R3, OQ1 and the scope, and added U4. Its U1-U4 shipped on `f6d463bec`. Its KTD1 then kept the manifest keys as `S.Json` and held the schema-laws `rich-type-over-foreign-encoded` rule for the root. The root's r49 ruling resolves that: the keys decode into a tagged entry Type in the schema file, and the target choice stays in the workflow. KTD1, U1 and the scope change with it. Neither earlier plan reached `main`; this plan replaces 0441 in this PR.
+- **Why superseded.** The 0519 plan carried the r49 codec (KTD1). Its full-path review (run `20261013-052410-5e2140d5`, head `07f55c9f9`) confirmed a P2: an `import`-first condition object was followed for every importer, so a CommonJS importer of a dual-published package (`import` then `require`) got a closure over the ESM file it never loads, and on a runner that reports no `testFileModules` an edit to the `.cjs` file reused stale verdicts. KTD2's condition rule, R4, AE5, U2 and U4 change with it: an entry is now resolved once under Node's ESM condition set and once under its CommonJS set, and yields a target only when the two agree or one of them yields none. The 0441 and 0239 plans it descends from never reached `main`; this plan replaces 0519 in this PR.
 
 ## Product Contract
 
@@ -30,7 +30,7 @@ The import closure decides which files a test file depends on. Incremental runs 
 - R1. A linked package whose `exports` holds nested condition objects, array fallbacks, root conditions without a `.` key, or `null` targets resolves its imports, so an edit to a file no test reaches leaves every verdict reused. Observable as the second run's `reuse` event: `ran` is 0 and no refusal counts a mutant.
 - R2. A manifest key whose value the resolver cannot interpret affects only the requests that read that key's entry. It never refuses the other keys or the rest of the file. This holds for `exports`, `imports`, `main` and `module`.
 - R3. Every specifier resolves to the file the runtime loads, or leaves its importers' closures open; never to a file no runtime loads. Every `#` import and node builtin that #308 closed stays closed.
-- R4. An entry the resolver cannot map (a `null` target, an array whose first element is `null`, a condition branch ending in `null`, a condition object whose first condition past `types` is not `import`, `node` or `default`) yields no target, and that is final: no pattern and no `main`/`module` rescues it. So the closures that import it stay open.
+- R4. An entry the resolver cannot map (a `null` target, an array whose first deciding element is `null`, a condition branch ending in `null` or a number or boolean, a condition object no condition of Node's matches, or one whose ESM and CommonJS importers load different files) yields no target, and that is final: no pattern and no `main`/`module` rescues it. So the closures that import it stay open.
 - R5. Exit codes, log lines, report files and stream lines are unchanged for projects without the bug.
 
 ### Acceptance Examples
@@ -39,12 +39,12 @@ The import closure decides which files a test file depends on. Incremental runs 
 - AE2 (R1). The same with `exports` `{".": ["./dist/index.js"]}`, `["./dist/index.js"]`, `{".": "./dist/index.js", "./internal/*": null}`, and, on a runner that reports no loaded modules, `{".": {"types": ..., "default": ...}}` and root conditions `{"types": ..., "import": ...}`.
 - AE3 (R1, control). The same with flat `exports` `{".": "./dist/index.js"}`. This passes on `main` today, which shows the harness measures the bug rather than its own setup.
 - AE4 (R4). Proven by U2's laws only. `main` already keeps such closures open (the whole manifest fails), so a CLI scenario could not fail there.
-- AE5 (R3). A `types`-first package (nested and flat) on a runner that reports no loaded modules: only the package's `.js` changes between the runs, and run 2 tests again every mutant run 1 tested, refusing reuse for `closureChanged`. The same on the Vitest-backed `vm` runner, which reports loaded modules.
+- AE5 (R3). A `types`-first package (nested and flat) on a runner that reports no loaded modules: only the package's `.js` changes between the runs, and run 2 tests again every mutant run 1 tested, refusing reuse for `closureChanged`. The same on the Vitest-backed `vm` runner, which reports loaded modules. A package with `import` then `require` branches, required by its test file, on the runner that reports no loaded modules: only its `.cjs` changes, and run 2 tests again every mutant.
 
 ### Scope Boundaries
 
-- The condition rule: `@systemfsoftware/source` first (the workspace's own condition); otherwise the first key past `types` and `types@…` decides, and only `import`, `node` and `default` yield a target. `require`, `browser`, `module`, `module-sync`, `development` and user conditions leave the closure open, because the importer's syntax and the runner's resolver decide them and the static reader knows neither.
-- Array fallbacks keep the first-element rule. Node's `PACKAGE_TARGET_RESOLVE` continues past an element that is an invalid target or resolves to `null`, and never past a valid target whose file is missing; the first element yielding no target leaves the closure open, which is slow, never stale. Matching Node's continuation is not here.
+- The condition rule: `@systemfsoftware/source` first (the workspace's own condition); otherwise the entry is read twice, as Node reads it, under the ESM set (`import`, `node`, `module-sync`, `node-addons`, `default`) and the CommonJS set (`require`, `node`, `module-sync`, `node-addons`, `default`): in each, the first key in object order that the set matches decides, and every other key (`types`, `browser`, `module`, `development`, user conditions) is skipped. The entry yields a target when both reads yield the same file, or when one yields a file and the other none; when they yield different files it yields none, because the scanner sends `require()` and `import` specifiers through one request and a runner that compiles `import` syntax to CommonJS takes the `require` branch, so the static reader cannot know which file loads.
+- Array fallbacks follow Node's `PACKAGE_TARGET_RESOLVE` for the shapes the reader decodes: a number or boolean (an invalid target) and an object no condition matches are skipped, and `null` decides that no target loads. A string decides even when it is an invalid target, where Node would continue; the closure then stays open, which is slow, never stale. Validating string targets inside arrays is not here.
 - Not here: Stream B's reuse suites (`plan-stream-location`, `incremental-reuse`, `lockfile-closure-digest` and the others). A new suite is added instead.
 - In scope since r49: schema-laws `rich-type-over-foreign-encoded`. The root ruled that it and the workflow-only mutation ruling do not conflict (`.rulings/stream-d-r51b-prompt.md:3-6`): the codec is graded by its generated laws and the target choice by mutation, so no exception is recorded.
 
@@ -53,7 +53,7 @@ The import closure decides which files a test file depends on. Incremental runs 
 - `packages/stryker-js/src/import-closure.schema.ts` on `main`: `ExportEntrySchema` and the `exports` union; `imports` already `S.Json` (#308).
 - `packages/stryker-js/src/import-closure.cell.ts`: `manifestOf` maps a failed decode to `undefined`, and `manifestTargetOf` maps `undefined` to `ManifestTargetMissing`; a chosen target becomes a member only if a candidate file exists; otherwise the resolution is `Unresolved`.
 - `packages/stryker-js-cli-contract/src/run-event.schema.ts`: `ReuseRefusals` and the `reuse` event a run prints on stdout in machine mode.
-- Node `doc/api/packages.md`, "Conditional exports" and "Community Conditions Definitions": Node matches conditions in key order against `node`, `import`, `require`, `module-sync`, `default` and user conditions, and never `types`; an `exports` object with no `.`-prefixed key is sugar for `{".": {...}}`, and mixing both kinds of key is an invalid package configuration.
+- Node `doc/api/packages.md`, "Conditional exports" and "Community Conditions Definitions": Node matches conditions in key order against `node`, `import`, `require`, `module-sync`, `node-addons`, `default` and user conditions, and never `types`; an `exports` object with no `.`-prefixed key is sugar for `{".": {...}}`, and mixing both kinds of key is an invalid package configuration.
 - Node `doc/api/esm.md`, resolution algorithm: `PACKAGE_RESOLVE` uses `exports` only when it "is not null or undefined"; in `PACKAGE_TARGET_RESOLVE`, an array continues only on an invalid target or `undefined`, and `null` returns `null`.
 - `CompleteDryRunResult.testFileModules` (plugin interface): only the Vitest runner reports it; `analyzeImportClosure` adds each observed module to its test file's closure.
 - `docs/solutions/performance-issues/strict-optional-key-in-a-third-party-manifest-schema-refuses-the-whole-manifest.md`: the rule this unit completes.
@@ -69,9 +69,10 @@ The import closure decides which files a test file depends on. Incremental runs 
 - KTD2. **One entry reader serves `exports` and `imports` at any depth, a present entry is final, and a condition object follows the runtime.**
   - Reading an entry:
     - a string is the target;
-    - an array yields its first element, read again by the same reader;
-    - an object yields its `@systemfsoftware/source` value if present; otherwise the first key past `types`/`types@…`, read again by the same reader, when that key is `import`, `node` or `default`; otherwise none;
-    - `null` and every other value yield none.
+    - an array yields its first element that decides, read again by the same reader; a number, a boolean and an object no condition matches do not decide;
+    - an object yields its `@systemfsoftware/source` value if present; otherwise its first key in the read's condition set, read again by the same reader; with no such key it does not decide;
+    - `null`, and a number or boolean outside an array, decide that no target loads.
+  - Every entry is read under the ESM set and the CommonJS set. Both yield the same file, or one a file and the other none: that file. Different files, or none in both: no target.
   - A top-level `exports` string or array is the root entry. A top-level `exports` object with no `.`-prefixed key is the root's conditions; one mixing `.`-prefixed and other keys yields no target. A top-level `null` counts as absent, as in Node, so `main`/`module` apply.
   - Lookup separates "no entry for this request" from "an entry that yields no target":
     - **No entry:** no exact key and no matching pattern. Patterns, then `main`/`module` for the root.
@@ -80,6 +81,9 @@ The import closure decides which files a test file depends on. Incremental runs 
   Rejected:
   - The first-value rule (the 0239 plan's choice). It closes a `types`-first object over a `.d.ts` no runtime loads; the review's confirmed P1.
   - Skipping `require` as never active. A CommonJS importer loads that branch, and the request does not carry the importer's syntax, so the closure stays open instead.
+  - Letting the first key past `types` decide, with `import` followed only when no later key serves CommonJS (this plan's first draft). Node skips a condition it does not match, so `{ "module": …, "default": … }` loads `default`; the draft left it open, and its key test duplicated what reading under the CommonJS set states directly.
+  - Following `import` whatever its siblings (0519's rule). The scanner sends `require()` and `import` specifiers through one request (`extract-module-specifiers.workflow.ts` `isRequireCall`), so a CommonJS importer of `{ import, require }` closed over the ESM file; the review's confirmed P2.
+  - Carrying the importer's syntax on the request. The source syntax does not fix the runtime's condition set: a runner that compiles `import` syntax to CommonJS loads the `require` branch, so the reader still cannot know which branch runs.
   - Keeping a declaration-only choice open while keeping first-value elsewhere (r46's minimal alternative). It still closes flat `{types, default}` on the `.d.ts`, the same stale path.
   - An array yielding its first element that yields a target. That skips `null`, which Node returns as blocked.
   - Falling through to patterns or `main` when an entry yields no target. That closes the closure on a file Node never loads.
@@ -94,6 +98,8 @@ The import closure decides which files a test file depends on. Incremental runs 
   - "First value is a safe approximation at any depth." It is not when the first branch is one no runtime takes (`types`); KTD2 now follows the runtime.
   - "A runner's observed modules make the static closure's file choice harmless." Only the Vitest runner reports them; KTD3 adds a runner that does not.
   - "An entry that yields nothing can fall back." It cannot: Node never falls back from a present entry.
+  - "`import` is a runtime condition like `node`." It is not: only ESM importers match it, and a CommonJS importer of the same object takes a later branch.
+  - "The first key past `types` decides." It does not: Node skips every key outside its condition set, so a `browser` or `module` branch first falls through to `default`.
   - "A schema over a foreign document must either refuse or stay raw JSON." It need not: a decode with one variant per JSON shape is total, so the Type can be rich without refusing a file the reader could still use (KTD1).
 
 ### Sequencing
@@ -113,15 +119,16 @@ U1 → U2 → U3 → U4.
 - **File.** `packages/stryker-js/src/__tests__/select-manifest-target.workflow.property.test.ts`.
 - **Laws.** Each draws `ManifestTargetCommand`:
   - `∀c_ConditionChain_≡FirstRuntimeConditionPastTypesAtEveryDepthForExportsAndImports`;
-  - `∀c_ConditionChain_≡MissingWhenTheFirstConditionPastTypesIsNoRuntimeOne`;
+  - `∀c_ConditionChain_≡UnmatchedConditionsFallThroughToTheFileEveryImporterLoads`;
+  - `∀c_ConditionChain_≡MissingWhenEsmAndCommonJsImportersLoadDifferentFiles`;
   - `∀c_RootConditions_≡ReadAsTheRootEntryAndMissingBesideASubpathKey`;
   - `∀c_ConditionChain_≡SourceConditionBeforeEarlierKeysAtItsOwnDepth`;
-  - `∀c_Fallbacks_≡TheFirstElementDecidesWhateverFollows`;
+  - `∀c_Fallbacks_≡TheFirstElementThatDecidesWinsAndOneNoConditionMatchesYields`;
   - `∀c_RootEntry_≡MainDecidesTheRootOnlyWhenExportsDeclaresNone`;
   - `∀c_NullExports_≡ReadAsIfExportsWereAbsent`;
   - `∀c_ExactEntry_≡DecidesAloneWhateverPatternSitsBesideIt`;
   - `∀c_NonStringMainOrModule_≡ReadAsIfTheKeyWereAbsent`.
-- **Evidence.** The first four fail against the first-value decision of `14a06fdab`; the rest failed against `main`'s decision when added. All pass on the head.
+- **Evidence.** The first-value decision of `14a06fdab` fails the condition-chain and root-conditions laws; the rest failed against `main`'s decision when added. The two-condition-set decision fails three laws on `07f55c9f9`, its parent: the fall-through, the ESM/CommonJS and the fallbacks laws. All pass on the head.
 
 ### U3. The built CLI keeps verdicts across an unrelated edit
 
@@ -132,8 +139,8 @@ U1 → U2 → U3 → U4.
 ### U4. A runtime-only edit re-tests on every runner
 
 - **Files.** `packages/stryker-js/tests/__fixtures__/closure-only-runner/` (new on-disk runner plugin that reports one passing test and no `testFileModules`); the runtime-edit outline in U3's suite.
-- **Scenarios.** AE5: nested `types`-first on the `vm` runner, and nested `types`-first, flat `types`-first and root conditions on the `closure-only` runner.
-- **Two-sided proof.** Built from `14a06fdab` (first-value rule), the closure-only nested and flat `types`-first rows reuse stale verdicts and fail; built from the head every row passes.
+- **Scenarios.** AE5: nested `types`-first on the `vm` runner, and nested `types`-first, flat `types`-first and root conditions on the `closure-only` runner; and the dual `import`/`require` package required through `createRequire` on the `closure-only` runner, editing only its `.cjs`.
+- **Two-sided proof.** Built from `14a06fdab` (first-value rule), the closure-only nested and flat `types`-first rows reuse stale verdicts and fail; built from `07f55c9f9` (`import` followed whatever its siblings), the dual-package scenario reuses 2 stale verdicts and fails, as do the laws `∀c_ConditionChain_≡MissingWhenEsmAndCommonJsImportersLoadDifferentFiles`, `∀c_ConditionChain_≡UnmatchedConditionsFallThroughToTheFileEveryImporterLoads` and `∀c_Fallbacks_≡TheFirstElementThatDecidesWinsAndOneNoConditionMatchesYields`; built from the head every row and law passes.
 
 ## Verification Contract
 

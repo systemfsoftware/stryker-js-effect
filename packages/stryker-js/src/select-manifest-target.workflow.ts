@@ -22,11 +22,9 @@ import {
 
 const PACKAGE_SOURCE_CONDITION = '@systemfsoftware/source'
 
-const TYPE_CONDITION = 'types'
+const ESM_CONDITIONS: ReadonlyArray<string> = ['import', 'node', 'module-sync', 'node-addons', 'default']
 
-const VERSIONED_TYPE_CONDITION_PREFIX = 'types@'
-
-const RUNTIME_CONDITIONS: readonly string[] = ['import', 'node', 'default']
+const COMMONJS_CONDITIONS: ReadonlyArray<string> = ['require', 'node', 'module-sync', 'node-addons', 'default']
 
 const DEFAULT_ENTRY_KEY = '.'
 
@@ -54,30 +52,51 @@ const ownValueOf = (record: EntryTable, key: string): Option.Option<PackageEntry
     onFalse: () => Option.none(),
   })
 
-const isTypeCondition = (key: string): boolean =>
-  [key === TYPE_CONDITION, key.startsWith(VERSIONED_TYPE_CONDITION_PREFIX)].some((flag) => flag)
+type Resolution = Option.Option<Option.Option<string>>
 
-const runtimeConditionValueOption = (conditions: EntryTable): Option.Option<PackageEntry> =>
-  Option.flatMap(
-    Option.filter(
-      Arr.findFirst(Object.keys(conditions), (key) => !isTypeCondition(key)),
-      (key) => RUNTIME_CONDITIONS.includes(key),
-    ),
-    (key) => ownValueOf(conditions, key),
-  )
+const unmatched: Resolution = Option.none()
 
-const conditionValueOption = (conditions: EntryTable): Option.Option<PackageEntry> =>
-  Option.orElse(ownValueOf(conditions, PACKAGE_SOURCE_CONDITION), () => runtimeConditionValueOption(conditions))
+const firstDecided = (outcomes: ReadonlyArray<Resolution>): Resolution =>
+  Option.flatten(Arr.findFirst(outcomes, Option.isSome))
 
-const entryTargetOfEntry = (entry: PackageEntry): Option.Option<string> =>
+const matchedEntries = (entries: EntryTable, conditions: ReadonlyArray<string>): ReadonlyArray<PackageEntry> =>
+  Arr.getSomes(Object.keys(entries).filter((key) => conditions.includes(key)).map((key) => ownValueOf(entries, key)))
+
+const resolutionIn = (conditions: ReadonlyArray<string>) => (entry: PackageEntry): Resolution =>
   Match.value(entry).pipe(
     Match.tagsExhaustive({
-      EntryPath: ({ path }): Option.Option<string> => Option.some(path),
-      EntryFallbacks: ({ fallbacks }) => Option.flatMap(Arr.head(fallbacks), entryTargetOfEntry),
-      EntryMap: ({ entries }) => Option.flatMap(conditionValueOption(entries), entryTargetOfEntry),
-      EntryNull: (): Option.Option<string> => Option.none(),
-      EntryScalar: (): Option.Option<string> => Option.none(),
+      EntryPath: ({ path }): Resolution => Option.some(Option.some(path)),
+      EntryNull: (): Resolution => Option.some(Option.none()),
+      EntryScalar: (): Resolution => Option.some(Option.none()),
+      EntryFallbacks: ({ fallbacks }): Resolution => firstDecided(fallbacks.map(fallbackResolutionIn(conditions))),
+      EntryMap: ({ entries }): Resolution =>
+        Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
+          onSome: resolutionIn(conditions),
+          onNone: () => firstDecided(matchedEntries(entries, conditions).map(resolutionIn(conditions))),
+        }),
     }),
+  )
+
+const fallbackResolutionIn = (conditions: ReadonlyArray<string>) => (entry: PackageEntry): Resolution =>
+  Match.value(entry).pipe(
+    Match.tag('EntryScalar', (): Resolution => unmatched),
+    Match.orElse(resolutionIn(conditions)),
+  )
+
+const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<string>): Option.Option<string> =>
+  Option.match(esm, {
+    onNone: () => commonJs,
+    onSome: (esmTarget) =>
+      Option.match(commonJs, {
+        onNone: () => Option.some(esmTarget),
+        onSome: (commonJsTarget) => Option.liftPredicate(esmTarget, (target) => target === commonJsTarget),
+      }),
+  })
+
+const entryTargetOfEntry = (entry: PackageEntry): Option.Option<string> =>
+  loadedTargetOf(
+    Option.flatten(resolutionIn(ESM_CONDITIONS)(entry)),
+    Option.flatten(resolutionIn(COMMONJS_CONDITIONS)(entry)),
   )
 
 const exactEntryOption = (entries: EntryTable, key: string): Option.Option<Option.Option<string>> =>

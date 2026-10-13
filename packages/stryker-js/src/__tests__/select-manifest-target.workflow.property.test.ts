@@ -78,19 +78,36 @@ const nestedUnder = (keys: ReadonlyArray<string>, innermost: S.Json): S.Json =>
       types: './index.d.ts',
       [`types@>=${depth}`]: './versioned.d.ts',
       [runtimeConditionAt(depth)]: inner,
-      require: './later.cjs',
+      browser: './later.js',
     }),
     innermost,
   )
 
-const NON_RUNTIME_CONDITIONS: ReadonlyArray<string> = ['require', 'browser', 'module', 'module-sync', 'development']
+const COMMONJS_SIBLINGS: ReadonlyArray<string> = ['require', 'module-sync', 'node', 'default']
 
-const nonRuntimeConditionOf = (command: ManifestTargetCommand): string =>
+const commonJsSiblingOf = (command: ManifestTargetCommand): string =>
+  COMMONJS_SIBLINGS[textOf(command).length % COMMONJS_SIBLINGS.length] ?? 'require'
+
+const SHARED_CONDITIONS: ReadonlyArray<string> = ['node', 'default']
+
+const sharedUnder = (keys: ReadonlyArray<string>, innermost: S.Json): S.Json =>
+  keys.reduceRight<S.Json>(
+    (inner, _key, depth) => ({
+      types: './index.d.ts',
+      [SHARED_CONDITIONS[depth % SHARED_CONDITIONS.length] ?? 'default']: inner,
+      browser: './later.js',
+    }),
+    innermost,
+  )
+
+const UNMATCHED_CONDITIONS: ReadonlyArray<string> = ['browser', 'module', 'development', 'production']
+
+const unmatchedConditionOf = (command: ManifestTargetCommand): string =>
   [
-    ...NON_RUNTIME_CONDITIONS,
+    ...UNMATCHED_CONDITIONS,
     `c${oneSegmentOf(command)}`,
-  ][textOf(command).length % (NON_RUNTIME_CONDITIONS.length + 1)] ??
-    'require'
+  ][textOf(command).length % (UNMATCHED_CONDITIONS.length + 1)] ??
+    'browser'
 
 const targetOf = (command: ManifestTargetCommand): string => `./${oneSegmentOf(command)}x.ts`
 
@@ -256,25 +273,58 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_ConditionChain_≡MissingWhenTheFirstConditionPastTypesIsNoRuntimeOne',
+    '∀c_ConditionChain_≡UnmatchedConditionsFallThroughToTheFileEveryImporterLoads',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
       const target = targetOf(command)
       const subpath = `x${oneSegmentOf(command)}`
       const specifier = `#${subpath}`
       const keys = keysOf(command)
-      const undecided = nestedUnder(keys, {
+      const fallsThrough = sharedUnder(keys, {
         types: './index.d.ts',
-        [nonRuntimeConditionOf(command)]: target,
+        [unmatchedConditionOf(command)]: './other.js',
         default: target,
       })
-      const typesOnly = nestedUnder(keys, { types: target, [`types@>=${textOf(command).length}`]: target })
+      const typesOnly = sharedUnder(keys, { types: target, [`types@>=${textOf(command).length}`]: target })
+      const scalarFirst = sharedUnder(keys, { types: './index.d.ts', node: textOf(command).length, default: target })
       return [
-        exported(subject, command, { [exportKeyOf(subpath)]: undecided }, subpath),
-        imported(subject, command, { [specifier]: undecided }, specifier),
-        exported(subject, command, { [exportKeyOf(subpath)]: typesOnly }, subpath),
-        imported(subject, command, { [specifier]: typesOnly }, specifier),
-      ].every((outcome) => outcome === 'missing')
+        exported(subject, command, { [exportKeyOf(subpath)]: fallsThrough }, subpath) === `path:${target}`,
+        imported(subject, command, { [specifier]: fallsThrough }, specifier) === `path:${target}`,
+        exported(subject, command, { [exportKeyOf(subpath)]: typesOnly }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: typesOnly }, specifier) === 'missing',
+        exported(subject, command, { [exportKeyOf(subpath)]: scalarFirst }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: scalarFirst }, specifier) === 'missing',
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀c_ConditionChain_≡MissingWhenEsmAndCommonJsImportersLoadDifferentFiles',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const target = targetOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const specifier = `#${subpath}`
+      const keys = keysOf(command)
+      const dual = sharedUnder(keys, {
+        types: './index.d.ts',
+        import: target,
+        [commonJsSiblingOf(command)]: './other.cjs',
+      })
+      const requireFirst = sharedUnder(keys, { types: './index.d.ts', require: './other.cjs', import: target })
+      const esmOnly = sharedUnder(keys, {
+        types: './index.d.ts',
+        import: target,
+        [unmatchedConditionOf(command)]: './other.js',
+      })
+      return [
+        exported(subject, command, { [exportKeyOf(subpath)]: dual }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: dual }, specifier) === 'missing',
+        exported(subject, command, { [exportKeyOf(subpath)]: requireFirst }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: requireFirst }, specifier) === 'missing',
+        exported(subject, command, { [exportKeyOf(subpath)]: esmOnly }, subpath) === `path:${target}`,
+        imported(subject, command, { [specifier]: esmOnly }, specifier) === `path:${target}`,
+      ].every((holds) => holds)
     },
   )
 
@@ -310,19 +360,25 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_Fallbacks_≡TheFirstElementDecidesWhateverFollows',
+    '∀c_Fallbacks_≡TheFirstElementThatDecidesWinsAndOneNoConditionMatchesYields',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const entry = manifestExportsOf(command)
       const later = targetOf(command)
+      const head = `./h${oneSegmentOf(command)}.js`
       const subpath = `x${oneSegmentOf(command)}`
       const key = exportKeyOf(subpath)
       const specifier = `#${subpath}`
+      const unmatchedHead = { [unmatchedConditionOf(command)]: head }
+      const scalarHead = textOf(command).length
       return [
-        exported(subject, command, { [key]: [entry, later] }, subpath) ===
-          exported(subject, command, { [key]: entry }, subpath),
-        imported(subject, command, { [specifier]: [entry, later] }, specifier) ===
-          imported(subject, command, { [specifier]: entry }, specifier),
+        exported(subject, command, { [key]: [head, later] }, subpath) === `path:${head}`,
+        imported(subject, command, { [specifier]: [head, later] }, specifier) === `path:${head}`,
+        exported(subject, command, { [key]: [null, later] }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: [null, later] }, specifier) === 'missing',
+        exported(subject, command, { [key]: [unmatchedHead, later] }, subpath) === `path:${later}`,
+        imported(subject, command, { [specifier]: [unmatchedHead, later] }, specifier) === `path:${later}`,
+        exported(subject, command, { [key]: [scalarHead, later] }, subpath) === `path:${later}`,
+        imported(subject, command, { [specifier]: [scalarHead, later] }, specifier) === `path:${later}`,
       ].every((holds) => holds)
     },
   )
