@@ -5,6 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
+supersedes: docs/plans/2026-10-13-0549-fix-report-json-survivors-plan.md
 ---
 
 # Kill or delete every surviving mutant the exact-key report decode left on main - Plan
@@ -42,8 +43,8 @@ CONST-T3 requires a perfect kill score on the change-relevant set. It names two 
 
 **Decode**
 
-- R1. Both codecs decode every object key exactly as `JSON.parse` reads it on an engine without nodejs/node#63785, after any earlier parse in the process. That covers the characters, the key order and the last-wins rule for duplicate keys.
-- R3. Malformed text and valid JSON that is not a report fail on both codecs with the same issue `S.fromJsonString(S.JsonObject)` gives for that text, never with a thrown defect. `stryker audit` prints that issue in `matrix-undecodable`, so its wording is what a user reads.
+- R1. Both codecs decode every object key, and every string value beside it, exactly as `JSON.parse` reads it on an engine without nodejs/node#63785, after any earlier parse in the process. That covers the characters, the key order and the last-wins rule for duplicate keys.
+- R3. Malformed text and valid JSON that is not an object fail on both codecs with the same issue `S.fromJsonString(S.JsonObject)` gives for that text, never with a thrown defect. `stryker audit` prints that issue in `matrix-undecodable`, so its wording is what a user reads. An object with no `files` object fails on both codecs; `CountedReportJson`, whose only required field is `files`, fails at `["files"]`.
 
 **Refusal**
 
@@ -58,7 +59,9 @@ CONST-T3 requires a perfect kill score on the change-relevant set. It names two 
 - AE1 (R2). A `files` record holding `src/a.ts` and `""` fails, and the issue list holds exactly one entry: path `["files", ""]` with the R2 text. The same record encoded through either codec fails the same way.
 - AE2 (R1). A document whose keys are `b`, `\u1234\u5678`, `2`, `1` and `10` decodes to the same key order as `JSON.parse` of the same text: `1`, `2`, `10`, `b`, `\u1234\u5678`.
 - AE3 (R1). `src/😀.ts` and `src/ὠ\u0002䀇` in one `files` record decode as two distinct keys, each exactly as written.
+- AE6 (R1). `{"src/a.ts":0,"src\/a.ts":1,"src/a.ts":2}` decodes to one `src/a.ts` entry holding member `2`, as `JSON.parse` reads it, although the second spelling differs from the first and third.
 - AE4 (R3). `{"files":{"a":1},}` and `''` fail on both codecs with `Expected a valid JSON string`, and `[]` fails with `Expected object`, the messages `S.fromJsonString(S.JsonObject)` gives for those texts (probed on effect 4.0.0).
+- AE5 (R3). `{}`, `{"x":1}`, `{"files":5}`, `{"files":[]}` and `{"files":null}` fail on both codecs, and `CountedReportJson` fails each at `["files"]`. Effect reports only the first issue, so `KillMatrixReportJson` fails `{}` at `["projectRoot"]`.
 
 ### Scope Boundaries
 
@@ -69,7 +72,6 @@ CONST-T3 requires a perfect kill score on the change-relevant set. It names two 
 
 #### Deferred to Follow-Up Work
 
-- `docs/solutions/test-failures/v8-json-parse-key-corruption-schema-laws.md:82` still says the `CountedReportJson` and `KillMatrixReportJson` laws can flake on Node 24. #327 made that untrue for those two codecs.
 - `test/e2e-core/src/catalog-resolution.schema.ts` keeps #306's offset lookup with its `getOrElse` fallback. That package is out of this unit's scope.
 
 ---
@@ -78,7 +80,7 @@ CONST-T3 requires a perfect kill score on the change-relevant set. It names two 
 
 ### Key Technical Decisions
 
-- KTD1. **Each placeholder encodes its own key token, and the rebuild has no lookup.** One `replace` over the text puts a placeholder in place of each key token: the token's literal, quotes and escapes included, written as its UTF-16 code units in 4-digit lowercase hex. After the second parse, each placeholder is hex-decoded back to its literal, and that literal alone is decoded as a JSON string. So `keyAtOffset`, the offset record and the separate token scan are all deleted. No branch in the rebuild carries its own failure value: a literal's decode fails only by propagating the string codec's issue. Hex of UTF-16 code units at width 4 is a left inverse over every string, including astral characters and lone surrogates. Code points at width 4 rename astral keys and can merge two of them (spec-flow probe on Node v24.21.0). The placeholder alphabet `[0-9a-f]` needs no JSON escape, so nodejs/node#63785, which needs an escaped key, cannot reach it. Every literal starts with `"` (U+0022), so every placeholder starts with `0022`. No integer index has a leading zero, so the second parse keeps the text's key order without a prefix, and no prefix literal is left whose mutant would be equivalent. (pack: mutation-discipline, unkillable-survivors-are-dead-code.md)
+- KTD1. **Each placeholder encodes its own key token and its occurrence, and the rebuild has no lookup.** One `replace` over the text puts a placeholder in place of each key token. The placeholder is the token's literal, quotes and escapes included, written as its UTF-16 code units in 4-digit lowercase hex, then `x`, then the token's offset in the text. After the second parse, the part before `x` is hex-decoded back to the literal, and that literal alone is decoded as a JSON string. So `keyAtOffset`, the offset record and the separate token scan are all deleted. No branch in the rebuild carries its own failure value: a literal's decode fails only by propagating the string codec's issue. Hex of UTF-16 code units at width 4 is a left inverse over every string, including astral characters and lone surrogates. Code points at width 4 rename astral keys and can merge two of them (spec-flow probe on Node v24.21.0). The offset makes every placeholder unique, so the second parse keeps one entry per occurrence and `Record.fromEntries` applies last-wins in text order. Without it, two spellings of one key (`"a"`, `"\u0061"`, `"a"`) become two placeholders, the redefined first one keeps its first position, and the rebuild reads the middle value (the adversarial reviewer's probe on the earlier revision). The placeholder alphabet `[0-9a-fx]` needs no JSON escape, so nodejs/node#63785, which needs an escaped key, cannot reach it. Every literal starts with `"` (U+0022), so every placeholder starts with `0022`. No integer index has a leading zero, so the second parse keeps the text's key order. (pack: mutation-discipline, unkillable-survivors-are-dead-code.md)
 - KTD2. **The escape alternative becomes `\\[^]`.** Both spellings match any character after a backslash. The new spelling has no whitespace class whose negation yields an equivalent mutant. The next Mutation report decides whether every remaining regex mutant is killed (R4).
 - KTD3. **`JSON_TEXT` is deleted, not ignored.** Nothing reads the annotation, so CONST-S4 removes it. The codecs start from `S.String`, and a non-string input fails with Effect's own string message, which no caller can produce.
 - KTD4. **The refusal law asserts the issue through Standard Schema issues.** Each refused payload is decoded and encoded through both codecs, and the law asserts the message and path of every issue against R2's literal text and `["files", key]`. The expected values come from R2 and from the key the law drew. The bad-key oracle stays independent of `keyedByFilePath`. (pack: mutation-discipline, kill-survivors-with-contract-properties.md) (pack: boundary-testing, expected-values-never-come-from-the-subjects-output.md)
@@ -95,9 +97,9 @@ The decode becomes one substitution before one whole-text parse:
 
 ```mermaid
 flowchart TB
-  T[report text] --> S[replace each key token by the hex of its literal's UTF-16 code units]
+  T[report text] --> S[replace each key token by hex of its literal's UTF-16 code units, x, its offset]
   S --> P2[parse placeholder text: refuse malformed and non-object text]
-  P2 --> R[rebuild: each key = JSON-string decode of the hex-decoded literal]
+  P2 --> R[rebuild: each key = JSON-string decode of the hex-decoded literal; fromEntries in text order]
   R --> V[report schema validates, files check refuses bad keys at their path]
 ```
 
@@ -119,7 +121,7 @@ flowchart TB
 - **Execution note:** write the multi-key law first and run it against the current decode. It must pass there too, because the current decode keeps order and last-wins. Then rewrite the decode and run it again.
 - **Patterns to follow:** the in-source `it.prop` laws already in `audit.schema.ts`; `refusalOf` in `packages/stryker-js-cli-contract/src/shard-plan.schema.ts`.
 - **Test scenarios:**
-  - Covers AE2, AE3. One decode law over drawn key lists plus seed lists (`b`, `\u1234\u5678`, `2`, `1`, `10`, `a`; `a.ts`, `b`, `a.ts`; `src/😀.ts`, `src/ὠ\u0002䀇`; lone and paired surrogates): each list is written as raw report text with one member per key, duplicates kept, each member's mutant id its index. Both codecs read the `files` entries, keys and ids, equal to `Object.entries(Object.fromEntries(members))`.
+  - Covers AE2, AE3, AE6. One decode law over drawn key lists plus seed lists (`b`, `\u1234\u5678`, `2`, `1`, `10`, `a`; `a.ts`, `b`, `a.ts`; `src/a.ts` three times; `src/a.ts`, `b`, `src/a.ts`, `src/a.ts`; `src/😀.ts`, `src/ὠ\u0002䀇`; lone and paired surrogates): each list is written as raw report text with one member per key, duplicates kept. Members at odd positions spell `/` as `\/`, so duplicates differ in spelling. Each member carries its index as mutant id, and its own key as a string value (`statusReason`, `source`), so keys with quotes, colons and backslashes also appear as values. Both codecs read the `files` entries, keys, ids and values, equal to `Object.entries(Object.fromEntries(members))`. This law refutes the per-literal placeholder of the earlier revision and passes on the per-occurrence one.
   - The generated `∀x_CountedReportJson_=x`, `∀x_KillMatrixReportJson_=x` and their `Enc` laws pass unchanged.
   - The twin law `∀p_ReportJsonKeys_≡ReadAnEscapedKeyExactlyAfterAParseOfItsBackslashTwin` passes unchanged.
 - **Verification:** the file's laws pass over 200 unpinned runs, and no function in the decode has a branch that only a broken parser could reach.
@@ -135,16 +137,16 @@ flowchart TB
   - For every key list, drawn or seeded (`""`, `"\u0000"`, `"a\u0000"`, `"src/a\u0000.ts"`, and repeats), decoding through both codecs fails with exactly one issue per distinct refused key, in record order: R2's text at `["files", key]`.
   - The same lists encoded through both codecs fail the same way, and a list with no refused key encodes.
   - Covers AE1. The list `src/a.ts`, `""` fails with one issue, at `["files", ""]`.
-  - Covers AE4. For drawn texts and the seeds `''`, `'{'`, `'[]'`, `'null'`, `'"x"'`, `'1'`, `'{"files":{"a":1},}'`, `'{"\x":1}'`, `'[{"\x":1}]'` and a valid report followed by `x`: whenever `S.fromJsonString(S.JsonObject)` refuses the text, both codecs refuse it with the same issues, and none throws. `'[{"\x":1}]'` is the seed that tells the first whole-text parse apart (U1 step 3).
+  - Covers AE4, AE5. For drawn texts and the seeds `''`, `'{'`, `'[]'`, `'null'`, `'"x"'`, `'1'`, `'{"files":{"a":1},}'`, `'{"\x":1}'`, `'[{"\x":1}]'`, a valid report followed by `x`, and the five AE5 objects: whenever `S.fromJsonString(S.JsonObject)` refuses the text, both codecs refuse it with the same issues. When it accepts an object with no `files` object, both codecs refuse it, `CountedReportJson` at `["files"]`. None throws. `'[{"\x":1}]'` is the seed that tells the first whole-text parse apart (U1 step 3).
 - **Verification:** the file's laws pass over 200 unpinned runs. The CI evidence that each named survivor is killed is the first main Mutation report after the merge (R4). No mutant is applied by hand locally.
 
-### U3. Changeset
+### U3. Changeset and stale learning
 
-- **Goal:** the publishable package records the change.
+- **Goal:** the publishable package records the change, and the learning that still calls these two codecs' laws flaky is corrected.
 - **Requirements:** R4.
 - **Dependencies:** U1, U2.
-- **Files:** `.changeset/report-json-survivors.md`.
-- **Approach:** a `none` intent for `@systemfsoftware/stryker-js`, because nothing a consumer runs changes. The repository gate asks for an intent because the package's build hash moves.
+- **Files:** `.changeset/report-json-survivors.md`, `docs/solutions/test-failures/v8-json-parse-key-corruption-schema-laws.md`.
+- **Approach:** a `none` intent for `@systemfsoftware/stryker-js`, because nothing a consumer runs changes. The repository gate asks for an intent because the package's build hash moves. The learning's Current State says both codecs are exempt since #327, and names the decode and the twin law that checks it.
 - **Test expectation:** none. A changeset is release metadata.
 
 ---
@@ -171,14 +173,14 @@ A refuted local run writes its seed to `src/__property_seeds__/<file>.jsonl`. De
 
 Every test below is an in-source law in a `*.schema.ts` cell, the layer `test-layer-selection` assigns to a domain declaration. Each enforces a stated contract and is admitted by OP12. Refusal is the default for anything else.
 
-| Test                                          | Contract it enforces            | Mutants it is expected to kill                                                                     | Verdict                                                |
-| --------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Decode law: order, last-wins, refusal on read | R1, R2 (decode)                 | mutants of the hex width, padding, radix and joins in KTD1; `5d39a67db845dee7`, `79ec35e11a224433` | Admitted                                               |
-| Encode law: refusal on write                  | R2 (encode)                     | the same refusal mutants, reached on the encode path                                               | Admitted                                               |
-| Mixed-record refusal (AE1)                    | R2, never hidden by a valid key | none alone; a seed of the refusal law, not a separate test                                         | Folded into the refusal law                            |
-| Malformed-text law (AE4)                      | R3 issue wording                | removal of the first whole-text parse; mutants that let a non-object through                       | Admitted                                               |
-| CLI scenario for the refusal                  | R2 at the process boundary      | the same issue the codec law reads                                                                 | Refused: spawns a process, adds no observation         |
-| Hand-applied red check                        | none                            | none                                                                                               | Refused: a hand-applied mutant is a local mutation run |
+| Test                                                  | Contract it enforces            | Mutants it is expected to kill                                                                           | Verdict                                                |
+| ----------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Decode law: order, last-wins, values, refusal on read | R1, R2 (decode)                 | mutants of the hex width, padding, radix and joins in KTD1; `5d39a67db845dee7`, `79ec35e11a224433`       | Admitted                                               |
+| Encode law: refusal on write                          | R2 (encode)                     | the same refusal mutants, reached on the encode path                                                     | Admitted                                               |
+| Mixed-record refusal (AE1)                            | R2, never hidden by a valid key | none alone; a seed of the refusal law, not a separate test                                               | Folded into the refusal law                            |
+| Malformed-text and non-report law (AE4, AE5)          | R3                              | removal of the first whole-text parse; mutants that let a non-object or a report without `files` through | Admitted                                               |
+| CLI scenario for the refusal                          | R2 at the process boundary      | the same issue the codec law reads                                                                       | Refused: spawns a process, adds no observation         |
+| Hand-applied red check                                | none                            | none                                                                                                     | Refused: a hand-applied mutant is a local mutation run |
 
 ### Destructive review
 

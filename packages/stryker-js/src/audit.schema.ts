@@ -8,6 +8,7 @@ import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
 import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
+import * as Str from 'effect/String'
 
 const AuditSchemaVersion = S.Literal('1')
 
@@ -18,6 +19,8 @@ const STRING_TOKEN = /("(?:[^"\\]|\\[^])*")(\s*:)?/g
 const CODE_UNIT_DIGITS = 4
 
 const HEX = 16
+
+const OCCURRENCE = 'x'
 
 const decodeJsonObject = S.decodeUnknownEffect(S.fromJsonString(S.JsonObject))
 
@@ -31,7 +34,7 @@ const hexOf = (literal: string): string =>
   literal.split('').map((unit) => unit.charCodeAt(0).toString(HEX).padStart(CODE_UNIT_DIGITS, '0')).join('')
 
 const literalOf = (placeholder: string): string =>
-  Arr.chunksOf(placeholder.split(''), CODE_UNIT_DIGITS)
+  Arr.chunksOf(Arr.headNonEmpty(Str.split(placeholder, OCCURRENCE)).split(''), CODE_UNIT_DIGITS)
     .map((digits) => String.fromCharCode(Number.parseInt(digits.join(''), HEX)))
     .join('')
 
@@ -52,10 +55,10 @@ const rekeyed = (value: S.Json): Effect.Effect<S.Json, S.SchemaError> =>
 const placeheld = (text: string): string =>
   text.replace(
     STRING_TOKEN,
-    (token: string, literal: string, colon: string | undefined) =>
+    (token: string, literal: string, colon: string | undefined, offset: number) =>
       Option.match(Option.fromUndefinedOr(colon), {
         onNone: () => token,
-        onSome: (separator) => `"${hexOf(literal)}"${separator}`,
+        onSome: (separator) => `"${hexOf(literal)}${OCCURRENCE}${offset}"${separator}`,
       }),
   )
 
@@ -410,6 +413,8 @@ if (import.meta.vitest !== void 0) {
   const keyListBoundaries: ReadonlyArray<ReadonlyArray<string>> = [
     ['b', '\u1234\u5678', '2', '1', '10', 'a'],
     ['a.ts', 'b', 'a.ts'],
+    ['src/a.ts', 'src/a.ts', 'src/a.ts'],
+    ['src/a.ts', 'b', 'src/a.ts', 'src/a.ts'],
     ['src/😀.ts', 'src/ὠ\u0002䀇'],
     ['\ud800', '\udc00', '\ud800\udc00'],
     ['src/a.ts', ''],
@@ -428,6 +433,11 @@ if (import.meta.vitest !== void 0) {
     '{"\\x":1}',
     '[{"\\x":1}]',
     '{"files":{}}x',
+    '{}',
+    '{"x":1}',
+    '{"files":5}',
+    '{"files":[]}',
+    '{"files":null}',
   ]
 
   const namesAFile = (key: string): boolean => key !== '' && key.indexOf('\u0000') === -1
@@ -437,20 +447,35 @@ if (import.meta.vitest !== void 0) {
   const issuesOf = (error: S.SchemaError): string =>
     JSON.stringify(formatIssues(error.issue).issues.map((issue) => [issue.path, issue.message]))
 
-  const countedFile = (id: string) => ({ mutants: [{ id, status: 'Killed' as const }] })
+  const countedFile = (id: string, text: string) => ({
+    mutants: [{ id, status: 'Killed' as const, statusReason: text }],
+  })
 
-  const matrixFile = (id: string) => ({ source: '', mutants: [{ id, status: 'Killed' as const }] })
+  const matrixFile = (id: string, text: string) => ({ source: text, mutants: [{ id, status: 'Killed' as const }] })
 
-  const membersOf = (keys: ReadonlyArray<string>, file: (id: string) => object): string =>
-    keys.map((key, index) => `${JSON.stringify(key)}:${JSON.stringify(file(`${index}`))}`).join(',')
+  const spelledAt = (key: string, index: number): string =>
+    index % 2 === 0 ? JSON.stringify(key) : JSON.stringify(key).replaceAll('/', '\\/')
 
-  const idsByKey = (
-    files: Record.ReadonlyRecord<string, { readonly mutants: ReadonlyArray<{ readonly id: string }> }>,
-  ): string =>
-    JSON.stringify(Object.entries(files).map(([key, file]) => [key, file.mutants.map(({ id }) => id).join()]))
+  const membersOf = (keys: ReadonlyArray<string>, file: (id: string, text: string) => object): string =>
+    keys.map((key, index) => `${spelledAt(key, index)}:${JSON.stringify(file(`${index}`, key))}`).join(',')
+
+  const readOf = (id: string, text: string): string => `${id}|${text}`
+
+  const countedReads = (files: CountedReport['files']): string =>
+    JSON.stringify(
+      Object.entries(files).map(([key, file]) => [
+        key,
+        file.mutants.map(({ id, statusReason }) => readOf(id, statusReason ?? '')).join(),
+      ]),
+    )
+
+  const matrixReads = (files: KillMatrixReport['files']): string =>
+    JSON.stringify(
+      Object.entries(files).map(([key, file]) => [key, file.mutants.map(({ id }) => readOf(id, file.source)).join()]),
+    )
 
   const readAsObjectEntries = (keys: ReadonlyArray<string>): string =>
-    JSON.stringify(Object.entries(Object.fromEntries(keys.map((key, index) => [key, `${index}`]))))
+    JSON.stringify(Object.entries(Object.fromEntries(keys.map((key, index) => [key, readOf(`${index}`, key)]))))
 
   const refusedAtEachKey = (keys: ReadonlyArray<string>): string =>
     JSON.stringify(
@@ -464,14 +489,14 @@ if (import.meta.vitest !== void 0) {
 
   const decodedFiles = (keys: ReadonlyArray<string>): ReadonlyArray<string> => [
     Result.match(S.decodeResult(CountedReportJson)(`{"files":{${membersOf(keys, countedFile)}}}`), {
-      onSuccess: (report) => idsByKey(report.files),
+      onSuccess: (report) => countedReads(report.files),
       onFailure: issuesOf,
     }),
     Result.match(
       S.decodeResult(KillMatrixReportJson)(
         `{"projectRoot":"","mutantSetPolicy":"full","files":{${membersOf(keys, matrixFile)}},"testFiles":{}}`,
       ),
-      { onSuccess: (report) => idsByKey(report.files), onFailure: issuesOf },
+      { onSuccess: (report) => matrixReads(report.files), onFailure: issuesOf },
     ),
   ]
 
@@ -486,8 +511,8 @@ if (import.meta.vitest !== void 0) {
   )
 
   const encodedFiles = (keys: ReadonlyArray<string>): ReadonlyArray<string> => {
-    const filesOfKeys = <A>(file: (id: string) => A) =>
-      Record.fromEntries(keys.map((key, index) => [key, file(`${index}`)]))
+    const filesOfKeys = <A>(file: (id: string, text: string) => A) =>
+      Record.fromEntries(keys.map((key, index) => [key, file(`${index}`, key)]))
     return [
       Result.match(S.encodeResult(CountedReportJson)({ files: filesOfKeys(countedFile) }), {
         onSuccess: () => 'encoded',
@@ -515,21 +540,30 @@ if (import.meta.vitest !== void 0) {
       ),
   )
 
+  const jsonObjectOf = (text: string) => Result.getSuccess(S.decodeResult(S.fromJsonString(S.JsonObject))(text))
+
   const jsonObjectIssues = (text: string): Option.Option<string> =>
     Option.map(Result.getFailure(S.decodeResult(S.fromJsonString(S.JsonObject))(text)), issuesOf)
 
-  const decodedTexts = (text: string): ReadonlyArray<string> => [
+  const decodedTexts = (text: string): readonly [counted: string, matrix: string] => [
     Result.match(S.decodeResult(CountedReportJson)(text), { onSuccess: () => 'decoded', onFailure: issuesOf }),
     Result.match(S.decodeResult(KillMatrixReportJson)(text), { onSuccess: () => 'decoded', onFailure: issuesOf }),
   ]
 
+  const refusedAtFiles = (outcome: string): boolean => outcome.includes(`[${JSON.stringify(['files'])},`)
+
+  const refusedWithoutFiles = ([counted, matrix]: readonly [string, string]): boolean =>
+    refusedAtFiles(counted) && matrix !== 'decoded'
+
   it.prop(
-    '∀t_ReportJsonText_≡RefusedWithTheIssueAJsonObjectParseGives',
+    '∀t_ReportJsonText_≡RefusedWithTheIssueAJsonObjectParseGivesOrAtFilesWhenItHasNoFilesObject',
     { of: [S.String], subject: decodedTexts },
     (subject, [drawn]) =>
       Arr.every(Arr.prepend(malformedBoundaries, drawn), (text) =>
         Option.match(jsonObjectIssues(text), {
-          onNone: () => true,
+          onNone: () =>
+            Option.exists(jsonObjectOf(text), (object) => isJsonObject(object['files'] ?? null)) ||
+            refusedWithoutFiles(subject(text)),
           onSome: (expected) => Arr.every(subject(text), (outcome) => outcome === expected),
         })),
   )
