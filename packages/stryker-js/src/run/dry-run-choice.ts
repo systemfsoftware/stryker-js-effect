@@ -156,9 +156,6 @@ const priorChoiceOf = (
   )
 }
 
-const realRootOf = (fs: FileSystem.FileSystem, root: string): Effect.Effect<string> =>
-  fs.realPath(root).pipe(Effect.orElseSucceed(() => root))
-
 const coverageRootOf = (coverage: DryRunCoverage): CoverageRoot =>
   Option.match(Option.fromUndefinedOr(coverage.projectRoot), {
     onNone: (): CoverageRoot => ({ _tag: 'UnrecordedRoot' }),
@@ -198,8 +195,8 @@ export interface CurrentRootCoverages {
 }
 
 export const currentRootCoveragesOf = Effect.fnUntraced(function*(texts: readonly string[], basePath: string) {
-  const fs = yield* FileSystem.FileSystem
-  const currentRoot = yield* realRootOf(fs, basePath)
+  const path = yield* Path.Path
+  const currentRoot = path.resolve(basePath)
   const candidates = priorCoveragesOf(texts)
   const candidatesDecision = candidatesDecisionOf(currentRoot, candidates)
   return {

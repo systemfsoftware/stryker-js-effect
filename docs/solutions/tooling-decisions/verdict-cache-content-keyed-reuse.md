@@ -96,13 +96,20 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   every mutant id - the verdict cache, survivor baselines, rerun ids - so it is
   a deliberate migration, not a side edit.
 - **Saved coverage is bound to the root that recorded it, and the root is
-  checked first.** The dry run records the real path of its project root
+  checked first.** The dry run records its project root as the crawl spells it
+  (`path.resolve(basePath)`, the prefix of every file name `mutantIdOf` hashes)
   inside the coverage record it persists, so every writer (end-of-run report,
   checkpoint, dry-run-only report) carries it. Before any digest comparison,
   and even on a forced run, the `dryRunReuse` workflow refuses coverage
   recorded under another root with `rootChanged` and coverage that records no
   root with `rootUnrecorded`; either refusal runs a full dry run that records
-  the current root. The root comes only from the coverage record, never from
+  the current root. The root is compared as spelled, never as its real path:
+  one directory reached through a symlink and through its real path yields two
+  sets of mutant ids, so a real-path match would reuse coverage that matches no
+  current mutant and score every mutant NoCoverage (gate: the integration
+  feature "Running mutation testing through the API on a project reached
+  through a symlink", whose run through a symlink then the real path must
+  score as a fresh run). The root comes only from the coverage record, never from
   the report header: `unionIncrementalReports` takes a merged report's header
   from the first shard but its coverage from the first shard that has one, so
   a header fallback admits another root's coverage. Among several restored
