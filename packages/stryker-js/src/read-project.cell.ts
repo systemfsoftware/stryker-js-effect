@@ -124,15 +124,15 @@ const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: s
   })
 }
 
-const ignoreRulesOf = (
-  options: Options.StrykerOptions,
-  basePath: string,
-  pathService: Path.Path,
-): readonly string[] => [
-  ...ALWAYS_IGNORE,
-  ...strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
-  ...options.ignorePatterns,
-]
+interface EntryRules {
+  readonly ignorePatterns: readonly string[]
+  readonly outputPatterns: readonly string[]
+}
+
+const entryRulesOf = (options: Options.StrykerOptions, basePath: string, pathService: Path.Path): EntryRules => ({
+  ignorePatterns: [...ALWAYS_IGNORE, ...options.ignorePatterns],
+  outputPatterns: strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
+})
 
 type DirectoryEntry = {
   readonly name: string
@@ -142,7 +142,7 @@ type DirectoryEntry = {
 }
 
 const crawlDirectory = (
-  ignorePatterns: readonly string[],
+  rules: EntryRules,
   dir: string,
   rootDir: string,
 ): Stream.Stream<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
@@ -167,11 +167,11 @@ const crawlDirectory = (
         Stream.runCollect,
       )
       return Stream.fromIterable([...withTypes]).pipe(
-        Stream.filter((entry) => isEntryIncluded(ignorePatterns, entry)),
+        Stream.filter((entry) => isEntryIncluded(rules, entry)),
         Stream.flatMap(
           (entry) =>
             Boolean.match(entry.isDirectory, {
-              onTrue: () => crawlDirectory(ignorePatterns, entry.full, rootDir),
+              onTrue: () => crawlDirectory(rules, entry.full, rootDir),
               onFalse: () => Stream.succeed(entry.full),
             }),
           { concurrency: CRAWL_CONCURRENCY },
@@ -180,10 +180,11 @@ const crawlDirectory = (
     }),
   )
 
-const isEntryIncluded = (ignorePatterns: readonly string[], entry: DirectoryEntry): boolean => {
+const isEntryIncluded = (rules: EntryRules, entry: DirectoryEntry): boolean => {
   const decision = admitDiscoveredEntry(
     DiscoveredEntryCommand.make({
-      ignorePatterns: [...ignorePatterns],
+      ignorePatterns: [...rules.ignorePatterns],
+      outputPatterns: [...rules.outputPatterns],
       entryName: entry.name,
       entryPath: entry.entryPath,
       isDirectory: entry.isDirectory,
@@ -193,10 +194,10 @@ const isEntryIncluded = (ignorePatterns: readonly string[], entry: DirectoryEntr
 }
 
 const resolveInputFileNames = (
-  ignorePatterns: readonly string[],
+  rules: EntryRules,
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDirectory(ignorePatterns, basePath, basePath).pipe(Stream.runCollect, Effect.map((files) => [...files]))
+  crawlDirectory(rules, basePath, basePath).pipe(Stream.runCollect, Effect.map((files) => [...files]))
 
 const parseAndDecodeIncrementalReport = S.decodeUnknownResult(S.fromJsonString(IncrementalReportSchema))
 
@@ -369,7 +370,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
   const inputFileNames = yield* resolveInputFileNames(
-    ignoreRulesOf(options, input.basePath, pathService),
+    entryRulesOf(options, input.basePath, pathService),
     input.basePath,
   )
   const defaults = yield* defaultOptions

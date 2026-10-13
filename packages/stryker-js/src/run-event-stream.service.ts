@@ -20,6 +20,7 @@ import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { admitStreamOverwrite, StreamOverwriteCommand } from './admit-stream-overwrite.workflow.js'
 import type {
   FailedRunOutcome,
   RunOk,
@@ -163,6 +164,41 @@ const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (
         ),
     }))
 
+const LEADING_BYTES = 4096
+
+const leadingTextOf = (fs: FileSystem.FileSystem, fileName: string) =>
+  Effect.scoped(
+    fs.open(fileName, { flag: 'r' }).pipe(
+      Effect.flatMap((handle) => handle.readAlloc(LEADING_BYTES)),
+      Effect.map(Option.match({ onNone: () => '', onSome: (bytes) => new TextDecoder().decode(bytes) })),
+    ),
+  )
+
+const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
+  fs.stat(fileName).pipe(
+    Effect.option,
+    Effect.map(Option.exists((info) => info.type === 'File')),
+    Effect.flatMap((regularFile) =>
+      Boolean.match(regularFile, {
+        onTrue: () => leadingTextOf(fs, fileName),
+        onFalse: () => Effect.succeed(''),
+      }).pipe(
+        Effect.map((leadingText) => StreamOverwriteCommand.make({ file: fileName, regularFile, leadingText })),
+      )
+    ),
+  )
+
+const admitOverwrite = (fs: FileSystem.FileSystem, fileName: string) =>
+  overwriteCommandOf(fs, fileName).pipe(
+    Effect.flatMap((command) => Effect.fromResult(admitStreamOverwrite(command))),
+    Effect.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag('OverwriteAllowed', () => Effect.void),
+        Match.tag('OverwriteRefused', (refused) => Effect.fail(refused)),
+        Match.exhaustive,
+      )
+    ),
+  )
 const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -174,6 +210,7 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
   yield* Effect.scoped(
     Effect.gen(function*() {
       const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
+        Effect.andThen(admitOverwrite(fs, fileName)),
         Effect.andThen(fs.open(fileName, { flag: 'w' })),
         Effect.tapError(logFileFailure),
         Effect.option,

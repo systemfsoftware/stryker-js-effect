@@ -33,10 +33,10 @@ const JSON_REPORT = 'out/report.json'
 
 const CONFIG_FILE = 'stryker.config.mjs'
 
-const settingsOf = (streamFile: string) =>
+const settingsOf = (streamFile: string, testCommand = 'true') =>
   `{
   testRunner: 'command',
-  commandRunner: { command: 'true' },
+  commandRunner: { command: '${testCommand}' },
   coverageAnalysis: 'off',
   mutate: ['src/**/*.ts'],
   checkers: [],
@@ -50,6 +50,19 @@ const settingsOf = (streamFile: string) =>
 }`
 
 const configNaming = (streamFile: string) => `export default ${settingsOf(streamFile)}\n`
+
+const ABSOLUTE_STREAM_CONFIG = configNaming('__STREAM__').replace(
+  "'__STREAM__'",
+  `decodeURIComponent(new URL('${CONFIGURED_STREAM}', import.meta.url).pathname)`,
+)
+
+const PROJECT_NOTES = 'notes.txt'
+
+const NOTES = 'a project file the run must not overwrite\n'
+
+const CASED_DEFAULT_STREAM = 'Reports/Mutation-Stream.jsonl'
+
+const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `test -f ${CASED_DEFAULT_STREAM}`)}\n`
 
 const FIRST_ANSWER = 'out/first.jsonl'
 
@@ -116,7 +129,7 @@ const invoke = (
           stdin: 'ignore',
           stdout: 'pipe',
           stderr: 'pipe',
-          env: { NO_COLOR: '1' },
+          env: { STRYKER_MODE: 'machine', NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
           extendEnv: true,
         }),
       )
@@ -178,17 +191,30 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
     scenarioOutline(
       'An unchanged project whose config names its stream file as <spelling> re-runs no mutant the second time',
       [
-        { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM, streamAt: CONFIGURED_STREAM },
-        { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}`, streamAt: CONFIGURED_STREAM },
-        { spelling: 'a path with a doubled slash', streamFile: 'out//stream.jsonl', streamAt: CONFIGURED_STREAM },
-        { spelling: 'a path with a trailing slash', streamFile: `${CONFIGURED_STREAM}/`, streamAt: CONFIGURED_STREAM },
-        { spelling: 'a ./-prefixed nested path', streamFile: `./${NESTED_STREAM}`, streamAt: NESTED_STREAM },
+        { spelling: 'a plain relative path', config: configNaming(CONFIGURED_STREAM), streamAt: CONFIGURED_STREAM },
+        { spelling: 'a ./-prefixed path', config: configNaming(`./${CONFIGURED_STREAM}`), streamAt: CONFIGURED_STREAM },
+        {
+          spelling: 'a path with a doubled slash',
+          config: configNaming('out//stream.jsonl'),
+          streamAt: CONFIGURED_STREAM,
+        },
+        {
+          spelling: 'a path with a trailing slash',
+          config: configNaming(`${CONFIGURED_STREAM}/`),
+          streamAt: CONFIGURED_STREAM,
+        },
+        { spelling: 'a ./-prefixed nested path', config: configNaming(`./${NESTED_STREAM}`), streamAt: NESTED_STREAM },
+        {
+          spelling: 'an absolute path inside the project',
+          config: ABSOLUTE_STREAM_CONFIG,
+          streamAt: CONFIGURED_STREAM,
+        },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
           Given('a project with no ignore patterns whose config names its stream file')(
             'project',
-            () => prepareProject(configNaming(row.streamFile)),
+            () => prepareProject(row.config),
           ),
           When('the project is run')('first', (s) => invoke(s.project, RUN)),
           When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
@@ -370,5 +396,63 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             },
           ),
         ),
+    )
+
+    scenario(
+      'A config naming an existing project file leaves that file intact, and the run still streams on stdout',
+      Gherkin.Do.pipe(
+        Given('a project whose config names one of its own files as the stream file')(
+          'project',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareProject(configNaming(PROJECT_NOTES))
+              yield* fs.writeFileString(path.join(root, PROJECT_NOTES), NOTES).pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        When('the named file is read')(
+          'notes',
+          (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, PROJECT_NOTES))),
+        ),
+        Then('the file keeps its content, stdout carries the verdict, and stderr names the file failure once')(
+          (s, expect) => {
+            const events = eventsOf(s.run.stdout)
+            return expect({
+              exitCode: s.run.exitCode,
+              notes: Option.getOrUndefined(s.notes),
+              endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
+              fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+            }).toEqual({ exitCode: 0, notes: NOTES, endsWithVerdict: true, fileFailuresLogged: 1 })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'A project file whose path differs from the default stream path only by case stays a project input',
+      Gherkin.Do.pipe(
+        Given('a project holding Reports/Mutation-Stream.jsonl whose tests need that file')(
+          'project',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareProject(CASED_DEFAULT_CONFIG)
+              yield* fs.makeDirectory(path.join(root, 'Reports'), { recursive: true }).pipe(Effect.orDie)
+              yield* fs.writeFileString(path.join(root, CASED_DEFAULT_STREAM), '{}\n').pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        Then('the tests find the file and the run tests its mutants')((s, expect) =>
+          expect({
+            exitCode: s.run.exitCode,
+            mutantsTested: eventsOf(s.run.stdout).some((event) => S.is(RunEvent.RunMutantTested)(event)),
+          }).toEqual({ exitCode: 0, mutantsTested: true })
+        ),
+      ),
     )
   })
