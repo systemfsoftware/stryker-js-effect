@@ -74,7 +74,7 @@ export type GateScoreBreakDecision = typeof GateScoreBreakDecision.Type
 
 export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelowBreak', {
   breaches: S.NonEmptyArray(BreakBreach),
-  projects: S.Int,
+  projects: S.Natural,
   unscored: S.Array(S.String),
   unrecorded: S.Array(S.String),
 }) {
