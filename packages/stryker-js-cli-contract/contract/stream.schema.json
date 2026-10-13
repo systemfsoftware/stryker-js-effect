@@ -644,7 +644,7 @@
                     "reproduce"
                   ],
                   "additionalProperties": true,
-                  "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected only when per-test coverage was measured. `tests.total` is 0 only for a static mutant no single test covers: it ran against the whole suite, so strengthen a test that loads its module."
+                  "description": "The tests that ran with the mutant active passed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected when coverage analysis was on. `tests.total` is 0 when no single test is attributed to the mutant (a static mutant, or any mutant when coverage was not measured per test): it ran against the whole suite, so strengthen a test that loads its module."
                 },
                 {
                   "type": "object",
@@ -3611,7 +3611,7 @@
                         "reproduce"
                       ],
                       "additionalProperties": true,
-                      "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected only when per-test coverage was measured. `tests.total` is 0 only for a static mutant no single test covers: it ran against the whole suite, so strengthen a test that loads its module."
+                      "description": "The tests that ran with the mutant active passed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected when coverage analysis was on. `tests.total` is 0 when no single test is attributed to the mutant (a static mutant, or any mutant when coverage was not measured per test): it ran against the whole suite, so strengthen a test that loads its module."
                     },
                     {
                       "type": "object",
