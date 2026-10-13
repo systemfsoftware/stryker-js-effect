@@ -1498,7 +1498,7 @@ const SIZE_OPERATORS: Readonly<Partial<Record<SyntaxKind, SizeOperator>>> = {
 interface LengthOperand {
   readonly side: SizeComparison['lengthSide']
   readonly receiver: Expression
-  readonly referenceReceiver: boolean
+  readonly read: Expression
   readonly other: Expression
 }
 
@@ -1507,16 +1507,6 @@ const strictNullChecksOf = (options: Project['compilerOptions']): boolean =>
 
 const binaryWithSpanOf = (node: Node, start: number, end: number): Option.Option<BinaryExpression> =>
   Arr.findFirst(nodesWithSpanOf(node, start, end), isBinaryExpression)
-
-const isReferenceChain = (expression: Expression): boolean =>
-  Boolean.some([
-    isIdentifier(expression),
-    expression.kind === SyntaxKind.ThisKeyword,
-    Option.exists(
-      Option.liftPredicate(expression, isPropertyAccessExpression),
-      (access) => Boolean.every([access.questionDotToken === undefined, isReferenceChain(access.expression)]),
-    ),
-  ])
 
 interface SymbolLike {
   readonly flags: SymbolFlags
@@ -1551,15 +1541,6 @@ const plainReadOf = (checker: TypeChecker, expression: Expression): Effect.Effec
       }),
   })
 
-const referenceReceiverAt = (
-  checker: TypeChecker,
-  operand: LengthOperand,
-): Effect.Effect<boolean> =>
-  Boolean.match(operand.referenceReceiver, {
-    onFalse: () => Effect.succeed(false),
-    onTrue: () => plainReadOf(checker, operand.receiver),
-  })
-
 const lengthReceiverOf = (expression: Expression): Option.Option<Expression> =>
   Option.map(
     Option.filter(Option.liftPredicate(expression, isPropertyAccessExpression), (access) =>
@@ -1573,14 +1554,14 @@ const lengthOperandOf = (binary: BinaryExpression): Option.Option<LengthOperand>
     Option.map(lengthReceiverOf(binary.left), (receiver): LengthOperand => ({
       side: 'left',
       receiver,
-      referenceReceiver: isReferenceChain(binary.left),
+      read: binary.left,
       other: binary.right,
     })),
     () =>
       Option.map(lengthReceiverOf(binary.right), (receiver): LengthOperand => ({
         side: 'right',
         receiver,
-        referenceReceiver: isReferenceChain(binary.right),
+        read: binary.right,
         other: binary.left,
       })),
   )
@@ -1633,7 +1614,7 @@ const sizeComparisonAt = (
       onNone: () => Effect.succeedNone,
       onSome: ({ operator, operand }) =>
         Effect.flatMap(receiverKindsAt(owned.project.checker, operand.receiver), (receiver) =>
-          Effect.map(referenceReceiverAt(owned.project.checker, operand), (referenceReceiver) =>
+          Effect.map(plainReadOf(owned.project.checker, operand.read), (referenceReceiver) =>
             Option.some({
               operator,
               lengthSide: operand.side,
