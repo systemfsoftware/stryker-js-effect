@@ -30,7 +30,7 @@ import {
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import { RequireDryRunCommand } from '../require-dry-run.workflow.js'
 import { runInputsDigestOf } from '../verdict-semantics.js'
-import { incrementalReportTextsOf, priorStatusesOf } from './incremental-reuse.js'
+import { priorStatusesOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 
 export type DryRunTarget = Pick<InstrumentDone, 'project' | 'options'>
@@ -212,10 +212,13 @@ export interface DryRunChoice extends PriorChoice, CurrentRootCoverages {
   readonly runInputsDigest: string
 }
 
-export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, basePath: string) {
+export const dryRunChoiceOf = Effect.fnUntraced(function*(
+  target: DryRunTarget,
+  basePath: string,
+  texts: readonly string[],
+) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const texts = yield* incrementalReportTextsOf({ basePath, options: target.options })
   const coverages = yield* currentRootCoveragesOf(texts, basePath)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, basePath, target.options)
   const currentTestClosureDigest = yield* testClosureDigestOf(

@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
@@ -47,11 +46,16 @@ export class DryRunCandidatesCommand extends S.TaggedClass<DryRunCandidatesComma
   } as const
 }
 
-const recordedPathsOf = (roots: readonly CoverageRoot[]): readonly string[] =>
-  roots.flatMap((root) =>
+interface RecordedCandidate {
+  readonly index: number
+  readonly path: string
+}
+
+const recordedCandidatesOf = (roots: readonly CoverageRoot[]): readonly RecordedCandidate[] =>
+  roots.flatMap((root, index) =>
     Match.value(root).pipe(
-      Match.tag('RecordedRoot', ({ path }) => [path]),
-      Match.tag('UnrecordedRoot', (): readonly string[] => []),
+      Match.tag('RecordedRoot', ({ path }) => [{ index, path }]),
+      Match.tag('UnrecordedRoot', (): readonly RecordedCandidate[] => []),
       Match.exhaustive,
     )
   )
@@ -68,18 +72,9 @@ const noneKept = (roots: readonly CoverageRoot[], recordedPaths: readonly string
 
 const decideCandidates = (command: DryRunCandidatesCommand): DryRunCandidatesDecision => {
   const roots = command.candidates
-  const paths = recordedPathsOf(roots)
-  const indices = roots.flatMap((root, index) =>
-    Match.value(root).pipe(
-      Match.tag('RecordedRoot', ({ path }) =>
-        Boolean.match(path === command.currentRoot, {
-          onTrue: () => [index],
-          onFalse: (): readonly number[] => [],
-        })),
-      Match.tag('UnrecordedRoot', (): readonly number[] => []),
-      Match.exhaustive,
-    )
-  )
+  const recorded = recordedCandidatesOf(roots)
+  const paths = recorded.map(({ path }) => path)
+  const indices = recorded.filter(({ path }) => path === command.currentRoot).map(({ index }) => index)
   return Arr.match(indices, {
     onEmpty: () => noneKept(roots, paths),
     onNonEmpty: (kept): DryRunCandidatesDecision =>
