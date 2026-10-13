@@ -22,9 +22,9 @@ import {
   BenchProjectSummary,
   BenchSummary,
   type MeasuredSideCell,
-  type PhaseRegression,
   PhaseVerdict,
   type RegressedMetric,
+  Regression,
   SideCell,
   SideCounts,
   statisticsOf,
@@ -412,19 +412,16 @@ const nextActionOf = (ref: string): string =>
     onFalse: () => `dispatched on ${ref}: speed evidence only, no revert`,
   })
 
-const regressionOf = (
-  command: SummarizeBenchCommand,
-  projects: ReadonlyArray<BenchProjectSummary>,
-): PhaseRegression | null =>
+const regressionOf = (command: SummarizeBenchCommand, projects: ReadonlyArray<BenchProjectSummary>): Regression =>
   Arr.match(Arr.flatMap(projects, legRegressionOf), {
-    onEmpty: () => null,
-    onNonEmpty: (metrics): PhaseRegression => ({
-      code: 'phase-regressed',
-      sha: command.sha,
-      baseSha: command.baseSha,
-      metrics,
-      nextAction: nextActionOf(command.ref),
-    }),
+    onEmpty: (): Regression => Regression.cases.NoLegRegressed.make({}),
+    onNonEmpty: (metrics): Regression =>
+      Regression.cases.PhaseRegressed.make({
+        sha: command.sha,
+        baseSha: command.baseSha,
+        metrics,
+        nextAction: nextActionOf(command.ref),
+      }),
   })
 
 const summaryOf = (command: SummarizeBenchCommand): BenchSummary => {

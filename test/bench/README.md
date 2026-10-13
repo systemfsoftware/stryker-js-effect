@@ -28,12 +28,14 @@ line. A job exits non-zero only when the bench cannot produce a comparison: a
 run errors or its stream cannot be read (`failed`), or setup or the
 orchestration fails (`aborted`, with `side-setup-failed` naming the side and
 step). A regression is reported, not acted on, and only a leg's `total` decides
-one: when it separates past max(3% of side A's median, 10 ms), the verdict line,
-the step summary and the JSON report carry `phase-regressed`, the commit and its
-base (side A), that `total` and then each other regressed phase of the leg with its
-delta, and root's next action. A phase that regressed under an unchanged `total`
-is no regression: the verdict line is a `Bench phase-only slowdown` notice that
-says no leg total crossed the regression threshold and names the slower cells.
+one: when it separates past max(3% of side A's median, 10 ms), the verdict line
+and the step summary carry `phase-regressed`, and the JSON report's `regression`
+is `PhaseRegressed`. All three name the commit and its base (side A), that
+`total` and then each other regressed phase of the leg with its delta, and root's
+next action. Otherwise the report's `regression` is `NoLegRegressed`. A phase
+that regressed under an unchanged `total` is no regression: the verdict line is
+a `Bench phase-only slowdown` notice that says no leg total crossed the
+regression threshold and names the slower cells.
 
 Both upload steps run on `always()`, so an aborted or failed leg still uploads
 its report and run streams. A job GitHub kills at 60 minutes may leave no

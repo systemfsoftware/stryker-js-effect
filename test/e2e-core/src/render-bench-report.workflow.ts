@@ -20,7 +20,7 @@ import { type BenchRunInvalid } from './bench-run.schema.js'
 import {
   type BenchPhaseRow,
   type BenchProjectSummary,
-  type PhaseRegression,
+  type PhaseRegressed,
   type RegressedMetric,
   type SampleStatistics,
   type SideCell,
@@ -129,14 +129,16 @@ const sentenceOf = (
       }`,
   })
 
+const REGRESSION_TITLE = 'phase-regressed'
+
 const regressionAnnotation = (
   ref: string,
-  regression: PhaseRegression,
+  regression: PhaseRegressed,
   improved: ReadonlyArray<string>,
   projects: ReadonlyArray<BenchProjectSummary>,
 ): Annotation =>
   error(
-    regression.code,
+    REGRESSION_TITLE,
     `Bench ${regression.sha} against base ${regression.baseSha} on ${ref}: ${
       [...Arr.map(regression.metrics, (metric) => `regressed ${metricText(metric)}`), ...improved].join('; ')
     } ${RULE}.${unverifiedText(projects)} Next: ${regression.nextAction}`,
@@ -145,9 +147,9 @@ const regressionAnnotation = (
 const summarizedAnnotation = (ref: string, summarized: SummarizedOutcome): Annotation => {
   const changes = phaseChangesOf(summarized.projects)
   const improved = Arr.map(itemsOf(changes, 'improved'), (text) => `improved ${text}`)
-  return Option.match(Option.fromNullishOr(summarized.regression), {
-    onSome: (regression) => regressionAnnotation(ref, regression, improved, summarized.projects),
-    onNone: () => {
+  return Match.valueTags(summarized.regression, {
+    PhaseRegressed: (regression) => regressionAnnotation(ref, regression, improved, summarized.projects),
+    NoLegRegressed: () => {
       const phaseOnly = Arr.map(itemsOf(changes, 'slower'), (text) => `slower ${text} (phase only, not a regression)`)
       const title = Boolean.match(phaseOnly.length > 0, {
         onTrue: () => 'Bench phase-only slowdown',
@@ -286,9 +288,9 @@ const headOf = (report: BenchReport): ReadonlyArray<string> => [
 const abortedBlock = (code: BenchAbortCode, reason: string, nextAction: string): string =>
   [`### Aborted: ${code}`, reason, `**Next action:** ${nextAction}`].join('\n\n')
 
-const regressionBlock = (regression: PhaseRegression): string =>
+const regressionBlock = (regression: PhaseRegressed): string =>
   [
-    `### Regression: ${regression.code}`,
+    `### Regression: ${REGRESSION_TITLE}`,
     `Commit \`${regression.sha}\` against its base \`${regression.baseSha}\`:`,
     Arr.map(regression.metrics, (metric) => `- ${metric.corpus}/${metricText(metric)}`).join('\n'),
     `**Next action:** ${regression.nextAction}`,
@@ -304,7 +306,10 @@ const markdownOf = (report: BenchReport): string =>
     summarized: (summarized) =>
       [
         ...headOf(report),
-        ...Option.toArray(Option.map(Option.fromNullishOr(summarized.regression), regressionBlock)),
+        ...Match.valueTags(summarized.regression, {
+          PhaseRegressed: (regression) => [regressionBlock(regression)],
+          NoLegRegressed: (): ReadonlyArray<string> => [],
+        }),
         ...Arr.map(summarized.projects, projectBlock),
         SIGNAL_NOTE,
         detailsBlock(report),

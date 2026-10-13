@@ -5,7 +5,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchRunInvalid, BenchRunKey, WorkloadDigest } from './bench-run.schema.js'
-import { BenchProjectSummary, PhaseRegression } from './bench-summary.schema.js'
+import { BenchProjectSummary, Regression } from './bench-summary.schema.js'
 
 export const SetupStep = S.Struct({ name: S.String, ms: Report.NonNegativeFinite })
 export type SetupStep = typeof SetupStep.Type
@@ -63,7 +63,7 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
 }
 
 export const BenchReportOutcome = S.TaggedUnion({
-  summarized: { projects: S.Array(BenchProjectSummary), regression: S.NullOr(PhaseRegression) },
+  summarized: { projects: S.Array(BenchProjectSummary), regression: Regression },
   failed: { invalid: S.Array(BenchRunInvalid) },
   aborted: { code: BenchAbortCode, reason: S.String, nextAction: S.NonEmptyString },
 })

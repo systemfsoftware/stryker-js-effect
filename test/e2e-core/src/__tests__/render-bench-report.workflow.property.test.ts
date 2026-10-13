@@ -13,9 +13,12 @@ import {
   LegTime,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
-import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
+import { type BenchSummary, PhaseVerdict, Regression } from '../bench-summary.schema.js'
 import { renderBenchReport, RenderBenchReportCommand } from '../render-bench-report.workflow.js'
 import { summarizeBench, SummarizeBenchCommand } from '../summarize-bench.workflow.js'
+
+const regressedMetricCountOf = (summary: BenchSummary): number =>
+  S.is(Regression.cases.PhaseRegressed)(summary.regression) ? summary.regression.metrics.length : 0
 
 const REPORTING_MEASURED: RunEvent.ReportingDuration = { _tag: 'measured', ms: 0 }
 const REPORTING_NOT_RECORDED: RunEvent.ReportingDuration = { _tag: 'not-recorded' }
@@ -287,7 +290,9 @@ describe('renderBenchReport', () => {
       const runs = runsOf(positives(rawA), positives(rawB))
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
-      const level = summary.regression !== null ? '::error title=phase-regressed::' : '::notice title=Bench '
+      const level = S.is(Regression.cases.PhaseRegressed)(summary.regression)
+        ? '::error title=phase-regressed::'
+        : '::notice title=Bench '
       return line.startsWith(level) && line.includes('\n') === false
     },
   )
@@ -303,7 +308,7 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
       return countOf(line, 'improved') === rowCountOf(summary, 'improved') &&
-        countOf(line, 'regressed') === (summary.regression?.metrics.length ?? 0)
+        countOf(line, 'regressed') === regressedMetricCountOf(summary)
     },
   )
 

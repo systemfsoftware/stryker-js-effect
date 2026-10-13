@@ -9,6 +9,7 @@ import {
   type BenchSummary,
   type MeasuredSideCell,
   PhaseVerdict,
+  Regression,
   SideCell,
   statisticsOf,
   Workload,
@@ -17,6 +18,9 @@ import { BenchRunsInvalid, summarizeBench, SummarizeBenchCommand } from '../summ
 
 const NOT_RECORDED: RunEvent.CheckDuration = { _tag: 'not-recorded' }
 const NOT_RUN: RunEvent.CheckDuration = { _tag: 'not-run' }
+
+const isPhaseRegressed = S.is(Regression.cases.PhaseRegressed)
+const isNoLegRegressed = (summary: BenchSummary): boolean => S.is(Regression.cases.NoLegRegressed)(summary.regression)
 const REPORTING_MEASURED: RunEvent.ReportingDuration = { _tag: 'measured', ms: 0 }
 const REPORTING_NOT_RECORDED: RunEvent.ReportingDuration = { _tag: 'not-recorded' }
 
@@ -431,7 +435,7 @@ describe('summarizeBench', () => {
       const runs = slowedOnB(rawA, rawExtra)
       const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, baseSha, ref: MAIN_REF, runs })))
       const regression = summary.regression
-      return regression !== null &&
+      return isPhaseRegressed(regression) &&
         regression.sha === sha &&
         regression.baseSha === baseSha &&
         regression.metrics.map((metric) => `${metric.corpus}/${metric.entry}/${metric.phase}`).join(',') ===
@@ -453,7 +457,8 @@ describe('summarizeBench', () => {
         runs: slowedOnB(rawA, rawExtra),
       })
       const regression = Result.getOrThrow(subject(command)).regression
-      return regression !== null && regression.nextAction === `dispatched on ${ref}: speed evidence only, no revert`
+      return isPhaseRegressed(regression) &&
+        regression.nextAction === `dispatched on ${ref}: speed evidence only, no revert`
     },
   )
 
@@ -474,7 +479,7 @@ describe('summarizeBench', () => {
       const summary = summaryOf(subject, runs)
       return isRegressed(rowOf(summary, 'check').verdict) &&
         isNoSignal(rowOf(summary, 'total').verdict) &&
-        summary.regression === null
+        isNoLegRegressed(summary)
     },
   )
 
@@ -487,13 +492,13 @@ describe('summarizeBench', () => {
       const summary = summaryOf(subject, runs)
       return isNoSignal(rowOf(summary, 'mutation-test').verdict) &&
         isNoSignal(rowOf(summary, 'total').verdict) &&
-        summary.regression === null
+        isNoLegRegressed(summary)
     },
   )
 
   it.prop(
     '∀a_IdenticalSides_≡NoRegression',
     { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int])], subject: summarizeBench },
-    (subject, [rawA]) => summaryOf(subject, runsOf(positives(rawA), positives(rawA))).regression === null,
+    (subject, [rawA]) => isNoLegRegressed(summaryOf(subject, runsOf(positives(rawA), positives(rawA)))),
   )
 })

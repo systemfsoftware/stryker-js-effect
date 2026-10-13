@@ -104,21 +104,24 @@ export const RegressedMetric = S.Struct({
 })
 export type RegressedMetric = typeof RegressedMetric.Type
 
-export const PhaseRegression = S.Struct({
-  code: S.Literal('phase-regressed'),
-  sha: S.String,
-  baseSha: S.String,
-  metrics: S.NonEmptyArray(RegressedMetric),
-  nextAction: S.NonEmptyString,
+export const Regression = S.TaggedUnion({
+  PhaseRegressed: {
+    sha: S.String,
+    baseSha: S.String,
+    metrics: S.NonEmptyArray(RegressedMetric),
+    nextAction: S.NonEmptyString,
+  },
+  NoLegRegressed: {},
 })
-export type PhaseRegression = typeof PhaseRegression.Type
+export type Regression = typeof Regression.Type
+export type PhaseRegressed = typeof Regression.cases.PhaseRegressed.Type
 
 const BenchSummaryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchSummary')
 type BenchSummaryTypeId = typeof BenchSummaryTypeId
 
 export class BenchSummary extends S.TaggedClass<BenchSummary>()('BenchSummary', {
   projects: S.Array(BenchProjectSummary),
-  regression: S.NullOr(PhaseRegression),
+  regression: Regression,
 }) {
   readonly [BenchSummaryTypeId] = BenchSummaryTypeId
 }
@@ -128,17 +131,16 @@ const METRIC = { corpus: 'repo', entry: 'entry', phase: 'total', deltaMs: 12, de
 const acceptsMetric = (metric: typeof RegressedMetric.Encoded): boolean =>
   Result.isSuccess(S.decodeResult(RegressedMetric)(metric))
 
-const acceptsRegression = (fields: Partial<typeof PhaseRegression.Encoded>): boolean =>
-  Result.isSuccess(
-    S.decodeResult(PhaseRegression)({
-      code: 'phase-regressed',
-      sha: 'head',
-      baseSha: 'base',
-      metrics: [METRIC],
-      nextAction: 'next',
-      ...fields,
-    }),
-  )
+const PHASE_REGRESSED = {
+  _tag: 'PhaseRegressed',
+  sha: 'head',
+  baseSha: 'base',
+  metrics: [METRIC],
+  nextAction: 'next',
+} as const
+
+const acceptsRegression = (fields: Partial<typeof Regression.cases.PhaseRegressed.Encoded>): boolean =>
+  Result.isSuccess(S.decodeResult(Regression)({ ...PHASE_REGRESSED, ...fields }))
 
 const textFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
   acceptsMetric({ ...METRIC, entry: value }),
@@ -150,27 +152,11 @@ const deltaFieldVerdicts = (value: number): ReadonlyArray<boolean> => [
   acceptsMetric({ ...METRIC, deltaShareOfA: value }),
 ]
 
-const acceptsRegressionCode = (code: string): boolean =>
-  Result.isSuccess(
-    S.decodeUnknownResult(PhaseRegression)({
-      code,
-      sha: 'head',
-      baseSha: 'base',
-      metrics: [METRIC],
-      nextAction: 'next',
-    }),
-  )
+const acceptsRegressionTag = (tag: string): boolean =>
+  Result.isSuccess(S.decodeUnknownResult(Regression)({ ...PHASE_REGRESSED, _tag: tag }))
 
 const acceptsMetricCount = (metrics: ReadonlyArray<RegressedMetric>): boolean =>
-  Result.isSuccess(
-    S.decodeUnknownResult(PhaseRegression)({
-      code: 'phase-regressed',
-      sha: 'head',
-      baseSha: 'base',
-      metrics,
-      nextAction: 'next',
-    }),
-  )
+  Result.isSuccess(S.decodeUnknownResult(Regression)({ ...PHASE_REGRESSED, metrics }))
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
@@ -195,13 +181,15 @@ if (import.meta.vitest !== void 0) {
       ),
   )
 
+  const tags = ['PhaseRegressed', 'NoLegRegressed']
+
   it.prop(
-    '∀s_RegressionCodeRefusal_≡OnlyPhaseRegressed',
-    { of: [S.String], subject: acceptsRegressionCode },
+    '∀s_RegressionTagRefusal_≡OnlyPhaseRegressedOrNoLegRegressed',
+    { of: [S.String], subject: acceptsRegressionTag },
     (subject, [drawn]) =>
       Arr.every(
-        Arr.append(['', 'phase-regressed', 'phase-regressed ', 'regressed'], drawn),
-        (code) => subject(code) === (code === 'phase-regressed'),
+        Arr.append(['', 'phase-regressed', 'PhaseRegressed ', 'Regressed', ...tags], drawn),
+        (tag) => subject(tag) === tags.includes(tag),
       ),
   )
 
