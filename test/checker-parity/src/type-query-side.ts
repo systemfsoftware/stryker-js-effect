@@ -369,6 +369,12 @@ if (import.meta.vitest !== void 0) {
 
   const SOURCE = `export const answer = 'a'\n`
   const SOURCE_FILE = 'subject.ts'
+  const SECOND_SOURCE = `export const other = 'b'\n`
+  const SECOND_FILE = 'other.ts'
+  const CONTENTS: ReadonlyArray<FileContent> = [
+    { name: SOURCE_FILE, content: SOURCE },
+    { name: SECOND_FILE, content: SECOND_SOURCE },
+  ]
   const NOT_SERVED = 1
   const BEHAVIOURS = ['answers', 'refuses', 'does-not-serve'] as const
 
@@ -377,7 +383,7 @@ if (import.meta.vitest !== void 0) {
   const drafts: Arr.NonEmptyReadonlyArray<QueryFileDraft> = await Effect.runPromise(
     Effect.gen(function*() {
       const instrumented = yield* Instrument.instrument(
-        [{ name: SOURCE_FILE, content: SOURCE, mutate: true }],
+        CONTENTS.map((file) => ({ ...file, mutate: true })),
         {
           excludedMutations: [],
           ignorers: [],
@@ -392,14 +398,21 @@ if (import.meta.vitest !== void 0) {
         replacement: mutant.replacement,
         location: mutant.location,
       }))
-      return yield* Arr.match(fileDraftsOf([{ name: SOURCE_FILE, content: SOURCE }], wires), {
-        onEmpty: () => Effect.die(new Error(`${SOURCE_FILE} produced no drafts`)),
-        onNonEmpty: (nonEmpty) => Effect.succeed(nonEmpty),
-      })
+      const byFile = HashMap.fromIterable(
+        fileDraftsOf(CONTENTS, wires).map((draft) => [draft.fileName, draft] as const),
+      )
+      return yield* Arr.match(
+        Arr.getSomes(CONTENTS.map((file) => HashMap.get(byFile, file.name))),
+        {
+          onEmpty: () => Effect.die(new Error('the fixture produced no drafts')),
+          onNonEmpty: (nonEmpty) => Effect.succeed(nonEmpty),
+        },
+      )
     }).pipe(Effect.orDie),
   )
 
-  const candidates = drafts.reduce((total, draft) => total + candidateCountOf(draft), 0)
+  const mutantsPerFile = drafts.map(candidateCountOf)
+  const candidates = mutantsPerFile.reduce((total, count) => total + count, 0)
   const files = drafts.length
 
   const inputOf = (deadline: LegDeadline): TypeQueryInput => ({
@@ -499,17 +512,32 @@ if (import.meta.vitest !== void 0) {
       recorded.deferred.length === 0,
     ])
 
-  const deferredEveryFileAs = (recorded: Recorded, reason: Deferred['reason']): boolean =>
+  const refusedEveryFileAs = (recorded: Recorded, reason: string): boolean =>
     Boolean.every([
-      recorded.deferred.length === files,
+      recorded.refusals.length === files,
       recorded.answers.length === 0,
-      recorded.deferred.every((entry) => entry === reason),
+      recorded.deferred.length === 0,
+      recorded.refusals.every((entry, index) => entry.reason === reason && entry.mutantCount === mutantsPerFile[index]),
     ])
 
+  const deferredAsPerFile = (recorded: Recorded, reasons: ReadonlyArray<Deferred['reason']>): boolean =>
+    Boolean.every([
+      recorded.deferred.length === reasons.length,
+      recorded.answers.length === 0,
+      recorded.refusals.length === 0,
+      recorded.deferred.every((entry, index) => entry === reasons[index]),
+    ])
+
+  const deferredEveryFileAs = (recorded: Recorded, reason: Deferred['reason']): boolean =>
+    deferredAsPerFile(recorded, drafts.map(() => reason))
+
   it.effect.prop(
-    '∀b_LegUnderABudget_≡DefersASpentBudgetAndAQueryThatCannotFinish',
+    '∀b_LegUnderABudget_≡AnswersEveryFileDefersItOrRoutesTheRefusal',
     {
-      of: [S.Int.check(S.isBetween({ minimum: 0, maximum: 400 })), S.Literals(['answers', 'hangs'])],
+      of: [
+        S.Int.check(S.isBetween({ minimum: 0, maximum: 400 })),
+        S.Literals(['answers', 'refuses', 'does-not-serve', 'hangs']),
+      ],
       subject: projectLines,
     },
     (subject, [budgetMs, behaviour]) =>
@@ -527,10 +555,17 @@ if (import.meta.vitest !== void 0) {
             return Boolean.match(budgetMs === 0, {
               onTrue: () => deferredEveryFileAs(recorded, 'deadline-passed'),
               onFalse: () =>
-                Boolean.match(behaviour === 'hangs', {
-                  onTrue: () => deferredEveryFileAs(recorded, 'interrupted-at-deadline'),
-                  onFalse: () => answersRecorded(recorded, 'the-budget-answer'),
-                }),
+                Match.value(behaviour).pipe(
+                  Match.when('answers', () => answersRecorded(recorded, 'the-budget-answer')),
+                  Match.when('hangs', () =>
+                    deferredAsPerFile(
+                      recorded,
+                      drafts.map((_, index) => index === 0 ? 'interrupted-at-deadline' : 'deadline-passed'),
+                    )),
+                  Match.when('refuses', () => refusedEveryFileAs(recorded, 'project-open-failed')),
+                  Match.when('does-not-serve', () => refusedEveryFileAs(recorded, 'unsupported-version')),
+                  Match.exhaustive,
+                ),
             })
           },
         })

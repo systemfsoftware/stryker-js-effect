@@ -10,8 +10,10 @@
  */
 import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Hash from 'effect/Hash'
+import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
@@ -140,6 +142,19 @@ export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()(
   mutantCount: NonNegativeInt,
 }) {}
 
+/**
+ * Legacy, decode-only: an earlier driver wrote one `TypeQueryServers` line per branch project recording the
+ * peak live tsgo query servers it held. Queries now run inside the branch worker, so the driver can no
+ * longer observe them and nothing produces this line; it stays in {@link ParityLine} so a shard artifact
+ * written by that driver still decodes (and the CI cost fold skips it), and no consumer reads it.
+ */
+export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  peakLiveServers: NonNegativeInt,
+}) {}
+
 export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
   schemaVersion: SCHEMA_VERSION,
   side: S.NullOr(Side),
@@ -174,6 +189,7 @@ export const ParityLine = S.Union([
   TelemetryMissing,
   TypeAnswerLine,
   TypeQueryFileRefused,
+  TypeQueryServers,
   Deferred,
   UnitOverBudget,
 ])
@@ -343,5 +359,29 @@ if (import.meta.vitest !== void 0) {
         Arr.every(ordered, (value, index) => value === reversed[index]),
       ], (holds) => holds)
     },
+  )
+
+  const staleServersLine = (project: string, peakLiveServers: number) => ({
+    _tag: 'TypeQueryServers' as const,
+    schemaVersion: 1 as const,
+    side: 'branch' as const,
+    project,
+    peakLiveServers,
+  })
+
+  const decodeStaleServersLine = (project: string, peakLiveServers: number): Option.Option<ParityLine> =>
+    S.decodeOption(ParityLine)(staleServersLine(project, peakLiveServers))
+
+  const carriesStaleServers = (line: TypeQueryServers, project: string, peakLiveServers: number): boolean =>
+    Boolean.every([line.project === project, line.peakLiveServers === peakLiveServers])
+
+  it.prop(
+    '∀s_LegacyTypeQueryServersLine_≡DecodesFromAStaleShard',
+    { of: [S.String, NonNegativeInt], subject: decodeStaleServersLine },
+    (subject, [project, peakLiveServers]) =>
+      Option.match(subject(project, peakLiveServers), {
+        onNone: () => false,
+        onSome: (line) => S.is(TypeQueryServers)(line) && carriesStaleServers(line, project, peakLiveServers),
+      }),
   )
 }

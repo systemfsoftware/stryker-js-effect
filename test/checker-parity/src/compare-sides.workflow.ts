@@ -872,16 +872,21 @@ const wrongNotAssignableViolations = (lines: ReadonlyArray<ParityLine>): Readonl
   )
 }
 
-const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> =>
-  when(
-    typeAnswerLinesIn(lines).filter((line) => isNotAssignable(line.answer)).length === 0,
+const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> => {
+  const answers = typeAnswerLinesIn(lines)
+  return when(
+    Boolean.every([
+      answers.filter((line) => isNotAssignable(line.answer)).length === 0,
+      answers.length > 0,
+    ]),
     ZeroNotAssignable.make({
       schemaVersion: 1,
       code: 'zero-not-assignable',
       nextAction:
-        'The run answered no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard.',
+        'The run answered mutants but no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard. A shard that produced no answers at all suppresses this gate — a branch worker that failed to boot (ProjectBootFailed), a deferred leg (Deferred) or a refused file (TypeQueryFileRefused) names why.',
     }),
   )
+}
 
 const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
