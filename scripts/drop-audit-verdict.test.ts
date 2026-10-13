@@ -1,14 +1,14 @@
-import { firstFailedStep, JOB_ORDER, matrixReasonOf, type Run, type Steps, verdictOf } from './drop-audit-verdict.ts'
-
-const assertEqual = (actual: unknown, expected: unknown): void => {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
-  }
-}
-
-const assert = (condition: boolean, label: string): void => {
-  if (!condition) throw new Error(label)
-}
+import { assert, assertEqual } from './assert.ts'
+import {
+  type DropAuditReason,
+  firstFailedStep,
+  JOB_ORDER,
+  matrixReasonOf,
+  type Run,
+  type Steps,
+  stepsOf,
+  verdictOf,
+} from './drop-audit-verdict.ts'
 
 const run: Run = {
   runId: '123',
@@ -103,24 +103,48 @@ Deno.test('a failed audit reproduces from the workspace root with this run matri
   )
 })
 
-Deno.test('every failure code gives a reproduce command or a re-run', () => {
-  const failures: ReadonlyArray<Steps> = [
-    withStep('install', 'failure'),
-    withStep('matrix-check', 'failure', { reason: 'MATRIX_MISSING' }),
-    withStep('matrix-check', 'failure', { reason: 'MATRIX_NOT_DOWNLOADED' }),
-    withStep('matrix-check', 'failure', { reason: 'MATRIX_INCOMPLETE', absent: 'packages/b' }),
-    withStep('build', 'failure'),
-    withStep('audit', 'failure', { status: '2' }),
-    withStep('upload', 'failure'),
-    withStep('checkout', 'failure'),
-    withStep('audit', 'cancelled'),
+Deno.test('each failed step maps to its own code, with a reproduce command or a re-run', () => {
+  const failures: ReadonlyArray<readonly [Steps, DropAuditReason]> = [
+    [withStep('install', 'failure'), 'DROP_AUDIT_INSTALL_FAILED'],
+    [withStep('matrix-check', 'failure', { reason: 'MATRIX_MISSING' }), 'MATRIX_MISSING'],
+    [withStep('matrix-check', 'failure', { reason: 'MATRIX_NOT_DOWNLOADED' }), 'MATRIX_NOT_DOWNLOADED'],
+    [withStep('matrix-check', 'failure', { reason: 'MATRIX_INCOMPLETE', absent: 'packages/b' }), 'MATRIX_INCOMPLETE'],
+    [withStep('build', 'failure'), 'DROP_AUDIT_BUILD_FAILED'],
+    [withStep('audit', 'failure', { status: '1' }), 'DROP_AUDIT_FAILED'],
+    [withStep('audit', 'failure', { status: '2' }), 'DROP_AUDIT_REFUSED'],
+    [withStep('upload', 'failure'), 'DROP_AUDIT_UPLOAD_FAILED'],
+    [withStep('checkout', 'failure'), 'DROP_AUDIT_UNCLASSIFIED'],
+    [withStep('audit', 'cancelled'), 'DROP_AUDIT_TIMED_OUT'],
   ]
-  for (const steps of failures) {
+  for (const [steps, reason] of failures) {
     const verdict = verdictOf(steps, run)
+    assertEqual(verdict.reason, reason)
     assert(
       verdict.next.includes('Reproduce with: ') || verdict.next.includes('gh run rerun 123') ||
         verdict.next.includes('gh workflow run mutation.yml'),
       `${verdict.reason} gives a command: ${verdict.next}`,
     )
+  }
+})
+
+Deno.test("GitHub's toJSON(steps) payload decodes to the verdict its failed step names", () => {
+  const payload = JSON.stringify({
+    ...Object.fromEntries(
+      [...JOB_ORDER, 'download'].map((id) => [id, { outputs: {}, outcome: 'success', conclusion: 'success' }]),
+    ),
+    audit: { outputs: { status: '2' }, outcome: 'failure', conclusion: 'failure' },
+  })
+  assertEqual(verdictOf(stepsOf(payload), run).reason, 'DROP_AUDIT_REFUSED')
+})
+
+Deno.test('a STEPS value that is not a JSON object is refused, never read as no failure', () => {
+  for (const json of ['null', '"steps"', '3']) {
+    let threw = false
+    try {
+      stepsOf(json)
+    } catch {
+      threw = true
+    }
+    assert(threw, `stepsOf(${json}) throws`)
   }
 })

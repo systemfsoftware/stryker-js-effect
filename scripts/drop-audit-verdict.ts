@@ -20,12 +20,23 @@ export interface Run {
   readonly killMatrix: string
 }
 
+export type MatrixReason = 'MATRIX_MISSING' | 'MATRIX_NOT_DOWNLOADED' | 'MATRIX_INCOMPLETE'
+
+export type DropAuditReason =
+  | MatrixReason
+  | 'DROP_AUDIT_OK'
+  | 'DROP_AUDIT_INSTALL_FAILED'
+  | 'DROP_AUDIT_BUILD_FAILED'
+  | 'DROP_AUDIT_FAILED'
+  | 'DROP_AUDIT_REFUSED'
+  | 'DROP_AUDIT_UPLOAD_FAILED'
+  | 'DROP_AUDIT_TIMED_OUT'
+  | 'DROP_AUDIT_UNCLASSIFIED'
+
 export interface Verdict {
-  readonly reason: string
+  readonly reason: DropAuditReason
   readonly next: string
 }
-
-export type MatrixReason = 'MATRIX_MISSING' | 'MATRIX_NOT_DOWNLOADED' | 'MATRIX_INCOMPLETE'
 
 export const JOB_ORDER: ReadonlyArray<string> = [
   'start',
