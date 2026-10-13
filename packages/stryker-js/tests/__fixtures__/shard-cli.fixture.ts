@@ -4,16 +4,19 @@ import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
-export const CONFIG = `export default {
+export const configOf = (breakThreshold: number): string =>
+  `export default {
   testRunner: 'command',
   commandRunner: { command: 'true' },
   mutate: ['src/**/*.js'],
   coverageAnalysis: 'off',
   concurrency: 1,
   reporters: [],
-  thresholds: { high: 80, low: 60, break: 100 },
+  thresholds: { high: 80, low: 60, break: ${breakThreshold} },
 }
 `
+
+export const CONFIG = configOf(100)
 
 export const SOURCE = 'export const add = (a, b) => a + b\nexport const sub = (a, b) => a - b\n'
 

@@ -1,17 +1,12 @@
-import { MicroVM } from '@systemfsoftware/effect-microsandbox'
+import type { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import { Boolean, Effect, Layer, Match } from 'effect'
 
-import { GuestJobs, type GuestJobsShape } from './guest-job.service.js'
+import { GuestJobs, type GuestJobsShape, type GuestMount } from './guest-job.service.js'
 import { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
-import { seamSpan, SpanNames } from './harness-telemetry.service.js'
+import { seamSpan, SpanNames } from './harness-telemetry.js'
+import { guestJobOf } from './microsandbox-job.js'
 
 const stderrTailOf = (stderr: Uint8Array) => new TextDecoder().decode(stderr).slice(-GuestJobs.STDERR_TAIL_CHARS)
-
-const job = (cmd: readonly [string, ...Array<string>], mounts: ReadonlyArray<MicroVM.Mount>) =>
-  mounts.reduce(
-    (resource, mount) => resource.withMount(mount),
-    MicroVM.job(GuestJobs.BASE_IMAGE, cmd).withMemoryLimit(GuestJobs.GUEST_MEMORY_MIB),
-  )
 
 const runGuestJob = (step: string, job: MicroVM.JobBlueprint) =>
   Effect.scoped(job.run).pipe(
@@ -33,9 +28,13 @@ const requireExited = (step: string, completion: MicroVM.JobCompletion) =>
     Match.exhaustive,
   )
 
-const requireCleanExit = (step: string, job: MicroVM.JobBlueprint) =>
+const requireCleanExit = (
+  step: string,
+  cmd: readonly [string, ...Array<string>],
+  mounts: ReadonlyArray<GuestMount>,
+) =>
   Effect.flatMap(
-    runGuestJob(step, job),
+    runGuestJob(step, guestJobOf(cmd, mounts)),
     (completion) =>
       Effect.flatMap(requireExited(step, completion), (code) =>
         Boolean.match(code === 0, {
@@ -45,6 +44,6 @@ const requireCleanExit = (step: string, job: MicroVM.JobBlueprint) =>
         })),
   )
 
-export const make: Effect.Effect<GuestJobsShape> = Effect.sync(() => ({ job, requireCleanExit }))
+export const make: Effect.Effect<GuestJobsShape> = Effect.sync(() => ({ requireCleanExit }))
 
 export const layer: Layer.Layer<GuestJobs> = Layer.effect(GuestJobs, make)

@@ -27,21 +27,11 @@ import { diffScopeDecisionOf } from './git-diff.js'
 import { type DiffScopeDecision, type GitDiffError, type StageInput } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
+import { ALWAYS_IGNORE } from './project-ignores.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
 import { strykerOutputFilesOf } from './stryker-outputs.js'
 import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from './verdict-semantics.js'
-
-const ALWAYS_IGNORE = Object.freeze([
-  'node_modules',
-  '.git',
-  '*.tsbuildinfo',
-  '/stryker.log',
-  '.next',
-  '.nuxt',
-  '.svelte-kit',
-  '.turbo',
-])
 
 const CRAWL_CONCURRENCY = 256
 

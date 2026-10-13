@@ -7,7 +7,14 @@ import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type * as Scope from 'effect/Scope'
 import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
-import { CONFIG, decodePlan, encodePlan, singleShardPlanOf, SOURCE } from './__fixtures__/shard-cli.fixture.js'
+import {
+  CONFIG,
+  configOf,
+  decodePlan,
+  encodePlan,
+  singleShardPlanOf,
+  SOURCE,
+} from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -104,6 +111,39 @@ const bothProjectsOutputs = (
     return { first, second }
   }).pipe(Effect.orDie)
 
+const writeConfig = (
+  root: string,
+  project: string,
+  breakThreshold: number,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fs.writeFileString(path.join(root, project, 'stryker.config.mjs'), configOf(breakThreshold))
+  }).pipe(Effect.orDie)
+
+interface GateOutcome {
+  readonly shardExitCode: number
+  readonly gate: CliOutcome
+}
+
+const runMergeAndGate = (
+  root: string,
+): Effect.Effect<GateOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const shard = yield* runSingleShard(root, 'machine')
+    const merged = yield* runCli({
+      root,
+      args: ['merge', '--plan', 'plan-single.json', 'reports/shard-1', '--out', 'reports/mutation'],
+      mode: 'machine',
+    })
+    yield* Effect.when(
+      Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.stdout}${merged.stderr}`)),
+      Effect.succeed(merged.exitCode !== 0),
+    )
+    return { shardExitCode: shard.exitCode, gate: yield* runCli({ root, args: ['gate'], mode: 'human' }) }
+  })
+
 Feature('Running one shard of a shard plan', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a shard project by project in a real Node process')
@@ -192,6 +232,40 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
             namesTheCode: true,
             namesTheNext: true,
             namesTheClass: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      "A merged report judges each project against its own break, so the second project's break fails the gate",
+      Gherkin.Do.pipe(
+        Given('a fixture whose two projects are planned into one shard')('fixture', () => prepareFixture()),
+        Given('every mutant survives, the first project breaks at 0 and the second at 50')(
+          'configured',
+          (s) =>
+            Effect.gen(function*() {
+              yield* writeConfig(s.fixture.root, 'first', 0)
+              yield* writeConfig(s.fixture.root, 'second', 50)
+            }),
+        ),
+        When('the shard runs, merges and stryker gates the merged report')(
+          'outcome',
+          (s) => runMergeAndGate(s.fixture.root),
+        ),
+        Then('the gate fails naming only the second project below its break')((s, expect) =>
+          expect({
+            shardExitCode: s.outcome.shardExitCode,
+            gateExitCode: s.outcome.gate.exitCode,
+            namesSecond: s.outcome.gate.stderr.includes('score-below-break: second scored 0.00 < break 50'),
+            namesFirst: s.outcome.gate.stderr.includes('score-below-break: first'),
+            countsProjects: s.outcome.gate.stderr.includes('1 of 2 project(s) scored below thresholds.break'),
+          }).toStrictEqual({
+            shardExitCode: 0,
+            gateExitCode: 1,
+            namesSecond: true,
+            namesFirst: false,
+            countsProjects: true,
           })
         ),
       ),

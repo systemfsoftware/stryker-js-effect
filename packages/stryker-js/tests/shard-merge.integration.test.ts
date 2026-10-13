@@ -22,15 +22,22 @@ const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.u
 
 const CONSUMER_PACKAGE = '{ "name": "shard-merge-consumer", "type": "module", "private": true }\n'
 
-const CONFIG = `export default {
+const configOf = (thresholds: string): string =>
+  `export default {
   testRunner: 'command',
   commandRunner: { command: 'true' },
   mutate: ['src/**/*.js'],
   coverageAnalysis: 'off',
   concurrency: 1,
-  reporters: [],
+  reporters: [],${thresholds}
 }
 `
+
+const CONFIG = configOf('')
+
+const BREAK_THRESHOLD = 100
+
+const BREAKING_CONFIG = configOf(`\n  thresholds: { high: 100, low: 100, break: ${BREAK_THRESHOLD} },`)
 
 interface Verdict {
   readonly id: string
@@ -138,7 +145,10 @@ interface Fixture {
   readonly ids: readonly string[]
 }
 
-const prepareFixture = (): Effect.Effect<
+const prepareFixture = (
+  config: string = CONFIG,
+  unshardedExitCode = 0,
+): Effect.Effect<
   Fixture,
   never,
   FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
@@ -157,11 +167,11 @@ const prepareFixture = (): Effect.Effect<
     yield* fs.writeFileString(path.join(root, 'src', 'add.js'), 'export const add = (a, b) => a + b\n')
     yield* fs.writeFileString(path.join(root, 'src', 'log.js'), "export const log = (a) => console.log('adding', a)\n")
     yield* fs.writeFileString(path.join(root, 'src', 'order.js'), 'export const less = (a, b) => (a < b ? 1 : 0)\n')
-    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), CONFIG)
+    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), config)
     const ran = yield* spawnCli(root, ['run'])
     yield* Effect.when(
-      Effect.die(new Error(`unsharded run exited ${ran.exitCode}: ${ran.output}`)),
-      Effect.succeed(ran.exitCode !== 0),
+      Effect.die(new Error(`unsharded run exited ${ran.exitCode}, expected ${unshardedExitCode}: ${ran.output}`)),
+      Effect.succeed(ran.exitCode !== unshardedExitCode),
     )
     const stream = yield* fs.readFileString(path.join(root, 'reports', 'mutation-stream.jsonl'))
     const unsharded = verdictsOfStream(stream)
@@ -362,6 +372,88 @@ const mergeWithDowngradedStream = (
     ])
   }).pipe(Effect.orDie)
 
+interface GateBreakOutcome {
+  readonly shardExitCodes: readonly number[]
+  readonly gate: ExecOutcome
+}
+
+const runShardsMergeAndGate = (
+  fixture: Fixture,
+  options: {
+    readonly outs: readonly [string, string]
+    readonly beforeMerge?: (context: {
+      readonly root: string
+      readonly outs: readonly [string, string]
+    }) => Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>
+  },
+): Effect.Effect<
+  GateBreakOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const { root } = fixture
+    const { outs, beforeMerge } = options
+    const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', outs[0]])
+    const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', outs[1]])
+    if (beforeMerge !== undefined) {
+      yield* beforeMerge({ root, outs })
+    }
+    const merged = yield* spawnCli(root, [
+      'merge',
+      '--plan',
+      'plan.json',
+      outs[0],
+      outs[1],
+      '--out',
+      'reports/mutation',
+    ])
+    yield* Effect.when(
+      Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.output}`)),
+      Effect.succeed(merged.exitCode !== 0),
+    )
+    const gate = yield* spawnCli(root, ['gate'])
+    return { shardExitCodes: [first.exitCode, second.exitCode], gate }
+  })
+
+const mergeAndGate = (
+  fixture: Fixture,
+): Effect.Effect<
+  GateBreakOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> => runShardsMergeAndGate(fixture, { outs: ['reports/break-1', 'reports/break-2'] })
+
+const stripVerdictLines = (file: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(file)
+    yield* fs.writeFileString(
+      file,
+      text.split('\n').filter((line) => Option.isNone(decodeVerdictLine(line.trim()))).join('\n'),
+    )
+  }).pipe(Effect.orDie)
+
+const mergeVerdictlessAndGate = (
+  fixture: Fixture,
+): Effect.Effect<
+  GateBreakOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  runShardsMergeAndGate(fixture, {
+    outs: ['reports/nv-1', 'reports/nv-2'],
+    beforeMerge: ({ root, outs }) =>
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        yield* Effect.forEach(
+          outs,
+          (out) => stripVerdictLines(path.join(root, out, 'mutation-stream.jsonl')),
+          { discard: true },
+        )
+      }),
+  })
+
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a two-shard plan and merges it')
@@ -435,6 +527,51 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
             namesWrittenVersion: s.outcome.output.includes('6.0'),
             namesExpectedVersion: s.outcome.output.includes('9.0'),
           }).toEqual({ exitCode: 1, namesWrittenVersion: true, namesExpectedVersion: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A merged report scoring below its break threshold fails the gate, as the unsharded run fails',
+      Gherkin.Do.pipe(
+        Given('a fixture whose every mutant survives, under a break threshold the unsharded run fails')(
+          'fixture',
+          () => prepareFixture(BREAKING_CONFIG, 1),
+        ),
+        When('the two shards run and merge, and stryker gates the merged report')(
+          'outcome',
+          (s) => mergeAndGate(s.fixture),
+        ),
+        Then('the shards pass, and the gate exits nonzero with score-below-break, naming the break threshold')((
+          s,
+          expect,
+        ) =>
+          expect({
+            shardExitCodes: s.outcome.shardExitCodes,
+            gateExitCode: s.outcome.gate.exitCode,
+            namesReason: s.outcome.gate.output.includes('score-below-break'),
+            namesThreshold: s.outcome.gate.output.includes(String(BREAK_THRESHOLD)),
+          }).toEqual({ shardExitCodes: [0, 0], gateExitCode: 1, namesReason: true, namesThreshold: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A merged report whose shards recorded no verdict has no break verdict and names the missing thresholds',
+      Gherkin.Do.pipe(
+        Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
+        When('the two shards run, their verdict lines are stripped before merging, and stryker gates the result')(
+          'outcome',
+          (s) => mergeVerdictlessAndGate(s.fixture),
+        ),
+        Then('the gate exits 0 and names the project whose thresholds were never recorded')((s, expect) =>
+          expect({
+            shardExitCodes: s.outcome.shardExitCodes,
+            gateExitCode: s.outcome.gate.exitCode,
+            namesUnrecorded: s.outcome.gate.output.includes(
+              "stryker gate: .: no thresholds recorded for this project; re-run its shards with the project's config",
+            ),
+          }).toEqual({ shardExitCodes: [0, 0], gateExitCode: 0, namesUnrecorded: true })
         ),
       ),
     )

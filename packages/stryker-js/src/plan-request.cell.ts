@@ -45,7 +45,7 @@ import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextsOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
-import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
+import { planInstrumentCell } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
@@ -76,6 +76,11 @@ export interface PlanRequestInput {
 const DEFAULT_MUTANT_COST_MS = 1_000
 
 const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
+
+const planStageCell = Cell.andThen(
+  prepareStageCell,
+  (prepared) => Cell.map(planInstrumentCell, (done) => ({ prepared, done })),
+)
 
 const namedCostsOf = (
   costs: NonNullable<typeof CostsFieldSchema.Type['costs']>,
@@ -292,8 +297,7 @@ const planProject = (
       targetMutatePatterns: undefined,
       plannedDiff: plannedDiffOf(path, planDiff, project),
     }
-    const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
-    const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
+    const { prepared, done } = yield* Cell.provideContext(planStageCell, context).run(stageInput)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
     const dryRunChoice = yield* dryRunChoiceOf(done, project, texts)
     const coverage = dryRunChoice.prior

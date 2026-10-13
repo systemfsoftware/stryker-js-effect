@@ -6,7 +6,7 @@ import { Readiness } from '@systemfsoftware/effect-readiness'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
 
 import { BakedFixtureCache } from './fixture-cache.service.js'
-import { COMPONENT_ATTRIBUTE } from './harness-telemetry.service.js'
+import { COMPONENT_ATTRIBUTE } from './harness-telemetry.js'
 import { layer as guestJobsLayer } from './microsandbox-guest-job.js'
 import { layer as strykerCliRunnerLayer } from './microsandbox-stryker-cli-runner.js'
 

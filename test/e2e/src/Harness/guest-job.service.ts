@@ -1,4 +1,3 @@
-import type { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import type { Readiness } from '@systemfsoftware/effect-readiness'
 import { Context, type Effect } from 'effect'
 import type * as Crypto from 'effect/Crypto'
@@ -6,14 +5,16 @@ import type * as FileSystem from 'effect/FileSystem'
 
 import type { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
 
+export interface GuestMount {
+  readonly host: string
+  readonly guest: string
+}
+
 export interface GuestJobsShape {
-  readonly job: (
-    cmd: readonly [string, ...Array<string>],
-    mounts: ReadonlyArray<MicroVM.Mount>,
-  ) => MicroVM.JobBlueprint
   readonly requireCleanExit: (
     step: string,
-    job: MicroVM.JobBlueprint,
+    cmd: readonly [string, ...Array<string>],
+    mounts: ReadonlyArray<GuestMount>,
   ) => Effect.Effect<
     void,
     ExitFailure | GuestJobFailure | GuestSignaledFailure,
