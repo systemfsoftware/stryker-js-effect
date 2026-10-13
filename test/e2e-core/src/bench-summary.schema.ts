@@ -2,6 +2,7 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Order from 'effect/Order'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchCorpusName } from './bench-run.schema.js'
@@ -120,4 +121,93 @@ export class BenchSummary extends S.TaggedClass<BenchSummary>()('BenchSummary', 
   regression: S.NullOr(PhaseRegression),
 }) {
   readonly [BenchSummaryTypeId] = BenchSummaryTypeId
+}
+
+const METRIC = { corpus: 'repo', entry: 'entry', phase: 'total', deltaMs: 12, deltaShareOfA: 0.05 } as const
+
+const acceptsMetric = (metric: typeof RegressedMetric.Encoded): boolean =>
+  Result.isSuccess(S.decodeResult(RegressedMetric)(metric))
+
+const acceptsRegression = (fields: Partial<typeof PhaseRegression.Encoded>): boolean =>
+  Result.isSuccess(
+    S.decodeResult(PhaseRegression)({
+      code: 'phase-regressed',
+      sha: 'head',
+      parentSha: 'base',
+      metrics: [METRIC],
+      nextAction: 'next',
+      ...fields,
+    }),
+  )
+
+const textFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
+  acceptsMetric({ ...METRIC, entry: value }),
+  acceptsRegression({ nextAction: value }),
+]
+
+const deltaFieldVerdicts = (value: number): ReadonlyArray<boolean> => [
+  acceptsMetric({ ...METRIC, deltaMs: value }),
+  acceptsMetric({ ...METRIC, deltaShareOfA: value }),
+]
+
+const acceptsRegressionCode = (code: string): boolean =>
+  Result.isSuccess(
+    S.decodeUnknownResult(PhaseRegression)({
+      code,
+      sha: 'head',
+      parentSha: 'base',
+      metrics: [METRIC],
+      nextAction: 'next',
+    }),
+  )
+
+const acceptsMetricCount = (metrics: ReadonlyArray<RegressedMetric>): boolean =>
+  Result.isSuccess(
+    S.decodeUnknownResult(PhaseRegression)({
+      code: 'phase-regressed',
+      sha: 'head',
+      parentSha: 'base',
+      metrics,
+      nextAction: 'next',
+    }),
+  )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀s_RegressionTextRefusal_≡EntryAndNextActionRefuseOnlyTheEmptyString',
+    { of: [S.String], subject: textFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', ' ', 'entry'], drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === value.length > 0),
+      ),
+  )
+
+  it.prop(
+    '∀n_RegressionDeltaRefusal_≡DeltasAreFinite',
+    { of: [S.Finite], subject: deltaFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([-1, 0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY], drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === Number.isFinite(value)),
+      ),
+  )
+
+  it.prop(
+    '∀s_RegressionCodeRefusal_≡OnlyPhaseRegressed',
+    { of: [S.String], subject: acceptsRegressionCode },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'phase-regressed', 'phase-regressed ', 'regressed'], drawn),
+        (code) => subject(code) === (code === 'phase-regressed'),
+      ),
+  )
+
+  it.prop(
+    '∀m_RegressionMetricsRefusal_≡AtLeastOneMetric',
+    { of: [S.Array(RegressedMetric)], subject: acceptsMetricCount },
+    (subject, [drawn]) => Arr.every([[], [METRIC], drawn], (metrics) => subject(metrics) === metrics.length > 0),
+  )
 }

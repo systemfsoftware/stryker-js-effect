@@ -1,5 +1,7 @@
 import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
+import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 const RunPathPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathPlan')
@@ -75,4 +77,39 @@ export class RunPathUnrestored extends S.TaggedError<RunPathUnrestored>()('RunPa
       causeText(this.cause)
     }; ${run}`
   }
+}
+
+const PATH = 'p'
+const RUN_SUCCEEDED = { _tag: 'RunSucceeded' } as const
+
+const decodes = <T, E>(schema: S.Codec<T, E>, encoded: E): boolean => Result.isSuccess(S.decodeResult(schema)(encoded))
+
+const pathFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
+  decodes(RunPathMoveIn, { _tag: 'RunPathMoveIn', side: 'A', tree: value, runPath: PATH, cwd: PATH, cli: PATH }),
+  decodes(RunPathMoveIn, { _tag: 'RunPathMoveIn', side: 'A', tree: PATH, runPath: value, cwd: PATH, cli: PATH }),
+  decodes(RunPathMoveIn, { _tag: 'RunPathMoveIn', side: 'A', tree: PATH, runPath: PATH, cwd: value, cli: PATH }),
+  decodes(RunPathMoveIn, { _tag: 'RunPathMoveIn', side: 'A', tree: PATH, runPath: PATH, cwd: PATH, cli: value }),
+  decodes(RunPathOccupied, { _tag: 'RunPathOccupied', side: 'A', runPath: value }),
+  decodes(RunPathOutsideTree, { _tag: 'RunPathOutsideTree', side: 'A', tree: value, path: PATH }),
+  decodes(RunPathOutsideTree, { _tag: 'RunPathOutsideTree', side: 'A', tree: PATH, path: value }),
+  decodes(RunPathRestored, { _tag: 'RunPathRestored', side: 'A', tree: value }),
+  decodes(RunPathUnrestored, { _tag: 'RunPathUnrestored', side: 'A', tree: value, runPath: PATH, run: RUN_SUCCEEDED }),
+  decodes(RunPathUnrestored, { _tag: 'RunPathUnrestored', side: 'A', tree: PATH, runPath: value, run: RUN_SUCCEEDED }),
+]
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const boundaryValues = ['', ' ', PATH]
+  const isPath = (value: string): boolean => value.length > 0
+
+  it.prop(
+    '∀s_RunPathFieldRefusal_≡EveryPathFieldRefusesOnlyTheEmptyString',
+    { of: [S.String], subject: pathFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(boundaryValues, drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === isPath(value)),
+      ),
+  )
 }

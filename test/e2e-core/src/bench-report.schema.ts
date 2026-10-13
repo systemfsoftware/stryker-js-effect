@@ -1,5 +1,7 @@
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Function from 'effect/Function'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchRunInvalid, BenchRunKey, WorkloadDigest } from './bench-run.schema.js'
@@ -113,3 +115,71 @@ export class BenchRenderedError extends S.TaggedClass<BenchRenderedError>()('err
 
 export const BenchRendered = S.Union([BenchRenderedNotice, BenchRenderedError])
 export type BenchRendered = typeof BenchRendered.Type
+
+const acceptsLegTarget = (ms: number): boolean => Result.isSuccess(S.decodeUnknownResult(LegTargetMs)(ms))
+
+const acceptsReportRef = (ref: string): boolean =>
+  Result.isSuccess(
+    S.decodeResult(BenchReport)({
+      schemaVersion: '2.0',
+      baseSha: 'base',
+      headSha: 'head',
+      ref,
+      leg: { _tag: 'LegNotMeasured', targetMs: 600_000 },
+      outcome: { _tag: 'failed', invalid: [] },
+      runs: [],
+      setupSteps: [],
+    }),
+  )
+
+const acceptsAbortCode = (code: string): boolean => Result.isSuccess(S.decodeUnknownResult(BenchAbortCode)(code))
+
+const renderedExitVerdicts = (exitCode: number): ReadonlyArray<boolean> => [
+  Result.isSuccess(
+    S.decodeUnknownResult(BenchRenderedNotice)({ _tag: 'notice', annotationLine: 'a', markdown: 'm', exitCode }),
+  ),
+  Result.isSuccess(
+    S.decodeUnknownResult(BenchRenderedError)({ _tag: 'error', annotationLine: 'a', markdown: 'm', exitCode }),
+  ),
+]
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀n_LegTargetRefusal_≡TenMinutesInMilliseconds',
+    { of: [S.Finite], subject: acceptsLegTarget },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([0, 599_999, 600_000, 600_001, 600, Number.NaN], drawn),
+        (ms) => subject(ms) === (ms === 10 * 60 * 1000),
+      ),
+  )
+
+  it.prop(
+    '∀s_BenchReportRefRefusal_≡RefusesOnlyTheEmptyRef',
+    { of: [S.String], subject: acceptsReportRef },
+    (subject, [drawn]) =>
+      Arr.every(Arr.append(['', ' ', 'refs/heads/main'], drawn), (ref) => subject(ref) === ref.length > 0),
+  )
+
+  it.prop(
+    '∀s_BenchAbortCodeRefusal_≡ExactlyTheCodesWithANextAction',
+    { of: [S.String], subject: acceptsAbortCode },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'setup-timed-out', 'budget-exceeded', 'toString', ...Object.keys(NEXT_ACTION)], drawn),
+        (code) => subject(code) === Object.hasOwn(NEXT_ACTION, code),
+      ),
+  )
+
+  it.prop(
+    '∀n_RenderedExitCodeRefusal_≡ProcessSuccessOrFailure',
+    { of: [S.Finite], subject: renderedExitVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([-1, 0, 1, 2, 0.5, Number.NaN], drawn),
+        (exitCode) => Arr.every(subject(exitCode), (accepted) => accepted === (exitCode === 0 || exitCode === 1)),
+      ),
+  )
+}

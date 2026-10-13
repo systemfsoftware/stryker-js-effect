@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -57,3 +58,38 @@ export const planRunPath = Workflow.make({
   error: RunPathOutsideTree,
   decide,
 })
+
+const PATH = 'p'
+
+const acceptsPlanCommand = (fields: {
+  readonly runnerTemp: string
+  readonly tree: string
+  readonly cwd: string
+  readonly cli: string
+}): boolean =>
+  Result.isSuccess(
+    S.decodeResult(PlanRunPathCommand)({ _tag: 'PlanRunPathCommand', runnerTempEntries: [], side: 'A', ...fields }),
+  )
+
+const pathFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
+  acceptsPlanCommand({ runnerTemp: value, tree: PATH, cwd: PATH, cli: PATH }),
+  acceptsPlanCommand({ runnerTemp: PATH, tree: value, cwd: PATH, cli: PATH }),
+  acceptsPlanCommand({ runnerTemp: PATH, tree: PATH, cwd: value, cli: PATH }),
+  acceptsPlanCommand({ runnerTemp: PATH, tree: PATH, cwd: PATH, cli: value }),
+]
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const boundaryValues = ['', ' ', '/', PATH]
+
+  it.prop(
+    '∀s_PlanRunPathCommandRefusal_≡EveryPathFieldRefusesOnlyTheEmptyString',
+    { of: [S.String], subject: pathFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(boundaryValues, drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === value.length > 0),
+      ),
+  )
+}

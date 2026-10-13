@@ -452,3 +452,25 @@ export const summarizeBench = Workflow.make({
   error: BenchRunsInvalid,
   decide,
 })
+
+const acceptsSummarizeRef = (ref: string): boolean =>
+  Result.isSuccess(
+    S.decodeResult(SummarizeBenchCommand)({
+      _tag: 'SummarizeBenchCommand',
+      sha: 'head',
+      parentSha: 'base',
+      ref,
+      runs: [],
+    }),
+  )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀s_SummarizeBenchRefRefusal_≡RefusesOnlyTheEmptyRef',
+    { of: [S.String], subject: acceptsSummarizeRef },
+    (subject, [drawn]) =>
+      Arr.every(Arr.append(['', ' ', 'refs/heads/main'], drawn), (ref) => subject(ref) === ref.length > 0),
+  )
+}
