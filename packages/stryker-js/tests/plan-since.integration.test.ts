@@ -688,7 +688,7 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
     )
 
     scenario(
-      'A branch that moves between planning and the shard leaves every planned mutant in the shard report',
+      'A branch that moves between planning and the shard runs exactly the planned mutants',
       Gherkin.Do.pipe(
         Given(
           'a repository whose config declares a since branch at the base, with two changed source lines after it',
@@ -715,23 +715,24 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
               )
             }),
         ),
-        Then('the plan scopes to the diff and the shard reports every mutant the plan scheduled')((s, expect) => {
-          const plannedIds = scheduledIds(s.planned.planned.plan)
-          const reported = s.planned.reportedIds
-          return expect({
-            planExit: s.planned.planned.ran.exitCode,
-            runExit: s.planned.ran.exitCode,
-            scopeTag: scopeTagOf(s.planned.planned.plan.scope),
-            plannedNonEmpty: plannedIds.length > 0,
-            everyPlannedIdReported: plannedIds.every((id) => reported.includes(id)),
-          }).toEqual({
-            planExit: 0,
-            runExit: 0,
-            scopeTag: 'DiffScoped',
-            plannedNonEmpty: true,
-            everyPlannedIdReported: true,
-          })
-        }),
+        Then('the plan scopes to the diff and the shard reports exactly the mutants the plan scheduled')(
+          (s, expect) => {
+            const plannedIds = [...scheduledIds(s.planned.planned.plan)].sort()
+            return expect({
+              planExit: s.planned.planned.ran.exitCode,
+              runExit: s.planned.ran.exitCode,
+              scopeTag: scopeTagOf(s.planned.planned.plan.scope),
+              plannedCount: plannedIds.length,
+              reportedIds: [...s.planned.reportedIds].sort(),
+            }).toEqual({
+              planExit: 0,
+              runExit: 0,
+              scopeTag: 'DiffScoped',
+              plannedCount: 2,
+              reportedIds: plannedIds,
+            })
+          },
+        ),
       ),
     )
   })
