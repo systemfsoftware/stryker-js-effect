@@ -5,6 +5,9 @@ import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Str from 'effect/String'
 
+import type { ProjectLeg } from './Parity.schema.js'
+import { inShard } from './shard.js'
+
 export const ISOLATED_DECLARATIONS_PROJECT = 'test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json'
 
 export const CHECKER_PLUGIN = '@systemfsoftware/stryker-js-typescript-checker'
@@ -25,6 +28,19 @@ export const corpusEntries = (tracked: ReadonlyArray<string>): CorpusEntries => 
   workspaceTsconfigs: distinctSorted(tracked.filter((file) => WORKSPACE_TSCONFIG_APP.test(file))),
   e2eConfigs: distinctSorted(tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
 })
+
+const checkedOnEveryPullRequest = (project: string): boolean => project === ISOLATED_DECLARATIONS_PROJECT
+
+const projectDirectoryOf = (project: string): string => project.slice(0, project.lastIndexOf('/') + 1)
+
+export const checkedOnLeg = (leg: ProjectLeg): (file: string) => boolean => (file) =>
+  Boolean.or(checkedOnEveryPullRequest(leg.project), Arr.contains(leg.changedFiles, file)) && inShard(file, leg.shard)
+
+export const projectOnLeg = (leg: ProjectLeg): boolean =>
+  Boolean.or(
+    Boolean.or(checkedOnEveryPullRequest(leg.project), leg.samplesOnLeg),
+    Arr.some(leg.changedFiles, (file) => file.startsWith(projectDirectoryOf(leg.project)) && inShard(file, leg.shard)),
+  )
 
 export interface NamedByConfig {
   readonly configText: string

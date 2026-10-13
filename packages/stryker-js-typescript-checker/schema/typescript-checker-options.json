@@ -10,7 +10,14 @@
       "additionalProperties": false,
       "type": "object",
       "default": {},
-      "properties": {}
+      "properties": {
+        "importerCheck": {
+          "description": "When a mutant compiles in its own file, `location-rule` skips re-checking the files that import it if the edit sits inside a function body whose signature does not depend on that body, and checks such mutants from different files in one snapshot update. `always` re-checks importers for every such mutant and checks one mutant per update.",
+          "type": "string",
+          "enum": ["location-rule", "always"],
+          "default": "location-rule"
+        }
+      }
     }
   }
 }

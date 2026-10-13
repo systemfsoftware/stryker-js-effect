@@ -85,6 +85,29 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
   }
 }
 
+export class InvalidCheckerOptions extends S.TaggedError<InvalidCheckerOptions>()('InvalidCheckerOptions', {
+  detail: S.String,
+}) {
+  readonly code = 'invalid-checker-options' as const
+  readonly nextAction =
+    "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it, and remove every other key from the typescriptChecker block"
+
+  override get message(): string {
+    return `typescript checker (${this.code}): the typescriptChecker options are invalid: ${this.detail}. ${this.nextAction}`
+  }
+}
+
+export class DuplicateMutantIds extends S.TaggedError<DuplicateMutantIds>()('DuplicateMutantIds', {
+  detail: S.String,
+}) {
+  readonly code = 'duplicate-mutant-ids' as const
+  readonly nextAction = 'Send each mutant id once per check call'
+
+  override get message(): string {
+    return `typescript checker (${this.code}): one check call named the same mutant more than once: ${this.detail}. ${this.nextAction}`
+  }
+}
+
 export class DryRunCompileErrors extends S.TaggedError<DryRunCompileErrors>()('DryRunCompileErrors', {
   text: S.String,
 }) {
@@ -95,6 +118,8 @@ export class DryRunCompileErrors extends S.TaggedError<DryRunCompileErrors>()('D
 
 export type CompilerError =
   | CompilerFailed
+  | InvalidCheckerOptions
+  | DuplicateMutantIds
   | UnsupportedTypeScriptVersionError
   | TsConfigNotFoundError
   | TsConfigParseError

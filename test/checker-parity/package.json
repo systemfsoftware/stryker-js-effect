@@ -30,9 +30,14 @@
     "typescript": "catalog:"
   },
   "devDependencies": {
+    "@effect/opentelemetry": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
     "@effect/tsgo": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest": "catalog:",
