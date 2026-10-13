@@ -6,13 +6,7 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  BenchRunInvalid,
-  BenchRunKey,
-  BenchRunMeasured,
-  type RunExit,
-  type WorkloadDigest,
-} from '../bench-run.schema.js'
+import { BenchRunInvalid, BenchRunKey, BenchRunMeasured, type WorkloadDigest } from '../bench-run.schema.js'
 import { readBenchRun, ReadBenchRunCommand } from '../read-bench-run.workflow.js'
 
 const ENCODE = S.encodeResult(RunEvent.RunEventWireLine)
@@ -23,7 +17,7 @@ const MUTANT_FILE = Result.getOrThrow(S.decodeResult(Mutant.CanonicalFileName)('
 const MUTATOR_NAME = Result.getOrThrow(S.decodeResult(Mutant.MutatorName)('ArithmeticOperator'))
 
 interface CommandOptions {
-  readonly exit?: RunExit
+  readonly exitCode?: number
   readonly workloadDigest?: WorkloadDigest
   readonly stderrTail?: string
 }
@@ -32,7 +26,7 @@ const commandOf = (lines: ReadonlyArray<string>, options: CommandOptions = {}): 
   ReadBenchRunCommand.make({
     key: BenchRunKey.make({ corpus: 'repo', entry: 'packages/a', side: 'A', position: 0 }),
     lines,
-    exit: options.exit ?? { _tag: 'exited', code: 0 },
+    exitCode: options.exitCode ?? 0,
     workloadDigest: options.workloadDigest ?? { _tag: 'verified', digest: 'digest' },
     stderrTail: options.stderrTail ?? '',
     wallMs: 10,
@@ -112,6 +106,14 @@ const checkIsMeasuredAt = (check: RunEvent.CheckDuration, ms: number): boolean =
 
 const nonNegativeIntArb = Arbitrary.schema(Report.NonNegativeInt)
 
+const VALID_VERDICT = lineOf(verdictOf(metricsOf(0, 1), phasesOf(1, 2)))
+
+const verdictLinesOf = (counts: Report.Metrics | null): ReadonlyArray<string> =>
+  counts === null ? [] : [lineOf(verdictOf(counts, phasesOf(1, 2)))]
+
+const prefixLineOf = (slot: boolean | null): ReadonlyArray<string> =>
+  slot === null ? [] : slot ? ['  '] : [lineOf(mutantOf(null))]
+
 describe('readBenchRun', () => {
   it.prop(
     '∀t_MutantTestCost_≡RecordedAsItsTestsExecutedAndTheVerdictsMutantCount',
@@ -134,29 +136,10 @@ describe('readBenchRun', () => {
   )
 
   it.prop(
-    '∀s_TimedOutExit_≡InvalidTimeoutCarryingNullExitCodeAndTheStderrTail',
-    { of: [S.String], subject: readBenchRun },
-    (subject, [stderrTail]) => {
-      const command = commandOf([], { exit: { _tag: 'timed-out', afterMs: 60_000 }, stderrTail })
-      return Result.match(subject(command), {
-        onFailure: () => false,
-        onSuccess: (run) =>
-          S.is(BenchRunInvalid)(run) &&
-          run.code === 'timeout' &&
-          run.exitCode === null &&
-          run.stderrTail === stderrTail,
-      })
-    },
-  )
-
-  it.prop(
     '∀sn_ExitedUndecodableStream_≡InvalidCarryingThatExitCodeAndStderrTail',
     { of: [S.Int, S.String], subject: readBenchRun },
     (subject, [exitCode, stderrTail]) => {
-      const command = commandOf(['not a stream line'], {
-        exit: { _tag: 'exited', code: exitCode },
-        stderrTail,
-      })
+      const command = commandOf(['not a stream line'], { exitCode, stderrTail })
       return Result.match(subject(command), {
         onFailure: () => false,
         onSuccess: (run) =>
@@ -166,5 +149,71 @@ describe('readBenchRun', () => {
           run.stderrTail === stderrTail,
       })
     },
+  )
+
+  it.prop(
+    '∀ts_TestedEventCosts_≡SummedIntoTestsExecutedWithAMissingCostCountingZero',
+    {
+      of: [S.NullOr(RunEvent.MutantCost), S.NullOr(RunEvent.MutantCost), S.NullOr(RunEvent.MutantCost)],
+      subject: readBenchRun,
+    },
+    (subject, [first, second, third]) => {
+      const lines = [lineOf(mutantOf(first)), VALID_VERDICT, lineOf(mutantOf(second)), lineOf(mutantOf(third))]
+      const expected = (first?.testsExecuted ?? 0) + (second?.testsExecuted ?? 0) + (third?.testsExecuted ?? 0)
+      return Result.match(subject(commandOf(lines)), {
+        onFailure: () => false,
+        onSuccess: (run) => S.is(BenchRunMeasured)(run) && run.testsExecuted === expected,
+      })
+    },
+  )
+
+  it.prop(
+    '∀ln_UndecodableLineAmongBlankAndDecodableLines_≡InvalidNamingItsOneBasedLineNumber',
+    { of: [S.NullOr(S.Boolean), S.NullOr(S.Boolean), S.NullOr(S.Boolean)], subject: readBenchRun },
+    (subject, [first, second, third]) => {
+      const prefix = [...prefixLineOf(first), ...prefixLineOf(second), ...prefixLineOf(third)]
+      const lineNumber = prefix.length + 1
+      return Result.match(subject(commandOf([...prefix, 'not a stream line', 'also not a stream line'])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          S.is(BenchRunInvalid)(run) &&
+          run.code === 'stream-undecodable' &&
+          run.lineNumber === lineNumber &&
+          run.reason.startsWith(`stdout line ${lineNumber} `),
+      })
+    },
+  )
+
+  it.prop(
+    '∀vc_VerdictLines_≡MeasuredWithItsMutantCountIffExactlyOneElseInvalidNamingTheCount',
+    { of: [S.NullOr(Report.Metrics), S.NullOr(Report.Metrics), S.NullOr(Report.Metrics)], subject: readBenchRun },
+    (subject, [first, second, third]) => {
+      const verdicts = [...verdictLinesOf(first), ...verdictLinesOf(second), ...verdictLinesOf(third)]
+      const only = first ?? second ?? third
+      return Result.match(subject(commandOf([lineOf(mutantOf(null)), ...verdicts])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          verdicts.length === 1
+            ? S.is(BenchRunMeasured)(run) && run.mutants === only?.totalMutants
+            : S.is(BenchRunInvalid)(run) &&
+              run.code === 'stream-invalid' &&
+              run.lineNumber === null &&
+              run.reason.endsWith(`found ${verdicts.length}`),
+      })
+    },
+  )
+
+  it.prop(
+    '∀pd_VerdictPhaseDurations_≡CarriedAsReportedOrStreamInvalidWhenAbsent',
+    { of: [Report.Metrics, S.NullOr(RunEvent.PhaseDurations)], subject: readBenchRun },
+    (subject, [counts, phaseDurations]) =>
+      Result.match(subject(commandOf([lineOf(verdictOf(counts, phaseDurations))])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          phaseDurations === null
+            ? S.is(BenchRunInvalid)(run) && run.code === 'stream-invalid' && run.lineNumber === null
+            : S.is(BenchRunMeasured)(run) &&
+              S.toEquivalence(RunEvent.PhaseDurations)(run.phaseDurations, phaseDurations),
+      }),
   )
 })

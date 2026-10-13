@@ -11,6 +11,7 @@ import type * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
@@ -69,6 +70,7 @@ import {
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
+import { readConfig } from './run/load-config.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
@@ -81,6 +83,7 @@ import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
+import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
@@ -140,26 +143,53 @@ export type CliFailure =
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
   Option.getOrElse(
     S.decodeUnknownOption(S.NonEmptyString)(options['progressStreamFile']),
-    () => RunEventDrain.DefaultProgressStreamFile,
+    () => DEFAULT_PROGRESS_STREAM_FILE,
   )
 
-const progressStreamFileOf = (invocation: CliInvocation): string =>
-  invocation.environment.pathService.resolve(
-    invocation.environment.basePath,
-    progressStreamFileName(invocation.options),
+interface StreamedRequest {
+  readonly fileName: string
+  readonly options: Options.PartialStrykerOptions
+}
+
+const flaggedRequestOf = (invocation: CliInvocation): StreamedRequest => ({
+  fileName: progressStreamFileName(invocation.options),
+  options: invocation.options,
+})
+
+const pinnedRequestOf = (invocation: CliInvocation, fileName: string): StreamedRequest => ({
+  fileName,
+  options: { ...invocation.options, progressStreamFile: fileName },
+})
+
+const streamedRequestOf = (
+  invocation: CliInvocation,
+): Effect.Effect<StreamedRequest, never, FileSystem.FileSystem | Path.Path> =>
+  Match.value(invocation.route.route).pipe(
+    Match.tag(
+      'run',
+      () =>
+        readConfig(invocation.options, { command: 'run', mode: invocation.environment.mode.mode }).pipe(
+          Effect.map((resolved) => pinnedRequestOf(invocation, progressStreamFileName(resolved))),
+          Effect.orElseSucceed(() => flaggedRequestOf(invocation)),
+        ),
+    ),
+    Match.orElse(() => Effect.succeed(flaggedRequestOf(invocation))),
   )
 
 const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
 ): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
   const drain = yield* RunEventDrain
-  yield* drain.setProgressStreamFile(progressStreamFileOf(invocation))
+  const request = yield* streamedRequestOf(invocation)
+  yield* drain.setProgressStreamFile(
+    invocation.environment.pathService.resolve(invocation.environment.basePath, request.fileName),
+  )
   yield* invocation.environment.stream.open
   return {
     _tag: invocation.route._tag,
     route: invocation.route.route,
     environment: invocation.environment,
-    options: invocation.options,
+    options: request.options,
   }
 })
 
