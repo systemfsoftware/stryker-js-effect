@@ -1,16 +1,19 @@
 ---
 title: Key the verdict cache by content, not by run
 date: 2026-09-28
+last_updated: 2026-10-11
 category: tooling-decisions
 problem_type: stale and false-miss verdict reuse from incidental cache-key inputs
 input_shape: solution
-subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the engine that produced it, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines
+subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the engine that produced it, and the mutant-set policy are identical - so the key names no shard, branch, or report path; it does carry the workspace root, because mutant identity hashes the absolute file path, so saved coverage and verdicts are reused only under the root that recorded them
 applies_when:
   - changing what enters the verdict-cache key or the run-inputs fingerprint
   - relocating, sharding, or merging incremental reports
+  - sharing incremental reports or saved coverage between workspaces at different absolute paths
   - widening the project-file crawl that feeds the test closure digest
   - changing which inputs open a closure or how workspace and installed imports resolve
   - changing which installed files identify the engine that produced a verdict
+  - changing how mutant identity is derived
 ---
 
 # Key the verdict cache by content, not by run
@@ -34,9 +37,14 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
 ## Failure mechanism
 
 1. **Positional identity.** A per-run counter id changes when unrelated code
-   shifts, so every repeat run looks like new work. Identity has to derive from
-   the mutant's content: the repo-relative file, the mutator, the original
-   node's source text, the replacement, and the ordinal among identical tuples.
+   shifts, so every repeat run looks like new work. Identity derives from the
+   mutant's content: the instrumented file's name, the mutator, the original
+   node's source text, the replacement, and the ordinal among identical tuples
+   (`mutantIdOf`). The file name is the absolute path the project crawl
+   produced, not a repo-relative one: the script transformer hashes
+   `originFileName` as given and uses the base path only to print placement
+   locations. So the same file at another workspace root yields different
+   mutant ids.
 2. **Per-function reuse.** Deciding reuse from dynamic call edges is the least
    precise of the measured regression-selection techniques, so a test that
    reaches a mutant through a helper is missed. Reuse has to close over the
@@ -65,23 +73,78 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
    `node_modules` from the project root instead of from the importing file. So
    `@oxc-project/types`, which only `@systemfsoftware/stryker-ignorer-interface`
    installs, went unresolved.
+7. **Coverage trusted across roots.** Every per-mutant map a run saves - the
+   dry run's per-test coverage, the per-mutant cost estimates, the verdicts -
+   is keyed by those root-bound ids. A report copied into a second root and
+   checked only by digests passes: with no `testFiles` configured, the closure
+   digest reduces to root-relative keys and matches. The run then reuses the
+   copied coverage, looks up its own ids, misses every one, and plans every
+   mutant `NoCoverage` while logging a successful reuse; the planner prices the
+   dry run at zero from the same coverage. Verdict reuse across roots was
+   already zero for the same reason, so the visible damage was the wrong
+   statuses, not a lost cache hit.
 
 ## Architectural Invariants
 
 - **A verdict's key is its content and its true inputs.** The key is the
   mutant id, the covering tests' closure digest, the run-inputs digest, the
   engine digest, and the mutant-set policy. Nothing in it names a shard, a
-  branch, a report path, or a machine, so reports computed anywhere union by
-  key.
+  branch, or a report path, so reports computed under one workspace root union
+  by key. The mutant id does carry that root, so reports, saved coverage, and
+  any verdict store are shared only between workspaces at the same absolute
+  path (hosted CI runners share one). Making identity root-relative re-keys
+  every mutant id - the verdict cache, survivor baselines, rerun ids - so it is
+  a deliberate migration, not a side edit.
+- **Saved coverage is bound to the root that recorded it, and the root is
+  checked first.** The dry run records its project root as
+  `path.join(basePath, '.')`, the prefix of every file name `mutantIdOf` hashes,
+  inside the coverage record it persists, so every writer (end-of-run report,
+  checkpoint, dry-run-only report) carries it. Before any digest comparison,
+  and even on a forced run, the `dryRunReuse` workflow refuses coverage
+  recorded under another root with `rootChanged` and coverage that records no
+  root with `rootUnrecorded`; either refusal runs a full dry run that records
+  the current root. The root is compared as spelled, never as its real path:
+  one directory reached through a symlink and through its real path yields two
+  sets of mutant ids, so a real-path match would reuse coverage that matches no
+  current mutant and score every mutant NoCoverage. A relative base path keeps
+  its relative root, so it and its absolute spelling are two roots too. Gate:
+  the integration feature "Running mutation testing through the API on one
+  project whose base path is spelled two ways", where a run after either
+  other spelling must score as a fresh run. The root comes only from the
+  coverage record, never from
+  the report header: `unionIncrementalReports` takes a merged report's header
+  from the first shard but its coverage from the first shard that has one, so
+  a header fallback admits another root's coverage. Among several restored
+  reports, the `dryRunCandidates` workflow keeps only those whose recorded
+  root is the current root, and the closure inputs, the reused prior, the
+  planner's dry-run cost, and the flaky mutant ids all come from the kept ones.
+  Mutant costs (`reportCostsOf`) are read from every admitted report, but they
+  are keyed by the mutant id, and `mutantIdOf` hashes the absolute file path, so
+  another root's entries never match a current mutant.
 - **The fingerprint carries only behavior-affecting inputs.** Exclude
   scope-only options (the `mutate` patterns, `since`, explicit mutant ids) and
   every environment-derived or presentation option (reporters, console colors,
   reporter color flags). A run scoped to fewer mutants, or rendered
   differently, still produces the same verdict for the mutants it runs.
 - **A run never feeds its own inputs.** The crawl that computes the closure
-  digest excludes every declared Stryker output path. `strykerOutputFilesOf`
-  is the one list of those paths; a new sidecar joins it there, not in a second
-  place.
+  digest excludes every Stryker output path, declared or default.
+  `strykerOutputFilesOf` is the one list of those paths; a new sidecar joins it
+  there, not in a second place. An entry inside the project is resolved
+  against it and named exactly as the crawl names that file's entry, so
+  `./out/x`, `out//x` and `out/x/` all exclude `out/x` on every platform; an
+  entry outside the project keeps its spelling. Containment is lexical, so an
+  absolute entry excludes its file only when it names the project through the
+  path the crawl starts from. The stream file the CLI opens before the engine
+  reads its config is one the engine excludes, because `pinnedRequestOf` sets
+  the resolved name as a command-line option, which wins the engine's config
+  merge. Output entries match with exact case only where the project's file
+  system tells case apart, so a stream under another casing on a
+  case-insensitive volume is still the excluded file. Gate, on Linux with
+  `/dev/full` and a temp directory on a volume that tells case apart, after
+  `pnpm --filter @systemfsoftware/stryker-js build`:
+  `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/progress-stream-file.integration.test.ts`
+  re-runs the built CLI on a project twice and fails when the second run
+  re-runs a mutant.
 - **Refusal is named.** Every mutant a key refuses carries exactly one reason
   by fixed precedence - semantics changed, policy changed, run inputs changed,
   closure changed, a flaky dependency, a timeout that has not reproduced, or no
@@ -129,6 +192,10 @@ reuse(mutant) = priorEntry with the same key, else refuse(named reason)
 - Move an incremental report to another path and list it through the report
   globs: the verdicts are still reused, proving the key does not name a path or
   shard.
+- Restore a report written under root A into root B and run there: the run
+  refuses with `rootChanged`, names both roots, runs its own dry run, and the
+  next run under B reuses. A mutant scored `NoCoverage` right after a logged
+  coverage reuse is the cross-root signature.
 - Change a presentation option (reporters, console colors) and re-run: reuse is
   unchanged. Change the code of a helper two imports below a covering test, and
   only that test's dependents are refused. On a real package, count open test
@@ -140,4 +207,5 @@ reuse(mutant) = priorEntry with the same key, else refuse(named reason)
   frozen noise list.
 - Code smell: a new report sidecar added to the reporter set but not to
   `strykerOutputFilesOf`; a scope option added to the run-inputs fingerprint; a
-  cache key that strings a report path or a tool version.
+  cache key that strings a report path or a tool version; a reuse decision
+  that reads a report header field instead of the record it is deciding about.

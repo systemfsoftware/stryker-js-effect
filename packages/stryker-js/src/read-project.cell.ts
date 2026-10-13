@@ -2,7 +2,7 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Boolean, Schema as S } from 'effect'
+import { Array as Arr, Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
 import * as FileSystem from 'effect/FileSystem'
@@ -14,6 +14,8 @@ import { badArgument } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 
+import { admitCaseProbe, CaseProbeCommand } from './admit-case-probe.workflow.js'
+import { admitCaseSensitivity, CaseSensitivityCommand, CaseToldApart } from './admit-case-sensitivity.workflow.js'
 import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './admit-discovered-entry.workflow.js'
 import {
   admitIncrementalReport,
@@ -91,30 +93,84 @@ type ReadProjectInput = {
   readonly basePath: string
 }
 
-const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): string =>
-  Option.getOrElse(
-    Option.liftPredicate(relative, (value) => value.length > 0 && !value.startsWith('..')),
-    () => absoluteFallback,
-  )
+const directoryPrefixOf = (relativeName: string) =>
+  Boolean.match(relativeName.length > 0, { onTrue: () => `${relativeName}/`, onFalse: () => '' })
 
-const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
-  Boolean.match(pathService.isAbsolute(rule), {
-    onTrue: () => insideProjectOnlyRuleOf(pathService.relative(pathService.resolve(basePath), rule), rule),
+const isInsideProject = (pathService: Path.Path, relative: string): boolean =>
+  Boolean.every([
+    relative.length > 0,
+    relative !== '..',
+    !relative.startsWith(`..${pathService.sep}`),
+    !pathService.isAbsolute(relative),
+  ])
+
+const crawlEntryPathOf = (pathService: Path.Path, root: string, file: string): string =>
+  `${directoryPrefixOf(pathService.relative(root, pathService.dirname(file)))}${pathService.basename(file)}`
+
+const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string => {
+  const root = pathService.resolve(basePath)
+  const file = pathService.resolve(basePath, rule)
+  return Boolean.match(isInsideProject(pathService, pathService.relative(root, file)), {
+    onTrue: () => crawlEntryPathOf(pathService, root, file),
     onFalse: () => rule,
   })
+}
 
-const ignoreRulesOf = (
+interface EntryRules {
+  readonly ignorePatterns: readonly string[]
+  readonly outputPatterns: readonly string[]
+  readonly outputCaseSensitive: boolean
+}
+
+const identityOf = (info: FileSystem.File.Info) => ({ dev: info.dev, ino: info.ino })
+
+const probeOf = (fs: FileSystem.FileSystem, pathService: Path.Path, root: string) =>
+(
+  pair: { readonly name: string; readonly swapped: string },
+) =>
+  Effect.all([
+    fs.stat(pathService.join(root, pair.name)),
+    fs.stat(pathService.join(root, pair.swapped)).pipe(Effect.option),
+  ])
+    .pipe(
+      Effect.map(([own, swapped]) => ({
+        own: identityOf(own),
+        swapped: Option.match(swapped, {
+          onNone: () => ({ _tag: 'SwappedMissing' as const }),
+          onSome: (info) => ({ _tag: 'SwappedFound' as const, identity: identityOf(info) }),
+        }),
+      })),
+      Effect.option,
+    )
+
+const caseSensitiveAt = (fs: FileSystem.FileSystem, pathService: Path.Path, basePath: string) => {
+  const root = pathService.resolve(basePath)
+  return fs.readDirectory(root).pipe(
+    Effect.flatMap((names) => Effect.fromResult(admitCaseProbe(CaseProbeCommand.make({ names })))),
+    Effect.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag('NoCaseToProbe', () => Effect.succeed([])),
+        Match.tag('CaseProbePairs', ({ pairs }) =>
+          Effect.map(Effect.forEach(pairs, probeOf(fs, pathService, root)), Arr.getSomes)),
+        Match.exhaustive,
+      )
+    ),
+    Effect.flatMap((probes) => Effect.fromResult(admitCaseSensitivity(CaseSensitivityCommand.make({ probes })))),
+    Effect.map(S.is(CaseToldApart)),
+    Effect.orElseSucceed(() => false),
+  )
+}
+
+const entryRulesOf = (
   options: Options.StrykerOptions,
   basePath: string,
   pathService: Path.Path,
-): readonly string[] => [
-  ...ALWAYS_IGNORE,
-  ...strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
-  ...options.ignorePatterns,
-]
-
-const directoryPrefixOf = (relativeName: string) =>
-  Boolean.match(relativeName.length > 0, { onTrue: () => `${relativeName}/`, onFalse: () => '' })
+  outputCaseSensitive: boolean,
+): EntryRules => ({
+  ignorePatterns: [...ALWAYS_IGNORE, ...options.ignorePatterns],
+  outputPatterns: strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
+  outputCaseSensitive,
+})
 
 type DirectoryEntry = {
   readonly name: string
@@ -124,7 +180,7 @@ type DirectoryEntry = {
 }
 
 const crawlDirectory = (
-  ignorePatterns: readonly string[],
+  rules: EntryRules,
   dir: string,
   rootDir: string,
 ): Stream.Stream<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
@@ -149,11 +205,11 @@ const crawlDirectory = (
         Stream.runCollect,
       )
       return Stream.fromIterable([...withTypes]).pipe(
-        Stream.filter((entry) => isEntryIncluded(ignorePatterns, entry)),
+        Stream.filter((entry) => isEntryIncluded(rules, entry)),
         Stream.flatMap(
           (entry) =>
             Boolean.match(entry.isDirectory, {
-              onTrue: () => crawlDirectory(ignorePatterns, entry.full, rootDir),
+              onTrue: () => crawlDirectory(rules, entry.full, rootDir),
               onFalse: () => Stream.succeed(entry.full),
             }),
           { concurrency: CRAWL_CONCURRENCY },
@@ -162,10 +218,12 @@ const crawlDirectory = (
     }),
   )
 
-const isEntryIncluded = (ignorePatterns: readonly string[], entry: DirectoryEntry): boolean => {
+const isEntryIncluded = (rules: EntryRules, entry: DirectoryEntry): boolean => {
   const decision = admitDiscoveredEntry(
     DiscoveredEntryCommand.make({
-      ignorePatterns: [...ignorePatterns],
+      ignorePatterns: [...rules.ignorePatterns],
+      outputPatterns: [...rules.outputPatterns],
+      outputCaseSensitive: rules.outputCaseSensitive,
       entryName: entry.name,
       entryPath: entry.entryPath,
       isDirectory: entry.isDirectory,
@@ -175,10 +233,10 @@ const isEntryIncluded = (ignorePatterns: readonly string[], entry: DirectoryEntr
 }
 
 const resolveInputFileNames = (
-  ignorePatterns: readonly string[],
+  rules: EntryRules,
   basePath: string,
 ): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  crawlDirectory(ignorePatterns, basePath, basePath).pipe(Stream.runCollect, Effect.map((files) => [...files]))
+  crawlDirectory(rules, basePath, basePath).pipe(Stream.runCollect, Effect.map((files) => [...files]))
 
 const parseAndDecodeIncrementalReport = S.decodeUnknownResult(S.fromJsonString(IncrementalReportSchema))
 
@@ -351,7 +409,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
   const inputFileNames = yield* resolveInputFileNames(
-    ignoreRulesOf(options, input.basePath, pathService),
+    entryRulesOf(options, input.basePath, pathService, yield* caseSensitiveAt(fs, pathService, input.basePath)),
     input.basePath,
   )
   const defaults = yield* defaultOptions
