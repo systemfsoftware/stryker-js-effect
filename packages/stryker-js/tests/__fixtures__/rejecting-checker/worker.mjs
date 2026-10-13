@@ -18,10 +18,10 @@ const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
   digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
   capabilities: () => Effect.succeed({ typeQuery: [] }),
-  typeQuery: () =>
+  typeQuery: ({ version }) =>
     Effect.fail(
       TypeQuery.TypeQueryRefused.make({
-        version: 2,
+        version,
         reason: 'unsupported-version',
         nextAction:
           'This checker declares no type-query versions; send type queries to one whose capabilities list the version.',

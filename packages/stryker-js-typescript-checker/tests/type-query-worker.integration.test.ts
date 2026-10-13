@@ -294,6 +294,18 @@ const workerVersusInProcess: Effect.Effect<
   return { worker, inProcess }
 }).pipe(Effect.orDie)
 
+const refusedUnservedVersion: Effect.Effect<
+  { readonly tag: string; readonly version: number; readonly reason: string },
+  never,
+  FileSystem.FileSystem | Path.Path | Worker.WorkerLauncher | Scope.Scope
+> = Effect.gen(function*() {
+  const client = yield* makeClient
+  const refused = yield* Effect.flip(client.typeQuery({ ...requestOf(yield* fixture), version: 3 }))
+  return S.is(TypeQuery.TypeQueryRefused)(refused)
+    ? { tag: 'TypeQueryRefused', version: refused.version, reason: refused.reason }
+    : { tag: 'Other', version: -1, reason: String(refused) }
+}).pipe(Effect.orDie)
+
 const checkAroundQuery: Effect.Effect<
   { readonly before: Record<string, Checker.CheckAnswer>; readonly after: Record<string, Checker.CheckAnswer> },
   never,
@@ -396,6 +408,19 @@ Feature('Serving type queries over the checker worker’s RPC group', { timeout:
             },
             refusals: [{ reason: 'not-in-project' }],
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A type query for a version the worker does not serve is refused with that version',
+      Gherkin.Do.pipe(
+        When('the caller asks the packed worker for a version it does not serve')(
+          'refusal',
+          () => refusedUnservedVersion,
+        ),
+        Then('the refusal names the version that was asked for and the reason it was refused')((s, expect) =>
+          expect(s.refusal).toEqual({ tag: 'TypeQueryRefused', version: 3, reason: 'unsupported-version' })
         ),
       ),
     )

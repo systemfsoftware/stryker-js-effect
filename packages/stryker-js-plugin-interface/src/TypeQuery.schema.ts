@@ -122,7 +122,7 @@ export const TypeQueryRefusedReason = S.Literals(['unsupported-version', 'projec
 export type TypeQueryRefusedReason = typeof TypeQueryRefusedReason.Type
 
 export class TypeQueryRefused extends S.TaggedError<TypeQueryRefused>()('TypeQueryRefused', {
-  version: TypeQueryVersion,
+  version: S.Int,
   reason: TypeQueryRefusedReason,
   nextAction: S.String,
 }) {

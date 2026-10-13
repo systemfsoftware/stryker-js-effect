@@ -336,8 +336,12 @@ const refusals = Effect.gen(function*() {
     query(requestOf(fixture, [{ ...file, fileName: fixture.file('../per-mutant-check/dep.ts') }])),
   )
   return {
-    unsupported: unsupported.reason,
-    unknownVersion: `${unknownVersion.reason}: ${unknownVersion.nextAction}`,
+    functionBodyRefusal: { reason: unsupported.reason, version: unsupported.version },
+    unknownVersionRefusal: {
+      reason: unknownVersion.reason,
+      nextAction: unknownVersion.nextAction,
+      version: unknownVersion.version,
+    },
     outside: outside.files.flatMap((outcome) => Object.values(outcomeText(outcome))),
   }
 })
@@ -374,7 +378,7 @@ const unopenable = Effect.gen(function*() {
   const refused = yield* Effect.flip(
     query({ ...requestOf(fixture, [second]), tsconfigFile: fixture.file('no-such-tsconfig.json') }),
   )
-  return refused.reason
+  return { reason: refused.reason, version: refused.version }
 })
 
 Feature('Answering type queries on a tsgo server of their own', { timeout: 120_000 })
@@ -481,14 +485,19 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
           'seen',
           () => refusals,
         ),
-        Then('both are refused unsupported-version naming versions 1 or 2, and the outside file not-in-project')((
+        Then(
+          'both are refused carrying the version they refused, and the file outside the project is refused on its own',
+        )((
           s,
           expect,
         ) =>
           expect(s.seen).toEqual({
-            unsupported: 'unsupported-version',
-            unknownVersion:
-              'unsupported-version: Send a TypeQuery.TypeQueryRequest with version 1 or 2; this server received version 3.',
+            functionBodyRefusal: { reason: 'unsupported-version', version: 1 },
+            unknownVersionRefusal: {
+              reason: 'unsupported-version',
+              nextAction: 'Send a TypeQuery.TypeQueryRequest with version 1 or 2; this server received version 3.',
+              version: 3,
+            },
             outside: ['FileRefused not-in-project'],
           })
         ),
@@ -522,8 +531,10 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     scenario(
       'A project tsgo cannot open refuses the request',
       Gherkin.Do.pipe(
-        When('a request names a tsconfig that does not exist')('reason', () => unopenable),
-        Then('the request is refused project-open-failed')((s, expect) => expect(s.reason).toBe('project-open-failed')),
+        When('a request names a project file that does not exist')('refusal', () => unopenable),
+        Then('the request is refused with the version it asked for')((s, expect) =>
+          expect(s.refusal).toEqual({ reason: 'project-open-failed', version: 1 })
+        ),
       ),
     )
   })

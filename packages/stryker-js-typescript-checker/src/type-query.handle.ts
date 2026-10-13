@@ -82,8 +82,6 @@ import type { ServerCrash } from './type-query.schema.js'
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TypeQuery')
 export type TypeId = typeof TypeId
 
-const REFUSAL_VERSION: TypeQuery.TypeQueryVersion = 2
-
 const servedVersionOf = (version: number): Option.Option<TypeQuery.TypeQueryVersion> =>
   Arr.findFirst(TypeQuery.TypeQueryVersion.literals, (served) => served === version)
 
@@ -105,16 +103,16 @@ const isContextFree = (text: string): boolean => {
 
 const unsupportedVersion = (version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'unsupported-version',
     nextAction: `Send a TypeQuery.TypeQueryRequest with version ${
       TypeQuery.TypeQueryVersion.literals.join(' or ')
     }; this server received version ${version}.`,
   })
 
-const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
+const functionBodyNeedsVersionTwo = (version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'unsupported-version',
     nextAction:
       'Send a version 2 TypeQuery.TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
@@ -123,9 +121,9 @@ const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
 const hasFunctionBodySite = (request: TypeQuery.TypeQueryRequest): boolean =>
   Arr.some(request.files, (file) => Arr.some(file.sites, (site) => site.kind === 'function-body'))
 
-const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQuery.TypeQueryRefused =>
+const projectOpenFailed = (tsconfigFile: string, detail: string, version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'project-open-failed',
     nextAction: `Open '${tsconfigFile}' with a valid TypeScript project and retry; opening it failed with: ${detail}`,
   })
@@ -181,20 +179,20 @@ const closeApi = (api: API): Effect.Effect<void> =>
 
 const closeServer = (server: Server): Effect.Effect<void> => closeApi(server.api)
 
-const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
+const openServer = (tsconfigFile: string, version: number): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   Effect.gen(function*() {
     const overlay = makeOverlay()
     const api = yield* Effect.try({
       try: () => new API({ fs: overlay.fs }),
-      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail),
+      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail, version),
     })
     const snapshot = yield* Effect.tryPromise({
       try: () => api.updateSnapshot({ openProjects: [tsconfigFile] }),
-      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail),
+      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail, version),
     }).pipe(
       Effect.filterOrFail(
         (opened) => opened.getProject(tsconfigFile) !== undefined,
-        () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig'),
+        () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig', version),
       ),
       Effect.tapError(() => closeApi(api)),
     )
@@ -211,12 +209,19 @@ export type TypeQueryServers = Handle.Of<typeof TypeQueryServers>
 
 export const isTypeQueryServers = TypeQueryServers.is
 
-const getOrOpen = (servers: Servers, tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
+const getOrOpen = (
+  servers: Servers,
+  tsconfigFile: string,
+  version: number,
+): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   SynchronizedRef.modifyEffect(servers, (map) =>
     Option.match(HashMap.get(map, tsconfigFile), {
       onSome: (server) => Effect.succeed([server, map] as const),
       onNone: () =>
-        Effect.map(openServer(tsconfigFile), (server) => [server, HashMap.set(map, tsconfigFile, server)] as const),
+        Effect.map(
+          openServer(tsconfigFile, version),
+          (server) => [server, HashMap.set(map, tsconfigFile, server)] as const,
+        ),
     }))
 
 const discardServer = (servers: Servers, server: Server): Effect.Effect<void> =>
@@ -894,13 +899,14 @@ const serveFile = (
   servers: Servers,
   tsconfigFile: string,
   file: TypeQuery.TypeQueryFile,
+  version: number,
 ): Effect.Effect<TypeQuery.FileOutcome, TypeQuery.TypeQueryRefused> =>
-  Effect.flatMap(getOrOpen(servers, tsconfigFile), (server) =>
+  Effect.flatMap(getOrOpen(servers, tsconfigFile, version), (server) =>
     Semaphore.withPermit(
       server.lock,
       Effect.flatMap(isCurrent(servers, server), (current) =>
         Boolean.match(current, {
-          onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file)),
+          onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file, version)),
           onTrue: () =>
             Effect.timeoutOption(processFile(server, file), QUERY_GRACE).pipe(
               Effect.matchEffect({
@@ -925,9 +931,11 @@ const makeShape = (servers: Servers): TypeQuery.TypeQueryShape => ({
       const tsconfigFile = normalizeFileName(request.tsconfigFile)
       const files = yield* Boolean.match(Boolean.and(version === 1, hasFunctionBodySite(request)), {
         onTrue: () =>
-          Effect.fail(functionBodyNeedsVersionTwo()),
+          Effect.fail(functionBodyNeedsVersionTwo(request.version)),
         onFalse: () =>
-          Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file), { concurrency: 1 }),
+          Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file, request.version), {
+            concurrency: 1,
+          }),
       })
       return { version, files }
     }),

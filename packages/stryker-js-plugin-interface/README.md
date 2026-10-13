@@ -87,6 +87,10 @@ and 2 (`TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`,
 as `capabilities` and `typeQuery`; the TypeScript checker ships an in-process
 implementation as `layer` from its own `./type-query` entry.
 
+A request names the version it asks for, and a response and a refusal each
+carry the version in question: a refusal for a version the checker does not
+serve names the version it refused, not one it serves.
+
 ```ts
 import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 ```
