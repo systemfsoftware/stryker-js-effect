@@ -7,6 +7,6 @@ A mutation run now writes its event stream to the `progressStreamFile` set in th
 Breaking:
 
 - With `progressStreamFile` in your config, the stream is no longer at `reports/mutation-stream.jsonl`; read the configured path.
-- A config that exports a function has it called once more per run; it must answer the same options each time.
+- A config that exports a function has it called once more per run; it must not fail on a later call.
 - Your own `reports/mutation-stream.jsonl` is no longer part of the project Stryker copies and hashes.
-- `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed; the default is `reports/mutation-stream.jsonl`.
+- `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed; read `progressStreamFile` from `Configuration.defaultOptions`.

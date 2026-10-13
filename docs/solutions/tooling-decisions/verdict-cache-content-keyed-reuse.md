@@ -81,11 +81,13 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
 - **A run never feeds its own inputs.** The crawl that computes the closure
   digest excludes every Stryker output path, declared or default.
   `strykerOutputFilesOf` is the one list of those paths; a new sidecar joins it
-  there, not in a second place. Each entry is matched as the path the writer
-  produces: resolved against the project and made project-relative, so
-  `./out/x`, `out//x` and `out/x/` all exclude `out/x`. The stream file the
-  CLI opens before the engine reads its config is the one the engine
-  excludes, because the CLI hands its resolved name to the engine.
+  there, not in a second place. An entry inside the project is resolved
+  against it and made project-relative with `/` separators, so `./out/x`,
+  `out//x` and `out/x/` all exclude `out/x`; an entry outside the project keeps
+  its spelling. The stream file the CLI opens before the engine reads its
+  config is one the engine excludes, because the CLI hands its resolved name to
+  the engine. Gate: the built-CLI feature `progress-stream-file.integration.test.ts`
+  re-runs a project twice and fails when the second run re-runs a mutant.
 - **Refusal is named.** Every mutant a key refuses carries exactly one reason
   by fixed precedence - semantics changed, policy changed, run inputs changed,
   closure changed, a flaky dependency, a timeout that has not reproduced, or no
