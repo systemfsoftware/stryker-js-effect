@@ -46,7 +46,7 @@ export const mutantIds = S.String.pipe(
   S.Array,
   S.annotate({
     description:
-      "The content ids of the mutants a run re-runs. Set by naming ids on the run command; the run then mutates only the files those ids live in, plans only those mutants, and reports each one's status, covering tests, killing test, and reproducer command.",
+      "The content ids of the mutants a run re-runs. Set by naming ids on the run command; the run then mutates only the files those ids live in, plans only those mutants, and reports each one's status, status reason, the facts that status admits, and reproducer command.",
   }),
   S.optionalKey,
 )

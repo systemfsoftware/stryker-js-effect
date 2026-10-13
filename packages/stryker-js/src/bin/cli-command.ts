@@ -285,7 +285,7 @@ const runOptions = {
   mutant: Flag.String('mutant')
     .pipe(
       Flag.withDescription(
-        "Re-run one or more mutants by id, comma separated. Admits each id against the previous run's mutation report (`reports/mutation/mutation.json`), restricts the run to those mutants' files, and emits a `mutant-detail` for each with its status, covering tests, killing test, and `stryker run --mutant <id>` reproducer. Exits 2 naming the ids when a report is missing or does not list one of them.",
+        "Re-run one or more mutants by id, comma separated. Admits each id against the previous run's mutation report (`reports/mutation/mutation.json`), restricts the run to those mutants' files, and emits a `mutant-detail` for each with its status, status reason, the facts that status admits (the killing tests when Killed; the covering tests and next action when Survived, Timeout or RuntimeError; the original text and next action when NoCoverage), and the `stryker run --mutant <id>` reproducer. Exits 2 naming the ids when a report is missing or does not list one of them.",
       ),
       Flag.map(splitOnComma),
       optional,
