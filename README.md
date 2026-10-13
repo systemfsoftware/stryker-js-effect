@@ -375,7 +375,7 @@ The in-process `vm` runner executes your Vitest suites in one worker thread per 
 <details>
 <summary>How can CI jobs parse real-time mutation progress?</summary>
 
-Set `--json`, or `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload; every mode also writes the same records to the `progressStreamFile` (default `reports/mutation-stream.jsonl`).
+Set `--json`, or `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload; every mode also writes the same records to the `progressStreamFile` (`--progressStreamFile` or the config file, default `reports/mutation-stream.jsonl`).
 
 </details>
 

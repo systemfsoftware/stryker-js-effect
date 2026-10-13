@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0342-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0409-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-13-0342-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whichever `stryker` commands ran in it before. A `progressStreamFile` set in the config file is where `stryker run` writes its stream.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0342 plan, executed in `b6c0eb00`; its full review found two P1s (a trailing `/` spelling never excluded, a failed config read masking an invalid value) and a dishonest patch bump, so this plan carries the corrected contract and 0342 is removed in the same PR (REPO-D2). 0342 superseded 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0409 plan, executed in `bd72466b`; its full review found no P0 or P1 but a BREAK-1 violation (a duplicate published name kept for compatibility), a stale unit (U4's patch changeset), a false KTD5 and over-promising release wording, so this plan carries the corrected contract and 0409 is removed in the same PR (REPO-D2). 0409 superseded 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
 - **Open blockers:** none. OQ1, OQ2, OQ4 and OQ5 go to the root and OQ3 to PR #320; none gates this unit.
 
@@ -81,9 +81,9 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 - The ignore rules users write, `ALWAYS_IGNORE` and the digest are unchanged. The exclusion list gains the default stream path; its entries are normalized before matching.
 - Which commands write a stream is unchanged.
-- The README sentences that state the stream always lands at `reports/mutation-stream.jsonl` (`README.md:303`, `:378`, `packages/stryker-js/README.md:200`) and the learning at `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md:31` are corrected to name the resolved `progressStreamFile`.
+- The README sentences that stated the stream always lands at `reports/mutation-stream.jsonl` (`README.md:303`, `:378`, `packages/stryker-js/README.md:200`) and the learning at `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md:31` name the resolved `progressStreamFile`. The learning `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md` states the matching rule.
 - No CI, Turbo, cache, workflow, e2e, fixture or timeout change. No mutation run of any kind.
-- The changeset is `major` (package-topology `surface-changes-are-versioned`: consumers observe the change): a run whose config names `progressStreamFile` no longer streams to `reports/mutation-stream.jsonl`, a config function is called once more per run, and a project's own `reports/mutation-stream.jsonl` leaves the project. Each is listed under Breaking.
+- The changeset is `major` (package-topology `surface-changes-are-versioned`: consumers observe the change): a run whose config names `progressStreamFile` no longer streams to `reports/mutation-stream.jsonl`, a config function is called once more per run, a project's own `reports/mutation-stream.jsonl` leaves the project, and `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed (BREAK-1). Each is listed under Breaking. Its spelling claim names only the spellings AE3 proves.
 
 ### Key Decisions
 
@@ -121,11 +121,11 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 ### Key Technical Decisions
 
-- KTD1. `stryker-outputs.ts` owns `DEFAULT_PROGRESS_STREAM_FILE`. `RunEventDrain` imports it for its initial path and keeps its published `DefaultProgressStreamFile` static on it. `strykerOutputFilesOf` returns it next to `options.progressStreamFile`.
+- KTD1. `stryker-outputs.ts` owns `DEFAULT_PROGRESS_STREAM_FILE`. `RunEventDrain` imports it for its initial path; its published `DefaultProgressStreamFile` static is removed, one name per value (BREAK-1). `strykerOutputFilesOf` returns it next to `options.progressStreamFile`.
 - KTD2. `readRunRequest` resolves a `StreamedRequest` with `streamedRequestOf`. For route tag `run` it maps `readConfig(...)`'s resolved options through `progressStreamFileName`, the non-empty-or-default helper, and pins the name into the run's options. On any `ConfigReadError` it pins nothing: the stream opens at the flag or default path and the engine's own read refuses the config as today. Other routes use the command-line options and keep them unchanged.
 - KTD3. The test drives the built `stryker` binary. `test-layer-selection` refuses process spawning in an integration test; the root's rule for this unit requires the built CLI, and the defects live only in the CLI's request read, which `Engine.strykerCell` and `./promises` `run()` never call. Siblings do the same (`tests/rerun-by-id.integration.test.ts`, `tests/plan-stream-location.integration.test.ts`).
 - KTD4. `projectRelativeRuleOf` turns every Stryker-output entry into the project-relative path of `resolve(basePath, entry)`, and `slashedRuleOf` joins it with `/`. An entry outside the project keeps its old form, as absolute entries did. The crawl still builds nested entry paths with the platform separator (pre-existing on `main`), so nested outputs match on POSIX only.
-- KTD5. For route tag `run`, the `CliRead` options carry `progressStreamFile` set to the resolved name, so every later config read in the run resolves the same path: the run stage, `--survivors` and `--mutant` all pass `channel.options` as `cliOptions` (`run-request.cell.ts:193`, `:216`, `:249`). The shard leaf spreads unpinned options (`:685`), but its children always pass `--progressStreamFile` (`shard/shard-run.ts:43-44`). `progressStreamFile` is one of the unfingerprinted `presentationOptionKeys` (`verdict-semantics.ts:99-111`), so reuse keys do not change.
+- KTD5. For route tag `run`, the `CliRead` options carry `progressStreamFile` set to the resolved name, so every later config read in the run resolves the same path: the run stage, `--survivors`, `--mutant` and the shard leaf are all `run` invocations (`Cli.schema.ts` `RunRequestSchema`) and pass the pinned `channel.options` on (`run-request.cell.ts:193`, `:216`, `:249`, `:685`). `progressStreamFile` is one of the unfingerprinted `presentationOptionKeys` (`verdict-semantics.ts:99-111`), so reuse keys do not change.
 
 ### Assumptions This Breaks
 
@@ -155,7 +155,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 #### U4. Docs and changeset
 
-- **Files:** `README.md`, `packages/stryker-js/README.md`, `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md`, a patch changeset for `@systemfsoftware/stryker-js`.
+- **Files:** `README.md`, `packages/stryker-js/README.md`, `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md`, `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md`, a `major` changeset for `@systemfsoftware/stryker-js`.
 
 #### U5. Match each output however its path is spelled
 
@@ -197,7 +197,7 @@ Round 2, report-only review of `3cb10de5`:
 | -------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
 | A `./`-prefixed or doubled-slash `progressStreamFile` is written but never matched by the exclusion rule | correctness, adversarial | Fixed: U5, proven by AE3; reproduced first on the built binary (reused 0, ran 2) |
 | Scenario 2 never asserts the help left a default-path stream                                             | correctness, adversarial | Fixed: AE2 asserts it after each command                                         |
-| `RunEventDrain.DefaultProgressStreamFile` removed from a published class                                 | correctness              | Fixed: kept, on the shared constant                                              |
+| `RunEventDrain.DefaultProgressStreamFile` removed from a published class                                 | correctness              | Reversed in round 5: removed under BREAK-1, listed under Breaking                |
 | #320 rebuilds the list without the default path and its help says `reports/` is not ignored              | adversarial              | OQ3: #320 adapts after this lands, per the root's ordering                       |
 | A project's own file at `reports/mutation-stream.jsonl` is no longer an input or copied to the sandbox   | adversarial, correctness | Accepted: listed in Assumptions; `packages/stryker-js/README.md:200` says so     |
 | A stream left at a previously configured path stays an input                                             | correctness              | OQ2                                                                              |
@@ -223,7 +223,7 @@ Round 3, full-path report-only review of `80f3959a`:
 | The default-path exclusion narrows the digest without a test                              | P3  | learnings             | Accepted: as the P2 above                                                                                                                                |
 | Boundary suite proves only the acceptance pole (boundary-testing/real-system-oracles)     | P3  | boundary-testing pack | Fixed: AE7 is the refusal pole                                                                                                                           |
 | The default stream path is spelled in two packages                                        | P3  | cell-architecture     | OQ4                                                                                                                                                      |
-| `RunEventDrain.DefaultProgressStreamFile` is an unused published static                   | P3  | cell-architecture     | Kept: published on `main` and unchanged in value; removing it is a separate breaking API change                                                          |
+| `RunEventDrain.DefaultProgressStreamFile` is an unused published static                   | P3  | cell-architecture     | Reversed in round 5: removed under BREAK-1                                                                                                               |
 | CONST-W3 declaration names only the run-request branch                                    | P3  | schema-laws pack      | Fixed: names the read-project normalization too                                                                                                          |
 | `//` spelling has no test row                                                             | P3  | testing               | Fixed: AE3 outline row                                                                                                                                   |
 | Flag-over-config has no end-to-end case                                                   | P3  | testing               | Fixed: AE4                                                                                                                                               |
@@ -249,6 +249,22 @@ Round 4, full-path report-only review of `b6c0eb00`:
 | `README.md:303` names only the flag                                                             | P3  | learnings                      | Fixed: names the config file                                                                                       |
 | The changeset's "including those left by other commands" overstates (OQ2)                       | -   | learnings (residual)           | Fixed: removed                                                                                                     |
 | `RunEventDrainLive` is an exported `*Live` (service-and-layer-boundaries)                       | -   | cell-architecture (residual)   | Pre-existing and untouched; no action                                                                              |
+
+Round 5, full-path report-only review of `bd72466b` (findings: 0 P0, 0 P1, 4 P2, 7 P3):
+
+| Finding                                                                                      | Sev | Lens                   | Disposition                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------- | --- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A config whose first read fails and second succeeds streams at the default path, and exits 0 | P2  | adversarial            | Accepted: the class of OQ5 (a config function that does not answer the same each time); the Breaking list requires the same answer each time; the default path is excluded, so reuse holds                                                                 |
+| #320 ships a help sentence the always-excluded default makes false                           | P2  | adversarial            | OQ3; the root lands #329 first and #320 merges `main` after                                                                                                                                                                                                |
+| U4 still asks for a patch changeset                                                          | P2  | learnings              | Fixed: U4 names `major`                                                                                                                                                                                                                                    |
+| A duplicate published name kept for compatibility (BREAK-1)                                  | P2  | project-standards      | Fixed: static removed; listed under Breaking; `tsc -b` and `api-extractor` clean                                                                                                                                                                           |
+| "However their paths are spelled" is false for nested outputs on Windows                     | P3  | adversarial, learnings | Fixed: the changeset names the spellings AE3 proves                                                                                                                                                                                                        |
+| KTD5 calls the shard leaf unpinned                                                           | P3  | correctness            | Fixed: KTD5                                                                                                                                                                                                                                                |
+| `README.md:378` still names only the default                                                 | P3  | correctness            | Fixed: names the flag and the config file                                                                                                                                                                                                                  |
+| The owning learning lacks the matching rule                                                  | P3  | learnings              | Fixed: `verdict-cache-content-keyed-reuse.md` states it; the solution-doc validator passes                                                                                                                                                                 |
+| AE7 is not a refusing endpoint (boundary-testing `real-system-oracles`)                      | P3  | boundary-testing pack  | Disputed, no change: the rule targets network, socket and watcher adapters; here the refusal pole is a refused config that exits 2 with an error record and never reports a verdict, and teardown is the scoped temp directory plus the awaited child exit |
+| R7's flagged spelling has no row                                                             | P3  | testing                | Not admitted: flag and config values reach the drain and the exclusion through the same merged option, so a flag row repeats AE3's path                                                                                                                    |
+| The extra config evaluation (`--survivors`, `--mutant` now three)                            | -   | adversarial (residual) | OQ5                                                                                                                                                                                                                                                        |
 
 ### Verification Contract
 
