@@ -73,15 +73,15 @@ Feature('Reading a repository diff since a git ref')
               return { real, fromSrc }
             }).pipe(Effect.ensuring(removeRepo(s.repo))),
         ),
-        Then('hunks and untracked files name paths from the working directory, at the commit HEAD names')((
-          s,
-          expect,
-        ) =>
+        Then(
+          'hunks, untracked files and the worktree digest read the same from the root and from src/, at the commit HEAD names',
+        )((s, expect) =>
           expect({ real: s.observation.real, fromSrc: s.observation.fromSrc }).toEqual({
             real: {
               ref: 'HEAD',
               base: s.observation.real.head,
               head: expect.stringMatching(/^[0-9a-f]{40}$/),
+              worktree: expect.stringMatching(/^[0-9a-f]{64}$/),
               hunks: [
                 { file: 'src/gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'src/kept.ts', startLine: 4, lineCount: 2 },
@@ -92,6 +92,7 @@ Feature('Reading a repository diff since a git ref')
               ref: 'HEAD',
               base: s.observation.real.base,
               head: s.observation.real.head,
+              worktree: s.observation.real.worktree,
               hunks: [
                 { file: 'gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'kept.ts', startLine: 4, lineCount: 2 },
@@ -99,6 +100,39 @@ Feature('Reading a repository diff since a git ref')
               untrackedFiles: ['new.ts'],
             },
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'The worktree digest covers the uncommitted content and is empty for a clean tree',
+      Gherkin.Do.pipe(
+        Given('a temporary repository whose changes are committed')('repo', () =>
+          Effect.gen(function*() {
+            const root = yield* buildRepo()
+            yield* execGit(root, [...COMMITTER, 'add', '-A'])
+            yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'commit everything'])
+            return root
+          })),
+        When('the service reads the diff since HEAD before and after an uncommitted edit')(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const path = yield* Path.Path
+              const clean = yield* changedSince(s.repo, 'HEAD')
+              const fromSrc = yield* changedSince(path.join(s.repo, 'src'), 'HEAD')
+              yield* writeFile(s.repo, 'src/kept.ts', 'const a = 1\n')
+              const dirty = yield* changedSince(s.repo, 'HEAD')
+              return { clean, dirty, fromSrc }
+            }).pipe(Effect.ensuring(removeRepo(s.repo))),
+        ),
+        Then('the clean tree digests to nothing and the edited tree digests to another sha256')((s, expect) =>
+          expect({
+            clean: s.observation.clean.worktree,
+            dirtyIsSha256: /^[0-9a-f]{64}$/.test(s.observation.dirty.worktree),
+            digestMoved: s.observation.clean.worktree !== s.observation.dirty.worktree,
+            sameFromEitherDirectory: s.observation.clean.worktree === s.observation.fromSrc.worktree,
+          }).toEqual({ clean: '', dirtyIsSha256: true, digestMoved: true, sameFromEitherDirectory: true })
         ),
       ),
     )

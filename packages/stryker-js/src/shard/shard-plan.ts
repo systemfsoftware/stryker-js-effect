@@ -9,7 +9,7 @@ import * as S from 'effect/Schema'
 
 import type { GitCommandFailed } from '../git-diff.schema.js'
 import { GitDiff } from '../git-diff.service.js'
-import { admitPlanHead, AdmitPlanHeadCommand, type ShardPlanStale } from './admit-plan-head.workflow.js'
+import { admitPlanHead, AdmitPlanHeadCommand, type AdmitPlanHeadError } from './admit-plan-head.workflow.js'
 import { ShardPlanInvalid } from './shard-plan.schema.js'
 
 export interface LoadedShardPlan {
@@ -66,13 +66,13 @@ export const admitLoadedPlan: {
   (
     basePath: string,
     loaded: LoadedShardPlan,
-  ): Effect.Effect<LoadedShardPlan, ShardPlanStale | GitCommandFailed, GitDiff>
+  ): Effect.Effect<LoadedShardPlan, AdmitPlanHeadError | GitCommandFailed, GitDiff>
   (
     loaded: LoadedShardPlan,
-  ): (basePath: string) => Effect.Effect<LoadedShardPlan, ShardPlanStale | GitCommandFailed, GitDiff>
+  ): (basePath: string) => Effect.Effect<LoadedShardPlan, AdmitPlanHeadError | GitCommandFailed, GitDiff>
 } = dual(2, (basePath: string, loaded: LoadedShardPlan): Effect.Effect<
   LoadedShardPlan,
-  ShardPlanStale | GitCommandFailed,
+  AdmitPlanHeadError | GitCommandFailed,
   GitDiff
 > =>
   Match.value(loaded.plan.scope).pipe(
@@ -81,7 +81,8 @@ export const admitLoadedPlan: {
       Effect.gen(function*() {
         const git = yield* GitDiff
         const head = yield* git.head(basePath)
-        yield* Effect.fromResult(admitPlanHead(AdmitPlanHeadCommand.make({ scope, head })))
+        const worktree = yield* git.worktreeDigest(basePath)
+        yield* Effect.fromResult(admitPlanHead(AdmitPlanHeadCommand.make({ scope, head, worktree })))
         return loaded
       })),
     Match.exhaustive,

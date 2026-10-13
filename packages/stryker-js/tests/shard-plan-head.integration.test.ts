@@ -1,10 +1,12 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
+import { ShardPlanDiffScoped } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
 import {
@@ -33,6 +35,24 @@ const STALE_DIFF_FILE = 'plan-stale.json'
 const FULL_STALE_FILE = 'plan-full-stale.json'
 
 const CURRENT_FILE = 'plan-current.json'
+
+const DIRTY_PLAN_FILE = 'plan-dirty.json'
+
+const IGNORED_OUTPUTS = 'plan*.json\nreports/\n'
+
+const DIRTY_SOURCE = [
+  'export const add = (a, b) => {',
+  '  const sum = a + b',
+  '  return sum + 0',
+  '}',
+  'export const sub = (a, b) => {',
+  '  const difference = a - b',
+  '  return difference - 0',
+  '}',
+  '',
+].join('\n')
+
+const REDIRTIED_SOURCE = DIRTY_SOURCE.replace('return sum + 0', 'return sum + 1')
 
 const VERSION_ONE_FILE = 'plan-v1.json'
 
@@ -81,6 +101,7 @@ const prepareFixture = (): Effect.Effect<
     yield* requireBinary
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-head-' }))
     yield* execGit(root, ['init', '-q'])
+    yield* writeFile(root, '.gitignore', IGNORED_OUTPUTS)
     yield* writeFile(root, 'package.json', CONSUMER_PACKAGE)
     yield* writeFile(root, 'stryker.config.mjs', CONFIG)
     yield* writeFile(root, 'src/math.js', SOURCE)
@@ -98,14 +119,20 @@ const prepareFixture = (): Effect.Effect<
       () => new Error('the planner did not write a decodable ShardPlan'),
     )
     const single = singleShardPlanOf(plan)
-    const currentDiff = yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: realHead } })
-    const staleDiff = yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD } })
+    const currentDiff = yield* encodePlan({
+      ...single,
+      scope: { _tag: 'DiffScoped', base: realHead, head: realHead, worktree: '' },
+    })
+    const staleDiff = yield* encodePlan({
+      ...single,
+      scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD, worktree: '' },
+    })
     yield* fs.writeFileString(path.join(root, STALE_DIFF_FILE), staleDiff)
     yield* fs.writeFileString(
       path.join(root, FULL_STALE_FILE),
       yield* encodePlan({
         ...single,
-        scope: { _tag: 'FullScope', base: realHead, head: OTHER_HEAD, reason: '--since main' },
+        scope: { _tag: 'FullScope', base: realHead, head: OTHER_HEAD, worktree: '', reason: '--since main' },
       }),
     )
     yield* fs.writeFileString(path.join(root, CURRENT_FILE), currentDiff)
@@ -119,6 +146,53 @@ const prepareFixture = (): Effect.Effect<
     yield* fs.writeFileString(path.join(elsewhere, CURRENT_FILE), currentDiff)
     yield* fs.writeFileString(path.join(elsewhere, STALE_DIFF_FILE), staleDiff)
     return { root, realHead, elsewhere }
+  }).pipe(Effect.orDie)
+
+interface DirtyFixture {
+  readonly root: string
+  readonly head: string
+}
+
+const prepareDirtyFixture = (): Effect.Effect<
+  DirtyFixture,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* requireBinary
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-dirty-' }))
+    yield* execGit(root, ['init', '-q'])
+    yield* writeFile(root, '.gitignore', IGNORED_OUTPUTS)
+    yield* writeFile(root, 'package.json', CONSUMER_PACKAGE)
+    yield* writeFile(root, 'stryker.config.mjs', CONFIG)
+    yield* writeFile(root, 'src/math.js', SOURCE)
+    yield* execGit(root, [...COMMITTER, 'add', '-A'])
+    yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'init'])
+    const head = yield* gitOutput(root, ['rev-parse', 'HEAD'])
+    yield* writeFile(root, 'src/math.js', DIRTY_SOURCE)
+    const planned = yield* spawnCli(
+      root,
+      ['plan', '--target-seconds', '1', '--out', DIRTY_PLAN_FILE, '--since', head],
+      'machine',
+    )
+    yield* Effect.when(
+      Effect.die(new Error(`planning exited ${planned.exitCode}: ${planned.stdout}${planned.stderr}`)),
+      Effect.succeed(planned.exitCode !== 0),
+    )
+    const plan = Option.getOrThrowWith(
+      decodePlan(yield* fs.readFileString(path.join(root, DIRTY_PLAN_FILE))),
+      () => new Error('the planner wrote no decodable ShardPlan'),
+    )
+    const single = singleShardPlanOf(plan)
+    const scheduled = single.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))
+    yield* Effect.when(
+      Effect.die(new Error(`the plan scoped from an uncommitted edit scheduled ${scheduled.length} mutants`)),
+      Effect.succeed(!S.is(ShardPlanDiffScoped)(single.scope) || scheduled.length === 0),
+    )
+    yield* fs.writeFileString(path.join(root, DIRTY_PLAN_FILE), yield* encodePlan(single))
+    return { root, head }
   }).pipe(Effect.orDie)
 
 const runShard = (
@@ -346,5 +420,58 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             })
           ),
         ),
+    )
+
+    scenario(
+      'A plan made from an uncommitted edit is refused once that edit changes again',
+      Gherkin.Do.pipe(
+        Given('a repository whose plan was made from an uncommitted edit to its source')(
+          'fixture',
+          () => prepareDirtyFixture(),
+        ),
+        When('the source changes once more without a commit and the shard runs')('ran', (s) =>
+          Effect.gen(function*() {
+            yield* writeFile(s.fixture.root, 'src/math.js', REDIRTIED_SOURCE)
+            const ran = yield* runShard(s.fixture.root, DIRTY_PLAN_FILE, 'human')
+            return { ran, shardDir: yield* shardDirExists(s.fixture.root) }
+          })),
+        Then('the run exits two, names the working tree it planned from and creates no shard output')((s, expect) =>
+          expect({
+            exitCode: s.ran.ran.exitCode,
+            namesTheWorkingTree: s.ran.ran.stderr.includes('working tree'),
+            namesTheBase: s.ran.ran.stderr.includes(s.fixture.head),
+            namesTheNext: s.ran.ran.stderr.includes('next: stryker plan --since'),
+            shardDir: s.ran.shardDir,
+          }).toEqual({
+            exitCode: 2,
+            namesTheWorkingTree: true,
+            namesTheBase: true,
+            namesTheNext: true,
+            shardDir: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A plan made from an uncommitted edit still runs while that edit is unchanged',
+      Gherkin.Do.pipe(
+        Given('a repository whose plan was made from an uncommitted edit to its source')(
+          'fixture',
+          () => prepareDirtyFixture(),
+        ),
+        When('the shard runs without touching the source again')('ran', (s) =>
+          Effect.gen(function*() {
+            const ran = yield* runShard(s.fixture.root, DIRTY_PLAN_FILE, 'human')
+            return { ran, shardDir: yield* shardDirExists(s.fixture.root) }
+          })),
+        Then('the run is admitted, reaches a verdict and leaves the shard output directory')((s, expect) =>
+          expect({
+            reachedAVerdict: s.ran.ran.exitCode === 0 || s.ran.ran.exitCode === 1,
+            namedAStaleTree: s.ran.ran.stderr.includes('working tree'),
+            shardDir: s.ran.shardDir,
+          }).toEqual({ reachedAVerdict: true, namedAStaleTree: false, shardDir: true })
+        ),
+      ),
     )
   })

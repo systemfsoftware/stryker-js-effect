@@ -188,12 +188,16 @@
                         "head": {
                           "type": "string",
                           "minLength": 1
+                        },
+                        "worktree": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "_tag",
                         "base",
-                        "head"
+                        "head",
+                        "worktree"
                       ],
                       "additionalProperties": true
                     },
@@ -214,6 +218,9 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "worktree": {
+                          "type": "string"
+                        },
                         "reason": {
                           "type": "string",
                           "minLength": 1
@@ -223,6 +230,7 @@
                         "_tag",
                         "base",
                         "head",
+                        "worktree",
                         "reason"
                       ],
                       "additionalProperties": true

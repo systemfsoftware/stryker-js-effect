@@ -18,6 +18,7 @@ export const GitDiffResult = S.Struct({
   ref: S.String,
   base: S.String,
   head: S.String,
+  worktree: S.String,
   hunks: S.Array(DiffHunk),
   untrackedFiles: S.Array(S.String),
 })

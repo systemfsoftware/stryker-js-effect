@@ -387,13 +387,22 @@ const planScopeOf = (diff: Option.Option<GitDiffResult>): ShardPlanScope =>
           (neverError) => neverError,
         ),
       ).pipe(
-        Match.tag('DiffScoped', (): ShardPlanScope => ({ _tag: 'DiffScoped', base: present.base, head: present.head })),
+        Match.tag(
+          'DiffScoped',
+          (): ShardPlanScope => ({
+            _tag: 'DiffScoped',
+            base: present.base,
+            head: present.head,
+            worktree: present.worktree,
+          }),
+        ),
         Match.tag(
           'FullScope',
           (full): ShardPlanScope => ({
             _tag: 'FullScope',
             base: present.base,
             head: present.head,
+            worktree: present.worktree,
             reason: full.reason,
           }),
         ),

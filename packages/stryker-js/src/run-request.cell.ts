@@ -67,7 +67,7 @@ import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
-import type { ShardPlanStale } from './shard/admit-plan-head.workflow.js'
+import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
@@ -125,7 +125,7 @@ export type CliFailure =
   | AuditInputUnusable
   | NothingCounted
   | ShardPlanInvalid
-  | ShardPlanStale
+  | AdmitPlanHeadError
   | GitDiffError
   | ShardUnknown
   | PlanShardsRefused
