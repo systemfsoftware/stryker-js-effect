@@ -58,6 +58,8 @@
       "outputLogs": "errors-only",
       "inputs": [
         "scripts/**",
+        "test/bench/src/turbo-affected.ts",
+        "test/bench/src/turbo-affected.schema.ts",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
         "bin/deno",
