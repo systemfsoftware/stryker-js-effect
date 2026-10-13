@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -46,33 +47,77 @@ export const MutantSetDecision = S.Array(MutantSetOutcome)
 const canonicalForm = (text: string): string => stripOuterParentheses(text.trim())
 
 const stripOuterParentheses = (text: string): string =>
-  Match.value(wrapsWhole(text)).pipe(
-    Match.when(true, () => stripOuterParentheses(text.slice(1, -1).trim())),
-    Match.orElse(() => text),
+  Boolean.match(parenthesesAreNeutral(codeOf(text)), {
+    onTrue: () => stripOuterParentheses(text.slice(1, -1).trim()),
+    onFalse: () => text,
+  })
+
+const parenthesesAreNeutral = (code: string): boolean => {
+  const inner = code.slice(1, -1).trim()
+  return Boolean.every([wrapsWhole(code), !inner.startsWith('{'), !isSequence(inner)])
+}
+
+const STRING_QUOTES: ReadonlyArray<string> = ['"', "'", '`']
+const MASKED = '_'
+
+interface Scan {
+  readonly quote: string
+  readonly escaped: boolean
+  readonly code: string
+}
+
+const scanOutsideString = (scan: Scan, character: string): Scan => ({
+  quote: Boolean.match(STRING_QUOTES.includes(character), { onTrue: () => character, onFalse: () => '' }),
+  escaped: false,
+  code: scan.code + character,
+})
+
+const scanInsideString = (scan: Scan, character: string): Scan =>
+  Boolean.match(scan.escaped, {
+    onTrue: () => ({ ...scan, escaped: false, code: scan.code + MASKED }),
+    onFalse: () => scanUnescapedInsideString(scan, character),
+  })
+
+const scanUnescapedInsideString = (scan: Scan, character: string): Scan =>
+  Match.value(character).pipe(
+    Match.when('\\', () => ({ ...scan, escaped: true, code: scan.code + MASKED })),
+    Match.when(scan.quote, () => ({ quote: '', escaped: false, code: scan.code + character })),
+    Match.orElse(() => ({ ...scan, code: scan.code + MASKED })),
   )
 
-const parenDepthDelta = (character: string): number =>
+const scanCharacter = (scan: Scan, character: string): Scan =>
+  Match.value(scan.quote).pipe(
+    Match.when('', () => scanOutsideString(scan, character)),
+    Match.orElse(() => scanInsideString(scan, character)),
+  )
+
+const codeOf = (text: string): string =>
+  text.split('').reduce<Scan>(scanCharacter, { quote: '', escaped: false, code: '' }).code
+
+const nestingDelta = (character: string): number =>
   Match.value(character).pipe(
-    Match.when('(', () => 1),
-    Match.when(')', () => -1),
+    Match.when(Match.is('(', '[', '{'), () => 1),
+    Match.when(Match.is(')', ']', '}'), () => -1),
     Match.orElse(() => 0),
   )
 
-const depthsAfter = (text: string): readonly number[] =>
-  text.split('').reduce<readonly number[]>(
-    (depths, character) => [...depths, Option.getOrElse(Arr.last(depths), () => 0) + parenDepthDelta(character)],
-    [],
-  )
+const depthsAfter = (code: string): readonly number[] =>
+  Arr.drop(Arr.scan(code.split(''), 0, (depth, character) => depth + nestingDelta(character)), 1)
 
-const wrapsWhole = (text: string): boolean => {
-  const depths = depthsAfter(text)
-  return [
-    text.startsWith('('),
-    text.endsWith(')'),
+const isSequence = (code: string): boolean => {
+  const depths = depthsAfter(code)
+  return code.split('').some((character, index) => Boolean.every([character === ',', depths[index] === 0]))
+}
+
+const wrapsWhole = (code: string): boolean => {
+  const depths = depthsAfter(code)
+  return Boolean.every([
+    code.startsWith('('),
+    code.endsWith(')'),
     depths.length > 0,
     depths.slice(0, -1).every((depth) => depth >= 1),
     Option.getOrElse(Arr.last(depths), () => 0) === 0,
-  ].every(Boolean)
+  ])
 }
 
 const defaultOnly = <A>(
@@ -90,10 +135,10 @@ const printedAs = (code: string): string => canonicalForm(code)
 const printsSomething = (code: string): boolean => printedAs(code).length > 0
 
 const samePrintedCode = (left: string, right: string): boolean =>
-  [printsSomething(left), printedAs(left) === printedAs(right)].every(Boolean)
+  Boolean.every([printsSomething(left), printedAs(left) === printedAs(right)])
 
 const alreadyPrinted = (code: string, earlier: readonly string[]): boolean =>
-  [printsSomething(code), earlier.includes(printedAs(code))].every(Boolean)
+  Boolean.every([printsSomething(code), earlier.includes(printedAs(code))])
 
 const equivalentSuppression = (
   facts: MutantSetFacts,

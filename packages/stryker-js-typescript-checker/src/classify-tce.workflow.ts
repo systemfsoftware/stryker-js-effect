@@ -15,7 +15,7 @@ export const TceClassification = S.Literals(['original', 'sibling'])
 export type TceClassification = typeof TceClassification.Type
 
 export const TceCandidate = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   site: S.String,
   emit: S.String,
 })
@@ -35,7 +35,7 @@ const candidateIdsAreDistinct = S.makeFilter(
 const DistinctCandidates = S.Array(TceCandidate).check(candidateIdsAreDistinct)
 
 export class TceDecision extends S.TaggedClass<TceDecision>()('TceDecision', {
-  id: S.String,
+  id: Mutant.MutantId,
   classification: TceClassification,
 }) {
   readonly [TceDecisionTypeId] = TceDecisionTypeId

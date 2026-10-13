@@ -28,6 +28,7 @@ const CLASS_BROKEN_ID = '0000000000000003'
 interface Observation {
   readonly batches: ReadonlyArray<ReadonlyArray<string>>
   readonly statuses: Readonly<Record<string, string>>
+  readonly ignoreReasons: Readonly<Record<string, string>>
   readonly brokenBlamesTheImporter: boolean
   readonly brokenReason: string
   readonly brokenLine: string
@@ -46,6 +47,12 @@ interface Case {
 
 const statusOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
   Option.match(HashMap.get(results, id), { onNone: () => 'missing', onSome: (result) => result.status })
+
+const ignoreReasonOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
+  Option.match(HashMap.get(results, id), {
+    onNone: () => '',
+    onSome: (result) => (result.status === 'ignored' ? String(result.reason) : ''),
+  })
 
 const brokenReasonOf = (
   testCase: Case,
@@ -70,6 +77,7 @@ const observedOf = (
   return {
     batches,
     statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
+    ignoreReasons: Object.fromEntries(testCase.observedIds.map((id) => [id, ignoreReasonOf(results, id)])),
     brokenBlamesTheImporter: brokenReason.includes(testCase.importerFile) &&
       !brokenReason.includes(testCase.mutatedFile),
     brokenReason,
@@ -301,6 +309,199 @@ const tcePathsCase: Case = {
   wires: (join) => tceCase.wires(join).map((wire) => ({ ...wire, location: TCE_PATHS_SITE })),
 }
 
+interface SizeMutant {
+  readonly id: string
+  readonly line: number
+  readonly from: number
+  readonly to: number
+  readonly mutatorName: string
+  readonly replacement: string
+}
+
+const sizeMutant = (
+  id: string,
+  [line, from, to]: readonly [number, number, number],
+  mutatorName: string,
+  replacement: string,
+): SizeMutant => ({ id, line, from, to, mutatorName, replacement })
+
+const STRING_ARRAY_SITE = [1, 52, 65] as const
+const STRUCTURAL_SITE = [2, 60, 74] as const
+const ANY_SITE = [3, 44, 57] as const
+const AGAINST_ONE_SITE = [4, 54, 67] as const
+const NO_TRUE_SIBLING_SITE = [5, 50, 63] as const
+const NOT_CONSTANT_SITE = [6, 50, 63] as const
+const COLLECTION_UNION_SITE = [7, 63, 76] as const
+const MIXED_UNION_SITE = [8, 74, 87] as const
+const ACCESSOR_SITE = [9, 73, 93] as const
+const MIRRORED_SITE = [10, 55, 67] as const
+const TUPLE_SITE = [11, 68, 83] as const
+const THIS_SITE = [12, 70, 91] as const
+
+const RECEIVER_SOURCE = [
+  'export const chained = (box: { items: string[] }): boolean => box.items.length > 0',
+  'export const fromCall = (read: () => string[]): boolean => read().length > 0',
+  'export const fromIndex = (rows: [string[]]): boolean => rows[0].length > 0',
+  'export const fromOptional = (xs: string[]): boolean => xs?.length > 0',
+  'export const fromOptionalChain = (box: { items: string[] }): boolean => box?.items.length > 0',
+  'export const fromAwait = async (load: Promise<string[]>): Promise<boolean> => (await load).length > 0',
+  '',
+].join('\n')
+
+const PROPERTY_CHAIN_SITE = [1, 63, 83] as const
+const CALL_SITE = [2, 60, 77] as const
+const ELEMENT_ACCESS_SITE = [3, 57, 75] as const
+const OPTIONAL_LENGTH_SITE = [4, 56, 70] as const
+const OPTIONAL_CHAIN_SITE = [5, 73, 94] as const
+const AWAIT_SITE = [6, 79, 102] as const
+
+const SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000020', STRING_ARRAY_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000021', STRING_ARRAY_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000022', STRING_ARRAY_SITE, 'EqualityOperator', 'xs.length < 0'),
+  sizeMutant('0000000000000023', STRING_ARRAY_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000024', STRUCTURAL_SITE, 'EqualityOperator', 'box.length >= 0'),
+  sizeMutant('0000000000000025', STRUCTURAL_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000026', ANY_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000027', ANY_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000028', AGAINST_ONE_SITE, 'EqualityOperator', 'xs.length >= 1'),
+  sizeMutant('0000000000000029', AGAINST_ONE_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000030', NO_TRUE_SIBLING_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000031', NO_TRUE_SIBLING_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000032', NOT_CONSTANT_SITE, 'EqualityOperator', 'xs.length <= 0'),
+  sizeMutant('0000000000000033', NOT_CONSTANT_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000034', COLLECTION_UNION_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000035', COLLECTION_UNION_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000036', MIXED_UNION_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000037', MIXED_UNION_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000038', THIS_SITE, 'EqualityOperator', 'this.items.length >= 0'),
+  sizeMutant('0000000000000039', THIS_SITE, 'ConditionalExpression', 'true'),
+]
+
+const RECEIVER_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000040', PROPERTY_CHAIN_SITE, 'EqualityOperator', 'box.items.length >= 0'),
+  sizeMutant('0000000000000041', PROPERTY_CHAIN_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000042', CALL_SITE, 'EqualityOperator', 'read().length >= 0'),
+  sizeMutant('0000000000000043', CALL_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000044', ELEMENT_ACCESS_SITE, 'EqualityOperator', 'rows[0].length >= 0'),
+  sizeMutant('0000000000000045', ELEMENT_ACCESS_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000046', OPTIONAL_LENGTH_SITE, 'EqualityOperator', 'xs?.length >= 0'),
+  sizeMutant('0000000000000047', OPTIONAL_LENGTH_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000048', OPTIONAL_CHAIN_SITE, 'EqualityOperator', 'box?.items.length >= 0'),
+  sizeMutant('0000000000000049', OPTIONAL_CHAIN_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000050', AWAIT_SITE, 'EqualityOperator', '(await load).length >= 0'),
+  sizeMutant('0000000000000051', AWAIT_SITE, 'ConditionalExpression', 'true'),
+]
+
+const LOOSE_SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000052', STRING_ARRAY_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000053', STRING_ARRAY_SITE, 'ConditionalExpression', 'true'),
+]
+
+const ACCESSOR_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000060', ACCESSOR_SITE, 'EqualityOperator', 'box.items.length >= 0'),
+  sizeMutant('0000000000000061', ACCESSOR_SITE, 'ConditionalExpression', 'true'),
+]
+
+const MIRRORED_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000070', MIRRORED_SITE, 'EqualityOperator', '0 <= s.length'),
+  sizeMutant('0000000000000071', MIRRORED_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000072', MIRRORED_SITE, 'EqualityOperator', '0 > s.length'),
+  sizeMutant('0000000000000073', MIRRORED_SITE, 'ConditionalExpression', 'false'),
+]
+
+const TUPLE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000080', TUPLE_SITE, 'EqualityOperator', 'pair.length >= 0'),
+  sizeMutant('0000000000000081', TUPLE_SITE, 'ConditionalExpression', 'true'),
+]
+
+const LEFT_GREATER_SITE = [13, 55, 69] as const
+const RIGHT_LESS_SITE = [14, 50, 63] as const
+const RIGHT_AT_LEAST_SITE = [15, 53, 65] as const
+const DUPLICATE_SIZE_SITE = [16, 57, 70] as const
+const DUPLICATED_BACKING_SITE = [17, 61, 74] as const
+
+const UNKNOWN_OPERATOR_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000090', LEFT_GREATER_SITE, 'EqualityOperator', 'xs.length > 0'),
+  sizeMutant('0000000000000091', LEFT_GREATER_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000092', LEFT_GREATER_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000093', RIGHT_LESS_SITE, 'EqualityOperator', '0 < s.length'),
+  sizeMutant('0000000000000094', RIGHT_LESS_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000095', RIGHT_LESS_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000096', RIGHT_AT_LEAST_SITE, 'EqualityOperator', '0 >= s.length'),
+  sizeMutant('0000000000000097', RIGHT_AT_LEAST_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000098', RIGHT_AT_LEAST_SITE, 'ConditionalExpression', 'false'),
+]
+
+const DUPLICATE_SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000099', DUPLICATE_SIZE_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000100', DUPLICATE_SIZE_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000101', DUPLICATE_SIZE_SITE, 'ConditionalExpression', 'true'),
+]
+
+const DUPLICATED_BACKING_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000102', DUPLICATED_BACKING_SITE, 'ConditionalExpression', 'true as boolean'),
+  sizeMutant('0000000000000103', DUPLICATED_BACKING_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000104', DUPLICATED_BACKING_SITE, 'EqualityOperator', 'xs.length >= 0'),
+]
+
+const sizeCaseOf = (fixture: string, mutants: ReadonlyArray<SizeMutant>): Case => ({
+  fixture,
+  brokenId: '',
+  observedIds: mutants.map((mutant) => mutant.id),
+  importerFile: 'size.ts',
+  mutatedFile: 'size.ts',
+  wires: (join) =>
+    mutants.map((mutant) => ({
+      id: mutant.id,
+      fileName: join('size.ts'),
+      mutatorName: mutant.mutatorName,
+      replacement: mutant.replacement,
+      location: {
+        start: { line: mutant.line, column: mutant.from },
+        end: { line: mutant.line, column: mutant.to },
+      },
+    })),
+})
+
+const collectionSizeCase = sizeCaseOf('per-mutant-collection-size', SIZE_MUTANTS)
+
+const receiverCase = sizeCaseOf('receiver-project', RECEIVER_MUTANTS)
+
+const looseCollectionSizeCase = sizeCaseOf('loose-project', LOOSE_SIZE_MUTANTS)
+
+const accessorReceiverCase = sizeCaseOf('per-mutant-collection-size', ACCESSOR_MUTANTS)
+
+const mirroredReceiverCase = sizeCaseOf('per-mutant-collection-size', MIRRORED_MUTANTS)
+
+const tupleReceiverCase = sizeCaseOf('per-mutant-collection-size', TUPLE_MUTANTS)
+
+const unknownOperatorCase = sizeCaseOf('per-mutant-collection-size', UNKNOWN_OPERATOR_MUTANTS)
+
+const duplicateSizeCase = sizeCaseOf('per-mutant-collection-size', DUPLICATE_SIZE_MUTANTS)
+
+const duplicatedBackingCase = sizeCaseOf('per-mutant-collection-size', DUPLICATED_BACKING_MUTANTS)
+
+const sizeProjectOf = (strictNullChecks: boolean, source: string): Readonly<Record<string, string>> => ({
+  'tsconfig.json': JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      strictNullChecks,
+      module: 'esnext',
+      moduleResolution: 'bundler',
+      target: 'es2022',
+      noEmit: true,
+      skipLibCheck: true,
+      types: [],
+    },
+    include: ['*.ts'],
+  }),
+  'size.ts': source,
+})
+
+const culledReasonsOf = (reasons: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+  Object.fromEntries(Object.entries(reasons).filter(([, reason]) => reason !== ''))
+
 const PATHS_PROJECT: Readonly<Record<string, string>> = {
   'tsconfig.json': JSON.stringify({
     compilerOptions: {
@@ -323,7 +524,8 @@ interface ProjectObservation extends Observation {
   readonly files: ReadonlyArray<string>
 }
 
-const checkPathsProject = (
+const checkProject = (
+  project: Readonly<Record<string, string>>,
   testCase: Case,
 ): Effect.Effect<
   ProjectObservation,
@@ -333,9 +535,9 @@ const checkPathsProject = (
   Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
-    const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-tce-paths-' })
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-checker-project-' })
     yield* Effect.forEach(
-      Object.entries(PATHS_PROJECT),
+      Object.entries(project),
       ([name, text]) =>
         fs.makeDirectory(pathService.dirname(pathService.join(directory, name)), { recursive: true }).pipe(
           Effect.andThen(fs.writeFileString(pathService.join(directory, name), text)),
@@ -501,7 +703,7 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
       Gherkin.Do.pipe(
         When('the same three mutants sit in a file that imports a module through a tsconfig path alias')(
           'seen',
-          () => checkPathsProject(tcePathsCase),
+          () => checkProject(PATHS_PROJECT, tcePathsCase),
         ),
         Then('the mutants are decided as before and the project holds only the files it started with')((s, expect) =>
           expect({ statuses: s.seen.statuses, files: s.seen.files }).toEqual({
@@ -511,6 +713,213 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               [TCE_DUPLICATE_ID]: 'ignored',
             },
             files: ['dep.ts', 'lib/shared.ts', 'tsconfig.json'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison the types make constant is ignored only when a kept sibling already is that constant',
+      Gherkin.Do.pipe(
+        When('comparisons of a length with zero, and their true and false siblings, are handed to the checker')(
+          'seen',
+          () => checkFixture(collectionSizeCase),
+        ),
+        Then(
+          'only the array and all-collection-union comparisons are ignored, and every other mutant passes',
+        )((s, expect) =>
+          expect({
+            passed: Object.values(s.seen.statuses).filter((status) => status === 'passed').length,
+            culled: culledReasonsOf(s.seen.ignoreReasons),
+          }).toEqual({
+            passed: SIZE_MUTANTS.length - 4,
+            culled: {
+              '0000000000000020': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000022': 'constant-collection-size: xs.length < 0 is always false',
+              '0000000000000034': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000038': 'constant-collection-size: this.items.length >= 0 is always true',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison keeps its own duplicate reason when a twin already carries the site',
+      Gherkin.Do.pipe(
+        When('two identical length comparisons and a true sibling at one site are handed to the checker')(
+          'seen',
+          () => checkFixture(duplicateSizeCase),
+        ),
+        Then('only the first twin is culled as constant and the duplicate keeps the TCE duplicate reason')((
+          s,
+          expect,
+        ) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000099': 'ignored',
+              '0000000000000100': 'ignored',
+              '0000000000000101': 'passed',
+            },
+            culled: {
+              '0000000000000099': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000100': 'duplicate-at-site: tce',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison passes when the only true sibling is itself a duplicate',
+      Gherkin.Do.pipe(
+        When('a type-asserted true, an identical true and a length comparison at one site are handed to the checker')(
+          'seen',
+          () => checkFixture(duplicatedBackingCase),
+        ),
+        Then('the duplicate true is ignored while the comparison passes with no kept sibling to back it')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000102': 'passed',
+              '0000000000000103': 'ignored',
+              '0000000000000104': 'passed',
+            },
+            culled: { '0000000000000103': 'duplicate-at-site: tce' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Size comparisons whose operator the rule does not know are kept beside either literal sibling',
+      Gherkin.Do.pipe(
+        When(
+          'left greater-than, right less-than and right greater-or-equal comparisons each beside a true and a false sibling are handed to the checker',
+        )('seen', () => checkFixture(unknownOperatorCase)),
+        Then('all nine mutants pass and none is culled')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000090': 'passed',
+              '0000000000000091': 'passed',
+              '0000000000000092': 'passed',
+              '0000000000000093': 'passed',
+              '0000000000000094': 'passed',
+              '0000000000000095': 'passed',
+              '0000000000000096': 'passed',
+              '0000000000000097': 'passed',
+              '0000000000000098': 'passed',
+            },
+            culled: {},
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison is ignored only when reading its receiver can neither run code nor fail',
+      Gherkin.Do.pipe(
+        When(
+          'array length comparisons read through a property chain, a call, an element access, an optional chain and an await are handed to the checker',
+        )(
+          'seen',
+          () => checkProject(sizeProjectOf(true, RECEIVER_SOURCE), receiverCase),
+        ),
+        Then('only the property-chain comparison is ignored, and every other mutant passes')((s, expect) =>
+          expect({
+            passed: Object.values(s.seen.statuses).filter((status) => status === 'passed').length,
+            culled: culledReasonsOf(s.seen.ignoreReasons),
+          }).toEqual({
+            passed: RECEIVER_MUTANTS.length - 1,
+            culled: {
+              '0000000000000040': 'constant-collection-size: box.items.length >= 0 is always true',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison is kept when reading its receiver runs an accessor',
+      Gherkin.Do.pipe(
+        When('an array length comparison read through a getter and its true sibling are handed to the checker')(
+          'seen',
+          () => checkFixture(accessorReceiverCase),
+        ),
+        Then('both mutants pass and neither is ignored')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000060': 'passed',
+              '0000000000000061': 'passed',
+            },
+            culled: {},
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A comparison that puts the length on the right is culled in its mirrored form',
+      Gherkin.Do.pipe(
+        When('the mirrored length-versus-zero comparisons and their true and false siblings are handed to the checker')(
+          'seen',
+          () => checkFixture(mirroredReceiverCase),
+        ),
+        Then('the always-true and always-false right-side comparisons are ignored and both siblings pass')((
+          s,
+          expect,
+        ) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000070': 'ignored',
+              '0000000000000071': 'passed',
+              '0000000000000072': 'ignored',
+              '0000000000000073': 'passed',
+            },
+            culled: {
+              '0000000000000070': 'constant-collection-size: 0 <= s.length is always true',
+              '0000000000000072': 'constant-collection-size: 0 > s.length is always false',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A comparison on a tuple receiver is culled when its type makes the length constant',
+      Gherkin.Do.pipe(
+        When('a tuple length comparison and its true sibling are handed to the checker')(
+          'seen',
+          () => checkFixture(tupleReceiverCase),
+        ),
+        Then('the tuple comparison is ignored and its true sibling passes')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000080': 'ignored',
+              '0000000000000081': 'passed',
+            },
+            culled: {
+              '0000000000000080': 'constant-collection-size: pair.length >= 0 is always true',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison is counted when the program does not check null and undefined',
+      Gherkin.Do.pipe(
+        When('an array length comparison with zero and its true sibling come from a project with strictNullChecks off')(
+          'seen',
+          () =>
+            checkProject(
+              sizeProjectOf(false, 'export const nonEmpty = (xs: string[]): boolean => xs.length > 0\n'),
+              looseCollectionSizeCase,
+            ),
+        ),
+        Then('both mutants pass and neither is ignored')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: { '0000000000000052': 'passed', '0000000000000053': 'passed' },
+            culled: {},
           })
         ),
       ),
