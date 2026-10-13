@@ -9,8 +9,8 @@ import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
 import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
-import { type CliOutcome, requireBinary, spawnCli } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -96,7 +96,6 @@ const prepareRepo = (): Effect.Effect<
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    yield* requireBinary
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-diff-scope-' }))
     yield* Effect.forEach(BASE_FILES, ([file, content]) => writeRepoFile(root, file, content), { discard: true })
     yield* execGit(root, ['init', '-q'])
@@ -109,15 +108,15 @@ const runSince = (
   root: string,
   ref: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['run', '--since', ref], mode)
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--since', ref], mode })
 
 const planSince = (
   root: string,
   ref: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['plan', '--target-seconds', '1', '--out', 'plan.json', '--since', ref], mode)
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['plan', '--target-seconds', '1', '--out', 'plan.json', '--since', ref], mode })
 
 const fileExists = (
   root: string,

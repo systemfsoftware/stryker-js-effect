@@ -8,17 +8,9 @@ import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
 import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
-import {
-  type CliOutcome,
-  CONFIG,
-  decodePlan,
-  encodePlan,
-  requireBinary,
-  singleShardPlanOf,
-  SOURCE,
-  spawnCli,
-} from './__fixtures__/shard-cli.fixture.js'
+import { CONFIG, decodePlan, encodePlan, singleShardPlanOf, SOURCE } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -119,7 +111,6 @@ const prepareFixture = (): Effect.Effect<
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    yield* requireBinary
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-head-' }))
     yield* execGit(root, ['init', '-q'])
     yield* writeFile(root, 'package.json', CONSUMER_PACKAGE)
@@ -129,11 +120,11 @@ const prepareFixture = (): Effect.Effect<
     yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'init'])
     const head = yield* gitOutput(root, ['rev-parse', 'HEAD'])
     yield* writeFile(root, 'src/math.js', DIRTY_SOURCE)
-    const planned = yield* spawnCli(
+    const planned = yield* runCli({
       root,
-      ['plan', '--target-seconds', '1', '--max-shards', '1', '--out', CURRENT_FILE, '--since', head],
-      'machine',
-    )
+      args: ['plan', '--target-seconds', '1', '--max-shards', '1', '--out', CURRENT_FILE, '--since', head],
+      mode: 'machine',
+    })
     yield* Effect.when(
       Effect.die(new Error(`planning exited ${planned.exitCode}: ${planned.stdout}${planned.stderr}`)),
       Effect.succeed(planned.exitCode !== 0),
@@ -178,8 +169,8 @@ const runShard = (
   root: string,
   planFile: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['run', '--plan', planFile, '--shard', '1/1', '--out', 'reports/shard-1'], mode)
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--plan', planFile, '--shard', '1/1', '--out', 'reports/shard-1'], mode })
 
 const shardDirExists = (
   root: string,
@@ -197,12 +188,12 @@ const runLeaf = (
   planFile: string,
   project: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({
     root,
-    ['run', '--plan', planFile, '--shard', '1/1', '--project', project, '--out', LEAF_OUT],
+    args: ['run', '--plan', planFile, '--shard', '1/1', '--project', project, '--out', LEAF_OUT],
     mode,
-  )
+  })
 
 const commitAll = (
   root: string,

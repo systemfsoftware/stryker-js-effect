@@ -6,16 +6,8 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type * as Scope from 'effect/Scope'
-import {
-  type CliOutcome,
-  CONFIG,
-  decodePlan,
-  encodePlan,
-  requireBinary,
-  singleShardPlanOf,
-  SOURCE,
-  spawnCli,
-} from './__fixtures__/shard-cli.fixture.js'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
+import { CONFIG, decodePlan, encodePlan, singleShardPlanOf, SOURCE } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -38,7 +30,6 @@ const prepareFixture = (): Effect.Effect<
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    yield* requireBinary
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-run-' }))
     yield* Effect.forEach(
       PROJECTS,
@@ -51,11 +42,11 @@ const prepareFixture = (): Effect.Effect<
         }),
       { discard: true },
     )
-    const planned = yield* spawnCli(
+    const planned = yield* runCli({
       root,
-      ['plan', '--target-seconds', '1', '--projects', PROJECTS.join(','), '--out', 'plan.json'],
-      'machine',
-    )
+      args: ['plan', '--target-seconds', '1', '--projects', PROJECTS.join(','), '--out', 'plan.json'],
+      mode: 'machine',
+    })
     yield* Effect.when(
       Effect.die(new Error(`planning exited ${planned.exitCode}: ${planned.stdout}${planned.stderr}`)),
       Effect.succeed(planned.exitCode !== 0),
@@ -72,15 +63,14 @@ const prepareFixture = (): Effect.Effect<
 const prepareEmptyRoot = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    yield* requireBinary
     return yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-run-' }))
   }).pipe(Effect.orDie)
 
 const runSingleShard = (
   root: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['run', '--plan', 'plan-single.json', '--shard', '1/1', '--out', 'reports/shard-1'], mode)
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--plan', 'plan-single.json', '--shard', '1/1', '--out', 'reports/shard-1'], mode })
 
 interface ProjectOutputs {
   readonly stream: boolean
@@ -183,7 +173,8 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
         Given('a directory that holds no plan')('root', () => prepareEmptyRoot()),
         When('stryker runs a shard of a plan file that is not there')(
           'ran',
-          (s) => spawnCli(s.root, ['run', '--plan', 'missing-plan.json', '--shard', '1/1'], 'human'),
+          (s) =>
+            runCli({ root: s.root, args: ['run', '--plan', 'missing-plan.json', '--shard', '1/1'], mode: 'human' }),
         ),
         Then('the run fails with the configuration class and names the reason, its code and the next step')((
           s,

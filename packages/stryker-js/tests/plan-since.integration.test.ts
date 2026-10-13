@@ -10,8 +10,9 @@ import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
 import { committerArgs, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
-import { type CliOutcome, decodePlan, requireBinary, spawnCli } from './__fixtures__/shard-cli.fixture.js'
+import { decodePlan } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -144,11 +145,7 @@ const headOf = (root: string): Effect.Effect<string, never, ChildProcessSpawner.
 
 const cliWorkspace = (
   files: ReadonlyArray<readonly [string, string]>,
-): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    yield* requireBinary
-    return yield* writeWorkspace(files)
-  })
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> => writeWorkspace(files)
 
 const gitWorkspace = (
   files: ReadonlyArray<readonly [string, string]>,
@@ -188,15 +185,15 @@ const planTo = (
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
 > =>
   Effect.gen(function*() {
-    const ran = yield* spawnCli(root, ['plan', '--target-seconds', '1', '--out', out, ...extra], 'human')
+    const ran = yield* runCli({ root, args: ['plan', '--target-seconds', '1', '--out', out, ...extra], mode: 'human' })
     return { ran, plan: yield* readPlan(root, out) }
   })
 
 const runShardIn = (
   root: string,
   planFile: string,
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['run', '--plan', planFile, '--shard', '1/1', '--out', 'reports/shard-1'], 'human')
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--plan', planFile, '--shard', '1/1', '--out', 'reports/shard-1'], mode: 'human' })
 
 const scheduledIds = (plan: ShardPlan): ReadonlyArray<string> =>
   plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))
@@ -444,11 +441,11 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
-              const ran = yield* spawnCli(
-                s.root,
-                ['plan', '--target-seconds', '1', '--out', PLAN_FILE, '--since', UNRESOLVED_REF],
-                'human',
-              )
+              const ran = yield* runCli({
+                root: s.root,
+                args: ['plan', '--target-seconds', '1', '--out', PLAN_FILE, '--since', UNRESOLVED_REF],
+                mode: 'human',
+              })
               return { ran, outExists: yield* fs.exists(path.join(s.root, PLAN_FILE)) }
             }).pipe(Effect.ensuring(removeWorkspace(s.root))),
         ),
