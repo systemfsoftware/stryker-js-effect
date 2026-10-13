@@ -132,7 +132,7 @@ const runGit = (
     return { stdout, stderr, exitCode }
   }).pipe(
     Effect.catchTag('PlatformError', (cause) =>
-      Effect.fail(GitCommandFailed.make({ command: `git ${args.join(' ')}`, detail: cause.message }))),
+      Effect.fail(GitCommandFailed.make({ command: args.join(' '), detail: cause.message }))),
   )
 
 const resolveBase = (input: GitDiffInput): Effect.Effect<string, GitDiffError, GitEnv> =>
@@ -148,7 +148,7 @@ const readOutput = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<str
   Effect.gen(function*() {
     const ran = yield* runGit(cwd, args)
     return yield* Boolean.match(ran.exitCode !== 0, {
-      onTrue: () => GitCommandFailed.make({ command: `git ${args.join(' ')}`, detail: ran.stderr.trim() }),
+      onTrue: () => GitCommandFailed.make({ command: args.join(' '), detail: ran.stderr.trim() }),
       onFalse: () => Effect.succeed(ran.stdout),
     })
   })

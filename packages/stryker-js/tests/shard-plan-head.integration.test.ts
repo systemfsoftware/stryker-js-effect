@@ -211,6 +211,7 @@ interface GitFailureObservation {
   readonly exitCode: number
   readonly stderr: string
   readonly namesTheCommand: boolean
+  readonly doublesTheBinary: boolean
   readonly shardDir: boolean
 }
 
@@ -225,6 +226,7 @@ const observeGitFailure = (root: string): Effect.Effect<
       exitCode: ran.exitCode,
       stderr: ran.stderr,
       namesTheCommand: ran.stderr.includes('git rev-parse HEAD failed'),
+      doublesTheBinary: ran.stderr.includes('git git'),
       shardDir: yield* shardDirExists(root),
     }
   })
@@ -322,8 +324,9 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
           expect({
             exitCode: s.ran.exitCode,
             namesTheCommand: s.ran.namesTheCommand,
+            doublesTheBinary: s.ran.doublesTheBinary,
             shardDir: s.ran.shardDir,
-          }).toEqual({ exitCode: 2, namesTheCommand: true, shardDir: false })
+          }).toEqual({ exitCode: 2, namesTheCommand: true, doublesTheBinary: false, shardDir: false })
         ),
       ),
     )
