@@ -78,42 +78,70 @@ const ownValueOf = (record: EntryTable, key: string): Option.Option<PackageEntry
 
 type Resolution = Option.Option<Option.Option<string>>
 
-const blocked: Resolution = Option.some(Option.none())
+type InvalidPackageConfig = 'invalid-package-config'
 
-const firstDecided = (outcomes: ReadonlyArray<Resolution>): Resolution =>
-  Option.flatten(Arr.findFirst(outcomes, Option.isSome))
+type Read = Result.Result<Resolution, InvalidPackageConfig>
 
-const yieldsTarget = (outcome: Resolution): boolean => outcome.pipe(Option.flatten, Option.isSome)
+const unmatched: Read = Result.succeed(Option.none())
 
-const fallbacksResolution = (outcomes: ReadonlyArray<Resolution>): Resolution =>
-  Arr.match(outcomes, {
+const blocked: Read = Option.none<string>().pipe(Option.some, Result.succeed)
+
+const refused: Read = Result.fail('invalid-package-config')
+
+const ARRAY_INDEX_LIMIT = 0xFFFF_FFFF
+
+const isArrayIndex = (key: string): boolean => {
+  const index = Number(key)
+  return [`${index}` === key, index >= 0, index < ARRAY_INDEX_LIMIT].every((flag) => flag)
+}
+
+const isDecided = (read: Read): boolean => Result.match(read, { onFailure: () => true, onSuccess: Option.isSome })
+
+const endsFallbacks = (read: Read): boolean =>
+  Result.match(read, { onFailure: () => true, onSuccess: (outcome) => outcome.pipe(Option.flatten, Option.isSome) })
+
+const firstDecided = (reads: ReadonlyArray<Read>): Read =>
+  Option.getOrElse(Arr.findFirst(reads, isDecided), () => unmatched)
+
+const fallbacksRead = (reads: ReadonlyArray<Read>): Read =>
+  Arr.match(reads, {
     onEmpty: () => blocked,
     onNonEmpty: (present) =>
       Option.getOrElse(
-        Arr.findFirst(present, yieldsTarget),
-        () => Option.as(Arr.findFirst(present, Option.isSome), Option.none<string>()),
+        Arr.findFirst(present, endsFallbacks),
+        () => Option.match(Arr.findFirst(present, isDecided), { onNone: () => unmatched, onSome: () => blocked }),
       ),
   })
 
 const matchedEntries = (entries: EntryTable, conditions: ReadonlyArray<string>): ReadonlyArray<PackageEntry> =>
   Arr.getSomes(Object.keys(entries).filter((key) => conditions.includes(key)).map((key) => ownValueOf(entries, key)))
 
-const resolutionIn =
-  (conditions: ReadonlyArray<string>, isValid: TargetValidity) => (entry: PackageEntry): Resolution =>
-    Match.value(entry).pipe(
-      Match.tagsExhaustive({
-        EntryPath: ({ path }): Resolution => Option.some(Option.liftPredicate(path, isValid)),
-        EntryNull: (): Resolution => blocked,
-        EntryScalar: (): Resolution => blocked,
-        EntryFallbacks: ({ fallbacks }): Resolution =>
-          fallbacksResolution(fallbacks.map(resolutionIn(conditions, isValid))),
-        EntryMap: ({ entries }): Resolution =>
-          Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
-            onSome: resolutionIn(conditions, isValid),
-            onNone: () => firstDecided(matchedEntries(entries, conditions).map(resolutionIn(conditions, isValid))),
-          }),
-      }),
-    )
+const conditionsRead = (entries: EntryTable, conditions: ReadonlyArray<string>, isValid: TargetValidity): Read =>
+  Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
+    onSome: readIn(conditions, isValid),
+    onNone: () => firstDecided(matchedEntries(entries, conditions).map(readIn(conditions, isValid))),
+  })
+
+const readIn = (conditions: ReadonlyArray<string>, isValid: TargetValidity) => (entry: PackageEntry): Read =>
+  Match.value(entry).pipe(
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): Read => Option.liftPredicate(path, isValid).pipe(Option.some, Result.succeed),
+      EntryNull: (): Read => blocked,
+      EntryScalar: (): Read => blocked,
+      EntryFallbacks: ({ fallbacks }): Read => fallbacksRead(fallbacks.map(readIn(conditions, isValid))),
+      EntryMap: ({ entries }): Read =>
+        Boolean.match(Object.keys(entries).some(isArrayIndex), {
+          onTrue: () => refused,
+          onFalse: () => conditionsRead(entries, conditions, isValid),
+        }),
+    }),
+  )
+
+const fileReadIn = (conditions: ReadonlyArray<string>, isValid: TargetValidity) => (entry: PackageEntry) =>
+  Result.match(readIn(conditions, isValid)(entry), {
+    onFailure: (): Option.Option<string> => Option.none(),
+    onSuccess: Option.flatten,
+  })
 
 const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<string>): Option.Option<string> =>
   Option.match(esm, {
@@ -126,10 +154,7 @@ const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<stri
   })
 
 const entryTargetOfEntry = (isValid: TargetValidity) => (entry: PackageEntry): Option.Option<string> =>
-  loadedTargetOf(
-    Option.flatten(resolutionIn(ESM_CONDITIONS, isValid)(entry)),
-    Option.flatten(resolutionIn(COMMONJS_CONDITIONS, isValid)(entry)),
-  )
+  loadedTargetOf(fileReadIn(ESM_CONDITIONS, isValid)(entry), fileReadIn(COMMONJS_CONDITIONS, isValid)(entry))
 
 const exactEntryOption = (
   entries: EntryTable,
@@ -245,7 +270,16 @@ const pathOf = (field: PackageEntryField): Option.Option<string> =>
   )
 
 const mainTargetOption = (manifest: PackageManifest): Option.Option<string> =>
-  Option.orElse(pathOf(manifest.main), () => pathOf(manifest.module))
+  Match.value(manifest.main).pipe(
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): Option.Option<string> => Option.some(path),
+      EntryUndeclared: (): Option.Option<string> => pathOf(manifest.module),
+      EntryFallbacks: (): Option.Option<string> => Option.none(),
+      EntryMap: (): Option.Option<string> => Option.none(),
+      EntryNull: (): Option.Option<string> => Option.none(),
+      EntryScalar: (): Option.Option<string> => Option.none(),
+    }),
+  )
 
 const rootFallbackOption = (manifest: PackageManifest, subpath: string): Option.Option<string> =>
   Option.flatMap(Option.liftPredicate(subpath, isRootSubpath), () => mainTargetOption(manifest))

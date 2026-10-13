@@ -2,7 +2,7 @@
 title: Manifest exports the resolver cannot read stop making the whole package.json unreadable - Plan
 type: fix
 date: 2026-10-13
-supersedes: docs/plans/2026-10-13-0606-fix-manifest-exports-decode-plan.md
+supersedes: docs/plans/2026-10-13-0620-fix-manifest-exports-decode-plan.md
 topic: manifest-exports-decode
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -17,7 +17,7 @@ execution: code
 - **Means.** Decode every manifest key the resolver reads into a tagged entry Type that has a variant for every JSON shape, and choose the target inside the pure decision by the entry's tag, resolving each condition object to the file the runtime loads (KTD1, KTD2).
 - **Authority.** Conductor intent r41 (`.rulings/stream-d-r41-manifest-exports-intent.md`) as clarified by r46 (`.rulings/stream-d-r46-pr330-debate.md`) and the root's r49 ruling on the schema (`.rulings/stream-d-r51b-prompt.md:3-6`) > this plan > the repo's packs and `CONSTITUTION.md`.
 - **Stop.** One PR off `origin/main` (#330), green on its exact head, with a patch changeset for `@systemfsoftware/stryker-js`, the review receipt and per-finding dispositions in its body.
-- **Why superseded.** The 0606 plan shipped U5 and Node's array rules in `3eee2a48c` (after 0546's two-condition-set rule, which fixed the confirmed P2 of review run `20261013-052410-5e2140d5`; and 0546's own array rules, which U5 found wrong against Node's `resolvePackageTarget`). A delta correctness lens over those commits (run `20261013-061107-f1739e97`, zero findings) recorded as a residual risk that the reader took string targets Node rejects, and that 0606's claim that such a closure stays open was false. Widened to those strings, U5's generator shrank a stale case to `exports` `{ "./x": "/a.js" }`: Node rejects the target, and the closure closed on `pkgs/lib/a.js`. KTD2's string rule, the array scope bullet, U2 and U5 change with it. The 0546, 0519, 0441 and 0239 plans it descends from never reached `main`; this plan replaces 0606 in this PR.
+- **Why superseded.** The 0620 plan shipped string-target validity in `e8393042d`. The full-path review of that head (run `20261013-063937-1f11f4b8`) confirmed two P2s and one pack violation. (1) A condition object with an array-index key was read as conditions, where Node refuses it with `ERR_INVALID_PACKAGE_CONFIG` (`resolve.js:522-530`); that error is not `ERR_INVALID_PACKAGE_TARGET`, so inside an array it ends the resolution instead of being skipped (`:501-506`). (2) A non-string `main` fell through to `module`, which Node never reads; on `main` such a manifest failed to decode, so the PR had turned an open closure into one closed over a file Node does not load. (3) schema-laws `tests-own-no-schemas`: the differential spec's probe schemas sat in `tests/__fixtures__/node-resolution.schema.ts`. KTD2, R4, U2 and U5 change with them. The lineage (0606, 0546, 0519, 0441, 0239) never reached `main`; this plan replaces 0620 in this PR.
 
 ## Product Contract
 
@@ -30,7 +30,7 @@ The import closure decides which files a test file depends on. Incremental runs 
 - R1. A linked package whose `exports` holds nested condition objects, array fallbacks, root conditions without a `.` key, or `null` targets resolves its imports, so an edit to a file no test reaches leaves every verdict reused. Observable as the second run's `reuse` event: `ran` is 0 and no refusal counts a mutant.
 - R2. A manifest key whose value the resolver cannot interpret affects only the requests that read that key's entry. It never refuses the other keys or the rest of the file. This holds for `exports`, `imports`, `main` and `module`.
 - R3. Every specifier resolves to the file the runtime loads, or leaves its importers' closures open; never to a file no runtime loads. Every `#` import and node builtin that #308 closed stays closed.
-- R4. An entry the resolver cannot map (a `null` target, an empty array, an array none of whose elements yields a file once one of them is `null` or an invalid target, a condition branch ending in `null` or a number or boolean, a condition object no condition of Node's matches, or one whose ESM and CommonJS importers load different files) yields no target, and that is final: no pattern and no `main`/`module` rescues it. So the closures that import it stay open.
+- R4. An entry the resolver cannot map (a `null` target, an empty array, an array none of whose elements yields a file once one of them is `null` or an invalid target, a condition branch ending in `null` or a number or boolean, a condition object no condition of Node's matches, a condition object with an array-index key at any depth, a non-string `main` (then `module` is not read), or an entry whose ESM and CommonJS importers load different files) yields no target, and that is final: no pattern and no `main`/`module` rescues it. So the closures that import it stay open.
 - R5. Exit codes, log lines, report files and stream lines are unchanged for projects without the bug.
 
 ### Acceptance Examples
@@ -72,9 +72,10 @@ The import closure decides which files a test file depends on. Incremental runs 
     - a string is the target when Node accepts it as one (`resolve.js:389-423`): in `exports`, it starts with `./` and has no `.`, `..` or `node_modules` segment after it; in `imports`, a `./` string the same way, or a bare package specifier (not empty, not starting with `.`, `/` or `#`); any other string decides that no target loads, and inside an array it is skipped;
     - an array yields its first element that yields a file, read again by the same reader; with none, it yields none when it is empty or an element was `null` or a number or boolean, and does not decide when every element matched no condition;
     - an object yields its `@systemfsoftware/source` value if present; otherwise its first key in the read's condition set, read again by the same reader; with no such key it does not decide;
-    - `null` and a number or boolean decide that no target loads (inside an array they are skipped, as above).
+    - `null` and a number or boolean decide that no target loads (inside an array they are skipped, as above);
+    - an object with an array-index key (`0`, `1`, …) refuses the whole read, as Node's `ERR_INVALID_PACKAGE_CONFIG` does: the reader carries the refusal in a failure channel, so an object returns it, an array stops at it instead of skipping it, and the entry yields no target.
   - Every entry is read under the ESM set and the CommonJS set. Both yield the same file, or one a file and the other none: that file. Different files, or none in both: no target.
-  - A top-level `exports` string or array is the root entry. A top-level `exports` object with no `.`-prefixed key is the root's conditions; one mixing `.`-prefixed and other keys yields no target. A top-level `null` counts as absent, as in Node, so `main`/`module` apply.
+  - A top-level `exports` string or array is the root entry. A top-level `exports` object with no `.`-prefixed key is the root's conditions; one mixing `.`-prefixed and other keys yields no target. A top-level `null` counts as absent, as in Node, so `main`/`module` apply. For the root fallback, a string `main` is the target; a present non-string `main` yields no target; `module` is read only when `main` is absent.
   - Lookup separates "no entry for this request" from "an entry that yields no target":
     - **No entry:** no exact key and no matching pattern. Patterns, then `main`/`module` for the root.
     - **An entry that yields no target:** `ManifestTargetMissing`, with no pattern and no `main` consulted (R4).
@@ -89,6 +90,8 @@ The import closure decides which files a test file depends on. Incremental runs 
   - Ending an array at its first `null` (0546's rule, and this bullet's former claim that Node returns `null` as blocked). Node's implementation skips it (`resolve.js:511-514`).
   - Pinning Node with a known-answer table in the laws. A table restates what the author believes Node does, and that belief was wrong twice here; U5 asks Node.
   - Falling through to patterns or `main` when an entry yields no target. That closes the closure on a file Node never loads.
+  - Treating an array-index object as an unmatched or blocked element (`e8393042d`). Node rethrows its `ERR_INVALID_PACKAGE_CONFIG` inside an array, so a later element must not be read.
+  - Letting a non-string `main` fall through to `module` (`e8393042d` and before). Node ignores such a `main` and never reads `module`; the closure must stay open, as it did on `main`.
   - Judging a string only after the target is chosen (`mapPathTargetOf`, 0606 and before). An array then stops at a string Node skips, and an `exports` string without `./` became a path target; U5 shrank that to `"/a.js"`.
 - KTD3. **The user-observable test drives the built CLI.** `node dist/main.mjs run` runs twice on a temporary repo, with an edit between the runs, and the test reads only the exit codes and the `reuse` line of stdout. The `vm` runner reports the modules each test loaded, which can hide a stale static closure, so AE5 and the closure-only rows of AE2 use an on-disk runner fixture, `closure-only`, that reports no `testFileModules` (the on-disk runner pattern `dry-run-failure.integration.test.ts` uses).
 
@@ -128,11 +131,12 @@ U1 → U2 → U3 → U4 → U5.
   - `∀c_ConditionChain_≡SourceConditionBeforeEarlierKeysAtItsOwnDepth`;
   - `∀c_Fallbacks_≡FirstElementYieldingAFileWinsAndOnlyAllUnmatchedElementsFallThrough`;
   - `∀c_StringTargets_≡AnInvalidTargetYieldsNoneAloneAndIsSkippedInsideAnArray`;
+  - `∀c_ConditionObject_≡AnArrayIndexKeyRefusesTheEntryEvenInsideAnArray`;
   - `∀c_RootEntry_≡MainDecidesTheRootOnlyWhenExportsDeclaresNone`;
   - `∀c_NullExports_≡ReadAsIfExportsWereAbsent`;
   - `∀c_ExactEntry_≡DecidesAloneWhateverPatternSitsBesideIt`;
-  - `∀c_NonStringMainOrModule_≡ReadAsIfTheKeyWereAbsent`.
-- **Evidence.** The first-value decision of `14a06fdab` fails the condition-chain and root-conditions laws; the rest failed against `main`'s decision when added. The two-condition-set decision fails three laws on `07f55c9f9`, its parent: the fall-through, the ESM/CommonJS and the fallbacks laws. The fallbacks law fails on `72410ddba` (0546's array rule), and the string-targets law on `3eee2a48c` (0606's string rule). All pass on the head.
+  - `∀c_MainOrModule_≡ANonStringMainYieldsNoneAndModuleCountsOnlyWithoutMain`.
+- **Evidence.** The first-value decision of `14a06fdab` fails the condition-chain and root-conditions laws; the rest failed against `main`'s decision when added. The two-condition-set decision fails three laws on `07f55c9f9`, its parent: the fall-through, the ESM/CommonJS and the fallbacks laws. The fallbacks law fails on `72410ddba` (0546's array rule), and the string-targets law on `3eee2a48c` (0606's string rule); the array-index and main/module laws fail on `e8393042d`. All pass on the head.
 
 ### U3. The built CLI keeps verdicts across an unrelated edit
 
@@ -149,10 +153,10 @@ U1 → U2 → U3 → U4 → U5.
 ### U5. The import closure agrees with Node's resolver
 
 - **Goal.** R3 and R4 pinned against the runtime (boundary-testing `pin-dependency-semantics`).
-- **Files.** New `packages/stryker-js/tests/manifest-target-node-resolution.differential.test.ts` and `packages/stryker-js/tests/__fixtures__/node-resolution.schema.ts`.
-- **Approach.** `Differential.compare` (`@systemfsoftware/differential-spec`, already a devDependency). Input: two generated entry trees, one for a linked package's `exports` subpath and one for the project's `imports` key, over the strings `./a.js`, `./b.js`, `./c.cjs`, the rejected targets `/a.js`, `../a.js`, `./x/../a.js` and `./node_modules/a.js`, plus `a.js` for `exports` only (in `imports` it names a package, which Node tries to load and whose absence ends an array with an error), `null`, a number, a boolean, arrays and condition objects keyed by `types`, `import`, `require`, `node`, `module-sync`, `default`, `browser`, `module` and `development`. Reference: a real `node` process resolves both specifiers with `import.meta.resolve` and `require.resolve` against the package written to disk. Candidate: `ImportClosure.analyzeImportClosure` over the same project, through the public barrel. Oracle: from Node's ESM and CommonJS answers, the file both agree on (or the one answer when the other is none), else open; it must equal the closure's outcome exactly. Host-bound lane (temp directories, a child process); `runBudget` 100.
-- **Out of its program space.** Percent-encoded segments, bare package targets in `imports`, pattern keys, `@systemfsoftware/source`, the `main`/`module` fallback, and numeric condition keys (`ERR_INVALID_PACKAGE_CONFIG`); the laws own those.
-- **Two-sided proof.** On `07f55c9f9` it fails, shrunk to `imports` `{ "require": "./a.js", "types": "./a.js" }` (Node's CommonJS side loads `a.js`; the closure stayed open). On `72410ddba` it fails, shrunk to `{ "module-sync": [], "node": "./a.js" }` (Node blocks; the closure closed on `a.js`). On `3eee2a48c`, once the generator draws rejected strings, it fails, shrunk to `exports` `"/a.js"` (Node rejects it; the closure closed on `pkgs/lib/a.js`). It passes on the head.
+- **Files.** New `packages/stryker-js/tests/manifest-target-node-resolution.differential.test.ts` and the reference harness `packages/stryker-js/tests/__fixtures__/node-resolution.fixture.ts` (probe source, its output decode and the `node` run; harness schemas stay unexported there, per schema-laws `tests-own-no-schemas` rule 3).
+- **Approach.** `Differential.compare` (`@systemfsoftware/differential-spec`, already a devDependency). Input: two generated entry trees, one for a linked package's `exports` subpath and one for the project's `imports` key, over the strings `./a.js`, `./b.js`, `./c.cjs`, the rejected targets `/a.js`, `../a.js`, `./x/../a.js` and `./node_modules/a.js`, plus `a.js` for `exports` only (in `imports` it names a package, which Node tries to load and whose absence ends an array with an error), `null`, a number, a boolean, arrays and condition objects keyed by `types`, `import`, `require`, `node`, `module-sync`, `node-addons`, `default`, `browser`, `module`, `development` and the array index `0`. Reference: a real `node` process resolves both specifiers with `import.meta.resolve` and `require.resolve` against the package written to disk. Candidate: `ImportClosure.analyzeImportClosure` over the same project, through the public barrel. Oracle: from Node's ESM and CommonJS answers, the file both agree on (or the one answer when the other is none), else open; it must equal the closure's outcome exactly. Host-bound lane (temp directories, a child process); `runBudget` 100.
+- **Out of its program space.** Percent-encoded segments, bare package targets in `imports`, pattern keys, `@systemfsoftware/source` and the `main`/`module` fallback; the laws own those.
+- **Two-sided proof.** On `07f55c9f9` it fails, shrunk to `imports` `{ "require": "./a.js", "types": "./a.js" }` (Node's CommonJS side loads `a.js`; the closure stayed open). On `72410ddba` it fails, shrunk to `{ "module-sync": [], "node": "./a.js" }` (Node blocks; the closure closed on `a.js`). On `3eee2a48c`, once the generator draws rejected strings, it fails, shrunk to `exports` `"/a.js"` (Node rejects it; the closure closed on `pkgs/lib/a.js`). On `e8393042d`, once the generator draws the key `0`, it fails, shrunk to an `imports` object holding `"0"` (Node refuses it in both module systems; the closure closed on `a.js`). It passes on the head.
 
 ## Verification Contract
 

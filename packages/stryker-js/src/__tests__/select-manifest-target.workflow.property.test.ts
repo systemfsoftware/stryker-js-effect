@@ -1,6 +1,5 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
-import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -461,17 +460,44 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_NonStringMainOrModule_≡ReadAsIfTheKeyWereAbsent',
+    '∀c_ConditionObject_≡AnArrayIndexKeyRefusesTheEntryEvenInsideAnArray',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const wire = wireOf(command)
-      const { main, module, ...rest } = wire
-      const stringsOnly = {
-        ...rest,
-        ...(Predicate.isString(main) ? { main } : {}),
-        ...(Predicate.isString(module) ? { module } : {}),
-      }
-      return selected(subject, wire, command.request) === selected(subject, stringsOnly, command.request)
+      const target = targetOf(command)
+      const other = `./o${oneSegmentOf(command)}.js`
+      const subpath = `x${oneSegmentOf(command)}`
+      const key = exportKeyOf(subpath)
+      const specifier = `#${subpath}`
+      const indexed = { [`${textOf(command).length}`]: other, default: target }
+      const nested = { node: indexed, default: target }
+      const leading = [indexed, target]
+      return [
+        exported(subject, command, { [key]: indexed }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: indexed }, specifier) === 'missing',
+        exported(subject, command, { [key]: nested }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: nested }, specifier) === 'missing',
+        exported(subject, command, { [key]: leading }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: leading }, specifier) === 'missing',
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀c_MainOrModule_≡ANonStringMainYieldsNoneAndModuleCountsOnlyWithoutMain',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const { exports: _exports, main: _main, module: _module, ...rest } = wireOf(command)
+      const target = targetOf(command)
+      const other = `./o${oneSegmentOf(command)}.js`
+      const unreadable = textOf(command).length
+      const root = (fields: Readonly<Record<string, S.Json>>) => selected(subject, { ...rest, ...fields }, ROOT_REQUEST)
+      return [
+        root({ main: unreadable, module: other }) === 'missing',
+        root({ main: [target], module: other }) === 'missing',
+        root({ module: target }) === `path:${target}`,
+        root({ main: target, module: other }) === `path:${target}`,
+        root({ module: unreadable }) === 'missing',
+      ].every((holds) => holds)
     },
   )
 })

@@ -3,17 +3,18 @@ import { Differential } from '@systemfsoftware/differential-spec'
 import { Engine, ImportClosure } from '@systemfsoftware/stryker-js'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
-import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
-import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
-import * as Stream from 'effect/Stream'
 import * as fc from 'fast-check'
 
-import { type NodeResolution, NodeResolutions } from './__fixtures__/node-resolution.schema.js'
+import {
+  type NodeResolution,
+  type NodeResolutions,
+  probeFile,
+  resolveWithNode,
+} from './__fixtures__/node-resolution.fixture.js'
 
 const TARGET_FILES: ReadonlyArray<string> = ['a.js', 'b.js', 'c.cjs']
 
@@ -29,9 +30,11 @@ const CONDITION_KEYS: ReadonlyArray<string> = [
   'require',
   'node',
   'module-sync',
+  'node-addons',
   'default',
   'browser',
   'module',
+  '0',
   'development',
 ]
 
@@ -65,8 +68,6 @@ const IMPORTS_TEST = 'test/imports.test.js'
 
 const EXPORTS_TEST = 'test/exports.test.js'
 
-const PROBE = 'probe.mjs'
-
 const APP_DIRECTORY = ''
 
 const LIB_DIRECTORY = 'pkgs/lib/'
@@ -91,20 +92,6 @@ const projectFilesOf = (input: ManifestEntries): ReadonlyArray<readonly [string,
   [IMPORTS_TEST, "import '#x'\n"],
   [EXPORTS_TEST, "import '@fx/lib/x'\n"],
 ]
-
-const PROBE_SOURCE = [
-  "import { createRequire } from 'node:module'",
-  "import { basename } from 'node:path'",
-  "import { fileURLToPath } from 'node:url'",
-  'const require = createRequire(import.meta.url)',
-  'const attempt = (resolve) => { try { return basename(resolve()) } catch { return null } }',
-  'const of = (specifier) => ({',
-  '  esm: attempt(() => fileURLToPath(import.meta.resolve(specifier))),',
-  '  cjs: attempt(() => require.resolve(specifier)),',
-  '})',
-  "process.stdout.write(JSON.stringify({ imports: of('#x'), exports: of('@fx/lib/x') }))",
-  '',
-].join('\n')
 
 const writeProject = (
   files: ReadonlyArray<readonly [string, string]>,
@@ -135,27 +122,8 @@ const inProject = <A, R>(
 ): Effect.Effect<A, never, R | FileSystem.FileSystem | Path.Path> =>
   Effect.acquireUseRelease(writeProject(files), use, removeProject)
 
-const decodeResolutions = S.decodeUnknownEffect(S.fromJsonString(NodeResolutions))
-
 const nodeResolutions = (input: ManifestEntries): Effect.Effect<NodeResolutions> =>
-  inProject([...projectFilesOf(input), [PROBE, PROBE_SOURCE]], (root) =>
-    Effect.scoped(
-      Effect.gen(function*() {
-        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(globalThis.process.execPath, [PROBE], {
-            cwd: root,
-            stdin: 'ignore',
-            stdout: 'pipe',
-            stderr: 'pipe',
-          }),
-        )
-        const stdout = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
-        yield* Effect.forkScoped(handle.stderr.pipe(Stream.runDrain))
-        yield* handle.exitCode
-        return yield* decodeResolutions(yield* Fiber.join(stdout))
-      }),
-    ).pipe(Effect.orDie)).pipe(Effect.provide(NodeServices.layer))
+  inProject([...projectFilesOf(input), probeFile], resolveWithNode).pipe(Effect.provide(NodeServices.layer))
 
 const OPEN = 'open'
 
