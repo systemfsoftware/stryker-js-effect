@@ -1,6 +1,6 @@
-import type { Program } from '../Ast.handle.js'
-import { ParseFailed } from '../Parser.schema.js'
-import type { Oxc } from '../Parser.service.js'
+import type { Program } from './Ast.handle.js'
+import type { Oxc } from './Parser.js'
+import { ParseFailed } from './Parser.schema.js'
 
 export const EMBEDDED_SCRIPT_FILE = 'embedded-script.js'
 
