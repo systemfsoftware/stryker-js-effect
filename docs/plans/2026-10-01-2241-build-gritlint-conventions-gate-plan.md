@@ -111,7 +111,7 @@ flowchart TB
   2. Lock the new input.
   3. Copy `bin/dprint` to `bin/gritlint` with `TOOL="gritlint"`.
   4. Write `gritlint.json` with the three packs, the source-resolution parameters systemfsoftware uses, `npm-provenance.repositoryUrl` set to `git+https://github.com/systemfsoftware/stryker-js-effect.git`, and the ignores in KTD5.
-- **Patterns to follow:** `nix/comment-checker.nix` and the `comment-checker` wiring in `flake.nix`; `bin/dprint`; systemfsoftware's `gritlint.json`.
+- **Patterns to follow:** [`nix/comment-checker.nix`](https://github.com/systemfsoftware/stryker-js-effect/blob/efd19962596ba99d71a91cd02de96d06c81c0744/nix/comment-checker.nix) and the `comment-checker` wiring in [`flake.nix`](https://github.com/systemfsoftware/stryker-js-effect/blob/efd19962596ba99d71a91cd02de96d06c81c0744/flake.nix) at that commit; `bin/dprint`; systemfsoftware's `gritlint.json`.
 - **Test expectation:** none -- tooling and config; proven by the smoke checks below.
 - **Verification:** on a bare shell `./bin/gritlint check` builds through `nix run` and reports exactly the 9 findings U2-U5 fix; `tsconfig-preset-module-mode` appears under `zero-file rules`, which gritlint reports without failing (an empty tree with every pack enabled exits 0); `nix build --no-link .#dprint` does not fetch the systemfsoftware input; inside `nix develop` gritlint is on PATH.
 
