@@ -536,7 +536,7 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     )
 
     scenario(
-      'A project whose TypeScript server stalls as it loads is refused and does not block another project',
+      'A project whose TypeScript server stalls as it loads is refused within the query grace, and another project is answered after it',
       Gherkin.Do.pipe(
         When(
           "one project is answered, a second project's server is stopped as it opens, and both projects are queried",
