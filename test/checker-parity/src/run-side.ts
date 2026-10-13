@@ -18,7 +18,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
-import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
@@ -83,7 +82,6 @@ import {
   projectCheckSpans,
   type SpanRecord,
 } from './span-counts.js'
-import { branchTypeQueryLines, type FileContent, type ServerTally } from './type-query-side.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -254,17 +252,6 @@ export const decodeLines: {
     ),
 )
 
-const fileContentsOf = (
-  input: ProjectInput,
-  wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ReadonlyArray<FileContent>, DriverFailure, DriverServices> =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    return yield* Effect.forEach(
-      Arr.dedupe(wires.map((wire) => wire.fileName)),
-      (name) => Effect.map(readText(path.resolve(input.repoRoot, name)), (content) => ({ name, content })),
-    )
-  })
 export interface LegDeadline {
   readonly startedAt: number
   readonly deadlineAt: Option.Option<number>
@@ -833,7 +820,6 @@ interface ProjectInput {
   readonly branchWorker: string
   readonly mainBundleHash: string
   readonly branchBundleHash: string
-  readonly servers: Ref.Ref<ServerTally>
   readonly receiver: OtlpReceiver
   readonly deadline: LegDeadline
 }
@@ -1121,25 +1107,22 @@ const checkBothSides = (
 ): Effect.Effect<
   Pick<ProjectResult, 'lines' | 'status' | 'cachedFiles' | 'freshFiles'>,
   DriverFailure,
-  Worker.WorkerLauncher | DriverServices
+  Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
     const sideInputs = Side.literals.map(sideInputOf(input, wires))
-    const [runs, typeQueryLines] = yield* Effect.all([
-      Effect.forEach(
-        sideInputs,
-        (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
-        { concurrency: 'unbounded' },
-      ),
-      Effect.flatMap(fileContentsOf(input, wires), (contents) => branchTypeQueryLines(input, contents, wires)),
-    ], { concurrency: 'unbounded' })
+    const runs = yield* Effect.forEach(
+      sideInputs,
+      (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
+      { concurrency: 'unbounded' },
+    )
     const mutantIds = HashSet.fromIterable(wires.map((wire) => wire.id))
     const telemetry = yield* Effect.forEach(
       runs.filter((run) => !run.bootFailed),
       (run) => telemetryLineOf(input, run, mutantIds),
     )
     return {
-      lines: [...runs.flatMap((run) => run.lines), ...telemetry.flat(), ...typeQueryLines],
+      lines: [...runs.flatMap((run) => run.lines), ...telemetry.flat()],
       status: runs.some((run) => run.bootFailed) ? 'boot-failed' : 'ran',
       cachedFiles: runs.reduce((total, run) => total + run.cachedFiles, 0),
       freshFiles: runs.reduce((total, run) => total + run.freshFiles, 0),
@@ -1163,7 +1146,7 @@ const checkedProject = (
   input: ProjectInput,
   scoped: ScopedWires,
   listAndInstrumentMs: number,
-): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | DriverServices> => {
+): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> => {
   const counted: ProjectResult = {
     ...EMPTY_RESULT,
     mutants: scoped.wires.length,
@@ -1606,7 +1589,6 @@ export const runShard: {
           corpusDiscoveryMs: Duration.toMillis(discovery),
         }),
       )
-      const servers = yield* Ref.make<ServerTally>({ live: 0, peak: 0 })
       const results = yield* Effect.forEach(projects, (project) => {
         const tsconfigFile = path.resolve(repoRoot, project)
         return Effect.flatMap(exists(tsconfigFile), (present) =>
@@ -1628,7 +1610,6 @@ export const runShard: {
                 branchWorker: command.branchWorker,
                 mainBundleHash,
                 branchBundleHash,
-                servers,
                 receiver,
                 deadline,
               }),
