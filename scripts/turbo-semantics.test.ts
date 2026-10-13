@@ -1,71 +1,13 @@
 import { assert, assertEqual } from './assert.ts'
+import { cleanEnv, commit, git, head, PERMITTED_SCRATCH_DIR, type Ran, run, TURBO_PROGRAM, write } from './process.ts'
 
 const REPO_ROOT = new URL('../', import.meta.url)
-
-const TURBO_PROGRAM = 'node_modules/.bin/turbo'
 
 const TASKS = ['build', 'test']
 
 const UNKNOWN_SHA = '0'.repeat(40)
 
 const SCHEMA = 'https://v2-10-1.turborepo.dev/schema.json'
-
-const PERMITTED_SCRATCH_DIR = '/tmp'
-
-const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
-
-const cleanEnv = (overrides: Readonly<Record<string, string>> = {}): Record<string, string> => {
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(Deno.env.toObject())) {
-    if (key.startsWith('GITHUB_') || key.startsWith('TURBO_')) continue
-    env[key] = value
-  }
-  env.GIT_AUTHOR_NAME = 'probe'
-  env.GIT_AUTHOR_EMAIL = 'probe@example.com'
-  env.GIT_COMMITTER_NAME = 'probe'
-  env.GIT_COMMITTER_EMAIL = 'probe@example.com'
-  env.GIT_CONFIG_GLOBAL = '/dev/null'
-  env.GIT_CONFIG_SYSTEM = '/dev/null'
-  env.GIT_TERMINAL_PROMPT = '0'
-  return { ...env, ...overrides }
-}
-
-interface Ran {
-  readonly code: number
-  readonly stdout: string
-  readonly stderr: string
-}
-
-const run = async (
-  program: string,
-  args: ReadonlyArray<string>,
-  cwd: string | URL,
-  env: Readonly<Record<string, string>>,
-): Promise<Ran> => {
-  const output = await new Deno.Command(program, { args: [...args], cwd, env, clearEnv: true })
-    .output()
-  return { code: output.code, stdout: decode(output.stdout), stderr: decode(output.stderr) }
-}
-
-const git = async (dir: string, args: ReadonlyArray<string>): Promise<Ran> => {
-  const ran = await run('git', args, dir, cleanEnv())
-  if (ran.code !== 0) throw new Error(`git ${args.join(' ')} failed: ${ran.stderr}`)
-  return ran
-}
-
-const commit = async (dir: string, message: string): Promise<string> => {
-  await git(dir, ['add', '-A'])
-  await git(dir, ['commit', '-q', '-m', message])
-  return (await git(dir, ['rev-parse', 'HEAD'])).stdout.trim()
-}
-
-const head = async (dir: string): Promise<string> => (await git(dir, ['rev-parse', 'HEAD'])).stdout.trim()
-
-const write = async (dir: string, relative: string, content: string): Promise<void> => {
-  const path = `${dir}/${relative}`
-  await Deno.mkdir(path.slice(0, path.lastIndexOf('/')), { recursive: true })
-  await Deno.writeTextFile(path, content)
-}
 
 interface TaskEntry {
   readonly taskId: string
