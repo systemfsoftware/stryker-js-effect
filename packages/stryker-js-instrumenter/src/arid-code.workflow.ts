@@ -41,18 +41,22 @@ export type AridCallee = typeof AridCalleeSchema.Type
 const AridArgumentFrame = S.TaggedStruct('ArgumentFrame', {
   callee: S.Option(AridCalleeSchema),
 })
-type AridArgumentFrame = typeof AridArgumentFrame.Type
 
 const AridThroughFrame = S.TaggedStruct('ThroughFrame', {})
-type AridThroughFrame = typeof AridThroughFrame.Type
 
 const AridFunctionBoundary = S.TaggedStruct('FunctionBoundary', {})
 
 export const AridFrameSchema = S.Union([AridArgumentFrame, AridThroughFrame, AridFunctionBoundary])
 export type AridFrame = typeof AridFrameSchema.Type
 
-const isCallFrame = (frame: AridFrame): frame is AridArgumentFrame | AridThroughFrame =>
-  frame._tag === 'ArgumentFrame' || frame._tag === 'ThroughFrame'
+const isCallFrame = (frame: AridFrame): boolean =>
+  Match.value(frame).pipe(
+    Match.tagsExhaustive({
+      ArgumentFrame: () => true,
+      ThroughFrame: () => true,
+      FunctionBoundary: () => false,
+    }),
+  )
 
 interface AridRule {
   readonly ruleId: AridRuleId
