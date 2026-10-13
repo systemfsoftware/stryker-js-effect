@@ -12,6 +12,7 @@ const Feature = makeFeature({ it })
 
 const UNASSERTED_FILE = 'src/lib/doubled.ts'
 const UNCOVERED_FILE = 'src/lib/tripled.ts'
+const STATIC_FILE = 'src/lib/limit.ts'
 
 const PROJECT: ProjectFiles = [
   ['package.json', '{ "type": "commonjs" }\n'],
@@ -35,6 +36,7 @@ const PROJECT: ProjectFiles = [
   ],
   [UNASSERTED_FILE, 'export const doubled = (n: number): number => n * 2\n'],
   [UNCOVERED_FILE, 'export const tripled = (n: number): number => n * 3\n'],
+  [STATIC_FILE, 'export const LIMIT = 2 * 3\n'],
   [
     'test/doubled.test.mjs',
     [
@@ -47,7 +49,21 @@ const PROJECT: ProjectFiles = [
       '',
     ].join('\n'),
   ],
+  [
+    'test/limit.test.mjs',
+    [
+      "import { test } from 'vitest'",
+      "import { LIMIT } from '../src/lib/limit.ts'",
+      '',
+      "test('loads the limit without asserting', () => {",
+      '  void LIMIT',
+      '})',
+      '',
+    ].join('\n'),
+  ],
 ]
+
+const TESTS_LOADING_THE_STATIC_MODULE = 1
 
 const decodeWireLine = S.decodeOption(RunEvent.RunEventWireLine)
 
@@ -58,10 +74,19 @@ const mutantLinesOf = (output: string): ReadonlyArray<RunEvent.RunMutantTested> 
 
 const decodeStatusReason = S.decodeOption(Mutant.StatusReason)
 
+const decodedReasonOf = (line: RunEvent.RunMutantTested) =>
+  decodeStatusReason({ status: line.status, statusReason: line.statusReason })
+
 const reasonCodeOf = (line: RunEvent.RunMutantTested): string =>
-  Option.match(decodeStatusReason({ status: line.status, statusReason: line.statusReason }), {
+  Option.match(decodedReasonOf(line), {
     onNone: () => 'undecodable',
     onSome: (decoded) => decoded.statusReason.code,
+  })
+
+const reasonDetailOf = (line: RunEvent.RunMutantTested): string =>
+  Option.match(decodedReasonOf(line), {
+    onNone: () => 'undecodable',
+    onSome: (decoded) => decoded.statusReason.detail,
   })
 
 const arithmeticLineIn = (lines: ReadonlyArray<RunEvent.RunMutantTested>, file: string) =>
@@ -136,6 +161,46 @@ Feature('A survivor and an uncovered mutant carry what an agent needs to act', {
                 reason: 'not-covered',
                 original: 'n * 3',
                 next: { _tag: 'add-test', file: UNCOVERED_FILE, line: 1, column: 47 },
+              },
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'A static mutant the suite loads but no single test covers survives without claiming a covering test',
+      Gherkin.Do.pipe(
+        Given('a project whose tests load a module-level constant and never assert on it')('run', () => runOnce),
+        Then(
+          'its line names no covering test, its reason says every test ran with it active, and it asks for a strengthening test',
+        )(
+          (s, expect) => {
+            const staticLine = arithmeticLineIn(s.run.lines, STATIC_FILE)
+            return expect({
+              exitCode: s.run.exitCode,
+              staticLine: staticLine?.status === 'Survived'
+                ? {
+                  reason: reasonCodeOf(staticLine),
+                  detail: reasonDetailOf(staticLine),
+                  original: staticLine.original,
+                  coveredBy: staticLine.coveredBy,
+                  next: staticLine.next,
+                }
+                : staticLine?.status,
+            }).toEqual({
+              exitCode: 0,
+              staticLine: {
+                reason: 'covered-not-killed',
+                detail:
+                  `no test covers it alone; ${TESTS_LOADING_THE_STATIC_MODULE} tests ran with it active, none failed`,
+                original: '2 * 3',
+                coveredBy: [],
+                next: {
+                  _tag: 'strengthen-tests',
+                  tests: { total: 0, shown: [] },
+                  reproduce: `stryker run --mutant ${staticLine?.id}`,
+                },
               },
             })
           },

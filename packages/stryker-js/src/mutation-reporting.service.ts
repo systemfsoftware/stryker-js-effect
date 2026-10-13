@@ -267,12 +267,22 @@ const reportNoCoverage = (mutant: Mutant.MutantTestCoverage) =>
     }),
   })
 
+const measuredSurvivedDetailOf = (coveredBy: ReadonlyArray<string>, nrOfTests: number): string =>
+  Boolean.match(Arr.isReadonlyArrayNonEmpty(coveredBy), {
+    onTrue: () => `${nrOfTests} covering tests ran, none failed`,
+    onFalse: () => `no test covers it alone; ${nrOfTests} tests ran with it active, none failed`,
+  })
+
 const survivedReasonOf = (mutant: Mutant.MutantTestCoverage, nrOfTests: number): string =>
   statusReasonTextOf({
     status: 'Survived',
-    statusReason: mutant.coveredBy === undefined
-      ? { code: 'coverage-not-measured', detail: `${nrOfTests} tests ran, none failed` }
-      : { code: 'covered-not-killed', detail: `${nrOfTests} covering tests ran, none failed` },
+    statusReason: Option.match(Option.fromUndefinedOr(mutant.coveredBy), {
+      onNone: () => ({ code: 'coverage-not-measured' as const, detail: `${nrOfTests} tests ran, none failed` }),
+      onSome: (coveredBy) => ({
+        code: 'covered-not-killed' as const,
+        detail: measuredSurvivedDetailOf(coveredBy, nrOfTests),
+      }),
+    }),
   })
 
 const mapRunResult = (mutant: Mutant.MutantTestCoverage, result: TestRunner.MutantRunResult) =>
