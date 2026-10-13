@@ -27,6 +27,8 @@ const COMMITTED_C = '3c3c3c3c3c3c3c3c'
 const NEW_SURVIVOR = '4d4d4d4d4d4d4d4d'
 const PENDING_ONE = '5e5e5e5e5e5e5e5e'
 const PENDING_TWO = '6f6f6f6f6f6f6f6f'
+const KILLED_ONE = '7a7a7a7a7a7a7a7a'
+const SURVIVED_ONE = '8b8b8b8b8b8b8b8b'
 
 const CONSUMER_PACKAGE = '{ "name": "gate-consumer", "type": "module", "private": true }\n'
 
@@ -70,6 +72,27 @@ ${
 
 const BELOW_BREAK = '50'
 
+const scoredReportJsonOf = (breakThreshold: string): string =>
+  `{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": ${breakThreshold} },
+  "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
+  "files": {
+    "src/sum.js": {
+      "source": "export const sum = (a, b) => a + b\\n",
+      "mutants": [
+${
+    [
+      mutantLine(KILLED_ONE, 1, 'Killed'),
+      mutantLine(SURVIVED_ONE, 2, 'Survived'),
+    ].join(',\n')
+  }
+      ]
+    }
+  }
+}
+`
+
 const breakLineOf = (project: string): string => `score-below-break: ${project} scored 0.00 < break ${BELOW_BREAK}`
 
 const baselineJson = (survivorIds: ReadonlyArray<string>): string =>
@@ -97,6 +120,7 @@ const prepareProject = (
   baseline: string | null,
   budgetBaseline: string | null = null,
   breakThreshold = 'null',
+  report = reportJsonOf(breakThreshold),
 ): Effect.Effect<GateProject, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -115,7 +139,7 @@ const prepareProject = (
     yield* fs.writeFileString(path.join(root, 'src', 'sum.js'), 'export const sum = (a, b) => a + b\n')
     const reportPath = path.join(root, REPORT_FILE)
     yield* fs.makeDirectory(path.dirname(reportPath), { recursive: true })
-    yield* fs.writeFileString(reportPath, reportJsonOf(breakThreshold))
+    yield* fs.writeFileString(reportPath, report)
     yield* Effect.when(
       fs.writeFileString(path.join(root, COMMITTED_BASELINE), baseline ?? ''),
       Effect.succeed(baseline !== null),
@@ -419,6 +443,40 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             written: [COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR],
             namesTheBreak: true,
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A report scoring 50 under a break of 60 exits 1 naming the score and the break',
+      Gherkin.Do.pipe(
+        Given('a project whose report kills one mutant and leaves one alive under a break of 60')(
+          'project',
+          () => prepareProject(null, null, '60', scoredReportJsonOf('60')),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 1 naming 50.00 against break 60')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheBreak: s.ran.stderr.includes('score-below-break: . scored 50.00 < break 60'),
+          }).toStrictEqual({ exitCode: 1, namesTheBreak: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'The same report scoring 50 under a break of 50 exits 0 because an equal score passes',
+      Gherkin.Do.pipe(
+        Given('a project whose report scores 50 under a break of 50')(
+          'project',
+          () => prepareProject(null, null, '50', scoredReportJsonOf('50')),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 0 with no break verdict')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+          }).toStrictEqual({ exitCode: 0, emitsBreakVerdict: false })
         ),
       ),
     )
