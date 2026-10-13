@@ -10,7 +10,6 @@ import {
   BenchReport,
   BenchReportOutcome,
   type BenchReportRun,
-  LegMeasured,
   LegTime,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
@@ -99,7 +98,7 @@ const MAIN_REF = 'refs/heads/main'
 const summaryOf = (runs: ReadonlyArray<BenchRun>, ref: string = MAIN_REF): BenchSummary =>
   Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', ref, runs })))
 
-const LEG: LegTime = LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
+const LEG: LegTime = LegTime.cases.LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
 
 const reportOf = (
   summary: BenchSummary,
@@ -439,8 +438,10 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const v = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legV))
       const w = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legW))
-      const wallText = S.is(LegMeasured)(legW) ? `${(legW.wallMs / 60_000).toFixed(1)} min` : 'not measured'
-      const over = S.is(LegMeasured)(legW) && legW.wallMs > legW.targetMs
+      const wallText = S.is(LegTime.cases.LegMeasured)(legW)
+        ? `${(legW.wallMs / 60_000).toFixed(1)} min`
+        : 'not measured'
+      const over = S.is(LegTime.cases.LegMeasured)(legW) && legW.wallMs > legW.targetMs
       return S.is(BenchRenderedError)(v) === S.is(BenchRenderedError)(w) &&
         v.annotationLine === w.annotationLine &&
         w.markdown.includes(`**Leg wall time:** ${wallText}; target 10.0 min`) &&

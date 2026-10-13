@@ -20,21 +20,10 @@ export type BenchReportRun = typeof BenchReportRun.Type
 // Source: R3 of docs/plans/2026-10-10-0702-perf-ci-wall-clock-plan.md (10-minute job ceiling); no compound pack names a per-job budget.
 export const LegTargetMs = S.Literal(600_000)
 
-const LegTimeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/LegTime')
-type LegTimeTypeId = typeof LegTimeTypeId
-
-export class LegMeasured extends S.TaggedClass<LegMeasured>()('LegMeasured', {
-  wallMs: Report.NonNegativeFinite,
-  targetMs: LegTargetMs,
-}) {
-  readonly [LegTimeTypeId] = LegTimeTypeId
-}
-
-export class LegNotMeasured extends S.TaggedClass<LegNotMeasured>()('LegNotMeasured', { targetMs: LegTargetMs }) {
-  readonly [LegTimeTypeId] = LegTimeTypeId
-}
-
-export const LegTime = S.Union([LegMeasured, LegNotMeasured])
+export const LegTime = S.TaggedUnion({
+  LegMeasured: { wallMs: Report.NonNegativeFinite, targetMs: LegTargetMs },
+  LegNotMeasured: { targetMs: LegTargetMs },
+})
 export type LegTime = typeof LegTime.Type
 
 export const BenchAbortCode = S.Literals([

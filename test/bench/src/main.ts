@@ -13,10 +13,8 @@ import {
   type BenchRun,
   BenchRunMeasured,
   type BenchSide,
-  LegMeasured,
-  LegNotMeasured,
   LegTargetMs,
-  type LegTime,
+  LegTime,
   renderBenchReport,
   RenderBenchReportCommand,
   type SetupStep,
@@ -133,8 +131,9 @@ const benchEnv = Effect.all({
 
 const legTimeOf = (clock: LegClock): LegTime =>
   Match.valueTags(clock, {
-    LegElapsed: (elapsed): LegTime => LegMeasured.make({ wallMs: elapsed.wallMs, targetMs: LegTargetMs.literal }),
-    LegClockBehind: (): LegTime => LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
+    LegElapsed: (elapsed): LegTime =>
+      LegTime.cases.LegMeasured.make({ wallMs: elapsed.wallMs, targetMs: LegTargetMs.literal }),
+    LegClockBehind: (): LegTime => LegTime.cases.LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
   })
 
 const legOf = (env: Pick<BenchEnv, 'jobStartedAtSeconds'>): Effect.Effect<LegTime> =>
@@ -296,7 +295,7 @@ const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
 const environmentIncomplete = (reason: string): BenchReport =>
   reportOf(
     { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA, ref: UNKNOWN_REF },
-    LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
+    LegTime.cases.LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
     abortedOutcomeOf('environment-incomplete', reason),
     [],
     [],
