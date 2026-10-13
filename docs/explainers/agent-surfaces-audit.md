@@ -1,6 +1,6 @@
 # Agent-Facing Surfaces: Audit
 
-What a coding agent can read from each surface on `main`, and the gaps between that and the plan `docs/plans/2026-10-10-0141-feat-agent-surfaces-plan.md`. Every `path:line` cite is at `main` `cfdf3cdc3`. The corpus figures come from an older artifact (see Sources) and are not re-measured at `cfdf3cdc3`.
+What a coding agent can read from each surface on `main`, and the gaps between that and the plan `docs/plans/2026-10-10-0141-feat-agent-surfaces-plan.md`. Every repository `path:line` cite is at `main` `cfdf3cdc3`. A cite under `node_modules/.pnpm/effect@4.0.0/` is a line of the installed `effect` package that `pnpm-lock.yaml` locks, read after `pnpm install`; it is not a file in the repository. The corpus figures come from an older artifact (see Sources) and are not re-measured at `cfdf3cdc3`.
 
 Budget: 10,000 bytes for an agent's default output (R11). Codex truncates tool output at 10,000 bytes by default. Claude Code warns at 10,000 tokens.
 
