@@ -158,7 +158,7 @@ const standInParentTurboJson = `{
   "tasks": {
     "//#root": {},
     "build": { "inputs": ["src/**"], "outputs": [] },
-    "test": { "inputs": ["$TURBO_DEFAULT$", "!**/README.md"], "env": ["NODE_ENV"], "outputs": [] }
+    "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/README.md"], "env": ["NODE_ENV"], "outputs": [] }
   }
 }
 `
@@ -352,7 +352,7 @@ Deno.test("a change to a file excluded from every input selects none of a packag
   })
 })
 
-Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps the parent's inputs and negations", async () => {
+Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps the parent's dependsOn, env, inputs and negations", async () => {
   const bTurboJson = `{
   "extends": ["//"],
   "tasks": { "test": { "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/shared.txt"] } }
@@ -361,12 +361,22 @@ Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps t
   const fixture = { rootTurboJson: standInParentTurboJson, bTurboJson }
   await withRepo(fixture, async (dir) => {
     const base = await head(dir)
+    const extended = await resolvedDefinitionOf(dir, '@probe/b#test')
+    assertEqual(
+      [extended.dependsOn, extended.env],
+      [['build'], ['NODE_ENV']],
+      "the package keeps the parent's dependsOn and env",
+    )
     const hashBefore = await hashOf(dir, '@probe/b#test')
     await write(dir, 'shared.txt', 'shared\nmore\n')
     const hashAfter = await hashOf(dir, '@probe/b#test')
     assert(hashBefore !== hashAfter, "editing a $TURBO_ROOT$ input changes the reader's hash")
     await commit(dir, 'root input edit')
-    assertEqual(await selectedTasks(dir, { base }), ['@probe/b#test'], 'the reader is selected')
+    assertEqual(
+      await selectedTasks(dir, { base }),
+      ['@probe/b#build', '@probe/b#test'],
+      'the reader is selected with the build it depends on',
+    )
   })
   await withRepo(fixture, async (dir) => {
     const base = await head(dir)
