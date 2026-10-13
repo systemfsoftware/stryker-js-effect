@@ -38,6 +38,8 @@ const CURRENT_FILE = 'plan.json'
 
 const UNRELATED_FILE = 'notes.txt'
 
+const LEAF_OUT = 'reports/shard-1'
+
 const DIRTY_SOURCE = [
   'export const add = (a, b) => {',
   '  const sum = a + b',
@@ -168,6 +170,27 @@ const shardDirExists = (
       return yield* fs.exists(path.join(root, 'reports', 'shard-1'))
     }),
   )
+
+const runLeaf = (
+  root: string,
+  planFile: string,
+  project: string,
+  mode: 'human' | 'machine',
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  spawnCli(
+    root,
+    ['run', '--plan', planFile, '--shard', '1/1', '--project', project, '--out', LEAF_OUT],
+    mode,
+  )
+
+const commitAll = (
+  root: string,
+  message: string,
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.gen(function*() {
+    yield* execGit(root, [...COMMITTER, 'add', '-A'])
+    yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', message])
+  })
 
 interface ShardObservation {
   readonly exitCode: number
@@ -437,5 +460,40 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             })
           ),
         ),
+    )
+
+    scenario(
+      'A scoped plan whose repository moved on is refused for the single project leaf run too',
+      Gherkin.Do.pipe(
+        Given('a repository planned at HEAD from an uncommitted edit, and that edit then committed')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fixture = yield* prepareFixture()
+              yield* commitAll(fixture.root, 'commit the edit the plan was scoped from')
+              return { ...fixture, movedHead: yield* gitOutput(fixture.root, ['rev-parse', 'HEAD']) }
+            }),
+        ),
+        When('the one planned project runs as a leaf')('ran', (s) =>
+          Effect.gen(function*() {
+            const ran = yield* runLeaf(s.fixture.root, CURRENT_FILE, '.', 'human')
+            return { ran, shardDir: yield* shardDirExists(s.fixture.root) }
+          })),
+        Then('the run exits two naming both commits and the stale reason, and creates no shard output')((s, expect) =>
+          expect({
+            exitCode: s.ran.ran.exitCode,
+            namesThePlanHead: s.ran.ran.stderr.includes(s.fixture.head),
+            namesTheMovedHead: s.ran.ran.stderr.includes(s.fixture.movedHead),
+            namesTheStaleReason: s.ran.ran.stderr.includes('the shard plan was made at commit'),
+            shardDir: s.ran.shardDir,
+          }).toEqual({
+            exitCode: 2,
+            namesThePlanHead: true,
+            namesTheMovedHead: true,
+            namesTheStaleReason: true,
+            shardDir: false,
+          })
+        ),
+      ),
     )
   })

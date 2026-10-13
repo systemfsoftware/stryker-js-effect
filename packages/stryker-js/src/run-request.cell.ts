@@ -73,7 +73,7 @@ import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
-import { admitLoadedPlan, loadShardPlan } from './shard/shard-plan.js'
+import { loadAdmittedPlan, loadShardPlan, planVerifiedAt } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
@@ -658,8 +658,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
         ),
       ),
     CliShardRunRequested: (shard, channel) =>
-      loadShardPlan(channel.environment.basePath, shard.plan).pipe(
-        Effect.flatMap((loaded) => admitLoadedPlan(channel.environment.basePath, loaded)),
+      loadAdmittedPlan(channel.environment.basePath, shard.plan).pipe(
         Effect.flatMap((loaded) =>
           runShard({
             plan: loaded.plan,
@@ -674,6 +673,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliShardLeafRequested: (leaf, channel) =>
       Effect.gen(function*() {
         const loaded = yield* loadShardPlan(channel.environment.basePath, leaf.plan)
+        yield* planVerifiedAt(channel.environment.basePath, loaded)
         const selected = yield* Effect.fromResult(
           selectShard(SelectShardCommand.make({ plan: loaded.plan, shard: leaf.shard })),
         )

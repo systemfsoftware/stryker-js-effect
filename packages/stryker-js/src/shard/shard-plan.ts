@@ -87,3 +87,21 @@ export const admitLoadedPlan: {
       })),
     Match.exhaustive,
   ))
+
+export const loadAdmittedPlan = (
+  basePath: string,
+  file: string,
+): Effect.Effect<
+  LoadedShardPlan,
+  ShardPlanInvalid | AdmitPlanHeadError | GitCommandFailed,
+  FileSystem.FileSystem | Path.Path | GitDiff
+> => loadShardPlan(basePath, file).pipe(Effect.flatMap((loaded) => admitLoadedPlan(basePath, loaded)))
+
+export const planVerifiedAt = (
+  basePath: string,
+  loaded: LoadedShardPlan,
+): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff> =>
+  admitLoadedPlan(basePath, loaded).pipe(
+    Effect.as(true),
+    Effect.catchTag('GitCommandFailed', () => Effect.succeed(false)),
+  )
