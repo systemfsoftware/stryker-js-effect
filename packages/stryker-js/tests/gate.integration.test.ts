@@ -150,8 +150,7 @@ interface GateProject {
 const prepareProject = (
   baseline: string | null,
   budgetBaseline: string | null = null,
-  breakThreshold = 'null',
-  report = reportJsonOf(breakThreshold),
+  report = reportJsonOf('null'),
 ): Effect.Effect<GateProject, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -362,7 +361,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             prepareProject(
               baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]),
               budgetBaselineJson(3),
-              BELOW_BREAK,
+              reportJsonOf(BELOW_BREAK),
             ),
         ),
         When('stryker gates against both baselines')(
@@ -457,7 +456,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
       Gherkin.Do.pipe(
         Given('a project whose report scores 0 under a break of 50, with no committed baseline file')(
           'project',
-          () => prepareProject(null, null, BELOW_BREAK),
+          () => prepareProject(null, null, reportJsonOf(BELOW_BREAK)),
         ),
         When('stryker gates with --update-baseline')(
           'ran',
@@ -483,7 +482,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
       Gherkin.Do.pipe(
         Given('a project whose report kills one mutant and leaves one alive under a break of 60')(
           'project',
-          () => prepareProject(null, null, '60', scoredReportJsonOf('60')),
+          () => prepareProject(null, null, scoredReportJsonOf('60')),
         ),
         When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
         Then('the process exits 1 naming 50.00 against break 60')((s, expect) =>
@@ -500,7 +499,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
       Gherkin.Do.pipe(
         Given('a project whose report scores 50 under a break of 50')(
           'project',
-          () => prepareProject(null, null, '50', scoredReportJsonOf('50')),
+          () => prepareProject(null, null, scoredReportJsonOf('50')),
         ),
         When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
         Then('the process exits 0 with no break verdict')((s, expect) =>
@@ -517,7 +516,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
       Gherkin.Do.pipe(
         Given('a project whose report scores 0 under a break of 50 and whose baseline misses one survivor')(
           'project',
-          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C]), null, BELOW_BREAK),
+          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C]), null, reportJsonOf(BELOW_BREAK)),
         ),
         When('stryker gates against that baseline')(
           'ran',
@@ -538,7 +537,7 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
       Gherkin.Do.pipe(
         Given('a merged report of 32 projects each scoring 50 under a break of 60')(
           'project',
-          () => prepareProject(null, null, 'null', mergedBreachReportJsonOf(MERGED_BREACH_PROJECTS)),
+          () => prepareProject(null, null, mergedBreachReportJsonOf(MERGED_BREACH_PROJECTS)),
         ),
         When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
         Then('the process exits 1 and stderr carries every breach line and the remediation uncut')((s, expect) =>
