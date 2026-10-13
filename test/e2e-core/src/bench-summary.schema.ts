@@ -2,6 +2,7 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Order from 'effect/Order'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchCorpusName } from './bench-run.schema.js'
@@ -94,11 +95,107 @@ export class BenchProjectSummary extends S.Class<BenchProjectSummary>('BenchProj
   rows: S.Array(BenchPhaseRow),
 }) {}
 
+export const RegressedMetric = S.Struct({
+  corpus: BenchCorpusName,
+  entry: S.NonEmptyString,
+  phase: BenchPhase,
+  deltaMs: S.Finite,
+  deltaShareOfA: S.Finite,
+})
+export type RegressedMetric = typeof RegressedMetric.Type
+
+export const Regression = S.TaggedUnion({
+  PhaseRegressed: {
+    sha: S.String,
+    baseSha: S.String,
+    metrics: S.NonEmptyArray(RegressedMetric),
+    nextAction: S.NonEmptyString,
+  },
+  NoLegRegressed: {},
+})
+export type Regression = typeof Regression.Type
+export type PhaseRegressed = typeof Regression.cases.PhaseRegressed.Type
+
 const BenchSummaryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchSummary')
 type BenchSummaryTypeId = typeof BenchSummaryTypeId
 
 export class BenchSummary extends S.TaggedClass<BenchSummary>()('BenchSummary', {
   projects: S.Array(BenchProjectSummary),
+  regression: Regression,
 }) {
   readonly [BenchSummaryTypeId] = BenchSummaryTypeId
+}
+
+const METRIC = { corpus: 'repo', entry: 'entry', phase: 'total', deltaMs: 12, deltaShareOfA: 0.05 } as const
+
+const acceptsMetric = (metric: typeof RegressedMetric.Encoded): boolean =>
+  Result.isSuccess(S.decodeResult(RegressedMetric)(metric))
+
+const PHASE_REGRESSED = {
+  _tag: 'PhaseRegressed',
+  sha: 'head',
+  baseSha: 'base',
+  metrics: [METRIC],
+  nextAction: 'next',
+} as const
+
+const acceptsRegression = (fields: Partial<typeof Regression.cases.PhaseRegressed.Encoded>): boolean =>
+  Result.isSuccess(S.decodeResult(Regression)({ ...PHASE_REGRESSED, ...fields }))
+
+const textFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
+  acceptsMetric({ ...METRIC, entry: value }),
+  acceptsRegression({ nextAction: value }),
+]
+
+const deltaFieldVerdicts = (value: number): ReadonlyArray<boolean> => [
+  acceptsMetric({ ...METRIC, deltaMs: value }),
+  acceptsMetric({ ...METRIC, deltaShareOfA: value }),
+]
+
+const acceptsRegressionTag = (tag: string): boolean =>
+  Result.isSuccess(S.decodeUnknownResult(Regression)({ ...PHASE_REGRESSED, _tag: tag }))
+
+const acceptsMetricCount = (metrics: ReadonlyArray<RegressedMetric>): boolean =>
+  Result.isSuccess(S.decodeUnknownResult(Regression)({ ...PHASE_REGRESSED, metrics }))
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀s_RegressionTextRefusal_≡EntryAndNextActionRefuseOnlyTheEmptyString',
+    { of: [S.String], subject: textFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', ' ', 'entry'], drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === value.length > 0),
+      ),
+  )
+
+  it.prop(
+    '∀n_RegressionDeltaRefusal_≡DeltasAreFinite',
+    { of: [S.Finite], subject: deltaFieldVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([-1, 0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY], drawn),
+        (value) => Arr.every(subject(value), (accepted) => accepted === Number.isFinite(value)),
+      ),
+  )
+
+  const tags = ['PhaseRegressed', 'NoLegRegressed']
+
+  it.prop(
+    '∀s_RegressionTagRefusal_≡OnlyPhaseRegressedOrNoLegRegressed',
+    { of: [S.String], subject: acceptsRegressionTag },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'phase-regressed', 'PhaseRegressed ', 'Regressed', ...tags], drawn),
+        (tag) => subject(tag) === tags.includes(tag),
+      ),
+  )
+
+  it.prop(
+    '∀m_RegressionMetricsRefusal_≡AtLeastOneMetric',
+    { of: [S.Array(RegressedMetric)], subject: acceptsMetricCount },
+    (subject, [drawn]) => Arr.every([[], [METRIC], drawn], (metrics) => subject(metrics) === metrics.length > 0),
+  )
 }
