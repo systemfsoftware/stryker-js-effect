@@ -6,17 +6,19 @@ topic: contract-law-treeless-history
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan
 execution: code
-supersedes: docs/plans/2026-10-13-2022-fix-contract-law-treeless-history-plan.md
+supersedes: docs/plans/2026-10-13-2045-fix-contract-law-treeless-history-plan.md
 ---
 
 # Find the contract law's version commit in one fetch from a treeless clone - Plan
 
-This plan supersedes plan 2022, which superseded the root-approved plan 1946.
+This plan supersedes 2045. The chain is 2045 → 2022 → 1946, the plan the root approved.
 
-- Plan 2022 was executed at `ce95938f6`. Its full-path review (run `20261013-202552-6497b0be`) found no P0 or P1.
-- The validator rejected both P2s.
-- Fixed here: R4 and U1 restate the failing-first numbers, which belonged to the 12-commit fixture, for the shipped fixture.
-- The reader, the scenario and every other part of 2022 are unchanged.
+- Plans 2022 and 2045 recorded fixes from review runs `20261013-202552-6497b0be` (on `ce95938f6`) and `20261013-204607-d41876ee` (on `786e1e41c`).
+- Neither review found a P0 or P1.
+- Fixed here:
+  - verification step 1 now names the shipped fixture's red evidence, and no longer cites a stashed-reader run;
+  - KD1 cites the two call sites at this head.
+- The reader, the scenario and the law are unchanged.
 
 ## Goal Capsule
 
@@ -118,7 +120,7 @@ All options were measured on a fresh treeless clone of red `main` `02bd69908`, f
 
 ## Key decisions
 
-- **KD1. One reader step, `readMainBaseWithTrees`, reads the merge base and then prefetches.** `readWorkspace` (`:269-297`) and `pickVersionCommit` (`:439-445`) both call it, so the counted scenario, which runs through `pickVersionCommit`, grades the same function `readWorkspace` uses. It runs once per run, before the per-package loop, so one request covers both packages' walks.
+- **KD1. One reader step, `readMainBaseWithTrees`, reads the merge base and then prefetches.** `readWorkspace` (call at `:271`) and `pickVersionCommit` (call at `:449`) both call it, so the counted scenario, which runs through `pickVersionCommit`, grades the same function `readWorkspace` uses. It runs once per run, before the per-package loop, so one request covers both packages' walks.
 - **KD2. A missing tree, not a config key, decides whether to prefetch.** The reader probes the root tree of the oldest first-parent commit it can see with `git --no-lazy-fetch cat-file -e <tree>`, which never fetches.
   - Exit 0: the trees are local (a full or shallow clone), and nothing is fetched.
   - Exit 1 with empty stderr: the object is missing, so the reader prefetches from `origin`, the remote it already reads `main` from (`MAIN_REF`, `:57`).
@@ -173,7 +175,10 @@ One commit, one PR off `main`, under `fix(stryker-js-cli-contract)`.
 
 Everything runs for the changed package only. There is no local mutation run and no workspace-wide typecheck.
 
-1. **Red before.** The U1 scenario on today's reader fails with 12 round trips. The run is recorded in the PR body, with the reader change stashed.
+1. **Red before.**
+   - The first committed version of the U1 scenario (12 commits, unchanged manifest) ran against `main`'s reader before the reader changed. It failed with 13 round trips against 1 expected (`27e170749` work log, PR body).
+   - For the shipped fixture, replicas of `main`'s reader count 9 and 27 (one shell replica) or 10 and 28 (two reviewer replicas) for N = 6 and 24. Both exceed the rows' 3, so both treeless rows are red on it.
+   - No proof edits the reader back to fail.
 2. **Green after.** `pnpm --filter @systemfsoftware/stryker-js-cli-contract exec vitest run tests/contract-version-law.integration.test.ts` passes all 35 cases (32 today plus the three rows of U1), with the 30,000 ms timeout unchanged.
 3. **CI shape, locally.** In a fresh `--filter=tree:0` clone of the PR head (the `/tmp/p0-cvl` probe), the real-workspace case passes, and its time and fetches are recorded: 1,779 ms, with 1 prefetch plus 4 lazy blob fetches, against a timeout and 45 fetches on `main`'s reader.
 4. **Package gates.** For the package only: `typecheck`, `lint`, `lint:tsgo` and the full `test`, plus `dprint check` and the changeset validator.
