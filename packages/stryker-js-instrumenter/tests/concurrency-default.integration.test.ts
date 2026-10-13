@@ -49,13 +49,13 @@ Feature('Planting the Effect concurrency faults by default')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
-      'A run that sets no mutator option plants every concurrency fault, and every fixture still carries ordinary mutants',
+      "A run whose mutator selection is the stock registry's defaults with an empty opt-in list plants every concurrency fault, and every fixture still carries ordinary mutants",
       Gherkin.Do.pipe(
         Given('every concurrency fixture module has been read from disk')(
           'fixtures',
           () => effectConcurrencyFixtureFiles,
         ),
-        When('the files are instrumented with no mutator option set')(
+        When("the files are instrumented with the stock registry's default selection and an empty opt-in list")(
           'result',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
