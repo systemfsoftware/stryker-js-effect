@@ -6,6 +6,7 @@ topic: type-query-reland
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-10-13-0114-fix-type-query-reland-plan.md
 ---
 
 # Type-query re-land without false NotAssignable - Plan
@@ -51,7 +52,7 @@ The tests #277 shipped could not see this. The decision laws take the context or
 
 - R5. The rule that decides whether each parent shape passes its context through, ends it as declared, or ends it as not enforced is a pure decision with property laws covering every parent shape and every slot a site can occupy in it.
 - R6. A regression test drives the built checker worker over the published plugin protocol (`Plugin.CheckerRpcs` through `Worker.makeWorkerClient`) on a real on-disk project that copies the `Format.ts:201` shape. It asserts only the worker's outputs: the type-query answer for the site is `Unknown context-not-enforced` and the check verdict for the same mutant is `passed`. It fails on today's main and on #277's tree.
-- R7. On real tsgo, the differential test covers at least one site through every parent shape that R2 lets pass its context through, plus every shape R3 excludes, and every NotAssignable answer among them is a `CompileError` when the checker applies the same candidate.
+- R7. On real tsgo, the differential test pins the type-query answer and the checker verdict for at least one site through every parent shape that R2 lets pass its context through and every shape R3 excludes. Where tsgo never routes a site of that shape to the rule (no contextual type, or not an expression site), the row pins the answer tsgo gives instead. Every NotAssignable answer among them is a `CompileError` when the checker applies the same candidate.
 - R8. The PR shows a full-corpus parity run on its own head with no `wrong-not-assignable` violation and with the lane's existing gates unchanged. It is evidence for the candidate shapes the corpus's mutants produce; R6 and R7 carry the shapes the corpus never queries.
 
 **Delivery**
@@ -198,10 +199,11 @@ Spread elements, spread assignments and non-null expressions are not on the allo
 - **Files:** `packages/stryker-js-typescript-checker/tests/__fixtures__/type-query/sites.ts`; `tests/type-query.differential.test.ts`.
 - **Approach:** append declarations at the end of `sites.ts`, so existing line-addressed sites keep their lines. Each new site text must be unique on its line, because `locationOf` takes the last occurrence. Add one row per shape with a candidate the context rejects.
 - **Test scenarios:**
-  - Parenthesized, array element, object property value, shorthand property value, conditional branch, `as const`, `satisfies`, `=` right side, annotated return, arrow body, variable, property and parameter initializers, call argument: every NotAssignable answer is a `compileError` verdict.
-  - Array spread element, object spread, call-argument spread, non-null: the answer is `Unknown context-not-enforced` and the verdict is `passed`.
+  - Parenthesized, array element, object property value, conditional branch, `as const`, `satisfies`, `=` right side, annotated return, arrow body, variable, property and parameter initializers, call argument: NotAssignable and `compileError`.
+  - Object spread and non-null: `Unknown context-not-enforced`, verdict `passed`.
+  - Array spread and call-argument spread: tsgo's `getContextualType` has no `SpreadElement` case (`internal/checker/checker.go:29494-29523`, only `SpreadAssignment` at `:29501`), so the operand has no contextual type and the answer is `Unknown no-contextual-type` before the link rule is consulted; verdict `passed`. A shorthand property value is a name, not an expression site: `Unknown site-not-expression`. These rows pin that tsgo never reaches the rule there; the rule still ends those shapes as not enforced.
   - `??`, `||`, `&&` with a left type that drops the right operand: `Unknown context-not-enforced`, verdict `passed`; with a left type that keeps it: NotAssignable and `compileError`.
-- **Verification:** the differential passes, and every new row's answer names its site (no `site-not-found`), so no row passes vacuously.
+- **Verification:** the differential passes with every row's (answer, verdict) pair pinned, so no row passes vacuously; re-allowing object spread in the rule turns it red on the `object-spread` row.
 
 ### U5. Release intent and README
 

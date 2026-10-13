@@ -201,6 +201,65 @@ Metamorphic.on({
     hostBound: HOST_BOUND,
   })
 
+interface LinkCase extends Row {
+  readonly answer: string
+  readonly verdict: string
+}
+
+const ENFORCED = { answer: 'NotAssignable', verdict: 'compileError' } as const
+const NOT_ENFORCED = { answer: 'Unknown context-not-enforced', verdict: 'passed' } as const
+const SPREAD_ELEMENT_OPERAND = { answer: 'Unknown no-contextual-type', verdict: 'passed' } as const
+const SHORTHAND_NAME = { answer: 'Unknown site-not-expression', verdict: 'compileError' } as const
+
+type Expected = typeof ENFORCED | typeof NOT_ENFORCED | typeof SPREAD_ELEMENT_OPERAND | typeof SHORTHAND_NAME
+
+const LINK_SITES: ReadonlyArray<readonly [Site, string, Expected]> = [
+  [{ siteId: 'non-null', line: 16, text: 'maybe' }, 'null', NOT_ENFORCED],
+  [{ siteId: 'parenthesized', line: 17, text: '21' }, '""', ENFORCED],
+  [{ siteId: 'array-element', line: 18, text: '22' }, '""', ENFORCED],
+  [{ siteId: 'property-value', line: 19, text: '23' }, '""', ENFORCED],
+  [{ siteId: 'shorthand-name', line: 21, text: 'w' }, '""', SHORTHAND_NAME],
+  [{ siteId: 'conditional-branch', line: 23, text: '26' }, '""', ENFORCED],
+  [{ siteId: 'as-const-element', line: 24, text: '27' }, '28', ENFORCED],
+  [{ siteId: 'satisfies-value', line: 25, text: '29' }, '""', ENFORCED],
+  [{ siteId: 'assignment-right', line: 27, text: '30' }, '""', ENFORCED],
+  [{ siteId: 'annotated-return', line: 28, text: '31' }, '""', ENFORCED],
+  [{ siteId: 'arrow-body', line: 29, text: '32' }, '""', ENFORCED],
+  [{ siteId: 'property-initializer', line: 30, text: '33' }, '""', ENFORCED],
+  [{ siteId: 'parameter-initializer', line: 31, text: '34' }, '""', ENFORCED],
+  [{ siteId: 'call-argument', line: 33, text: '35' }, '""', ENFORCED],
+  [{ siteId: 'array-spread', line: 34, text: '[36]' }, '""', SPREAD_ELEMENT_OPERAND],
+  [{ siteId: 'object-spread', line: 35, text: '{ b: 37 }' }, '{}', NOT_ENFORCED],
+  [{ siteId: 'call-spread', line: 37, text: '[38]' }, '""', SPREAD_ELEMENT_OPERAND],
+  [{ siteId: 'nullish-never-nullish', line: 39, text: `'r'` }, '0', NOT_ENFORCED],
+  [{ siteId: 'nullish-maybe-nullish', line: 40, text: `'m'` }, '0', ENFORCED],
+  [{ siteId: 'or-never-falsy', line: 42, text: '{}' }, '0', NOT_ENFORCED],
+  [{ siteId: 'or-maybe-falsy', line: 43, text: `'o'` }, '0', ENFORCED],
+  [{ siteId: 'and-never-truthy', line: 45, text: 'true' }, '0', NOT_ENFORCED],
+  [{ siteId: 'and-maybe-truthy', line: 47, text: 'true' }, '0', ENFORCED],
+]
+
+const LINK_CASES: ReadonlyArray<LinkCase> = LINK_SITES.map(([site, candidate, expected], index) => ({
+  id: (0x100 + index).toString(16).padStart(16, '0'),
+  site,
+  candidate,
+  ...expected,
+}))
+
+const pairsAsExpected = (verdicts: Readonly<Record<string, string>>, answers: Readonly<Record<string, string>>) =>
+  LINK_CASES.every((linkCase) => answers[linkCase.id] === linkCase.answer && verdicts[linkCase.id] === linkCase.verdict)
+
+Differential.compare({
+  name: 'type query: a site passes its context through exactly the parent shapes the checker enforces',
+  reference: verdictsOf,
+  candidate: answersOf,
+})
+  .on(fc.shuffledSubarray([...LINK_CASES], { minLength: LINK_CASES.length }), { runBudget: 2, hostBound: HOST_BOUND })
+  .assert((verdicts, answers) =>
+    Object.entries(answers).every(([id, answer]) => answer !== 'NotAssignable' || verdicts[id] === 'compileError') &&
+    pairsAsExpected(verdicts, answers)
+  )
+
 const BODIES_FIXTURE = decodeURIComponent(new URL('__fixtures__/type-query-bodies/', import.meta.url).pathname)
 const BODIES_FILE = `${BODIES_FIXTURE}bodies.ts`
 const BODIES_TSCONFIG = `${BODIES_FIXTURE}tsconfig.json`
