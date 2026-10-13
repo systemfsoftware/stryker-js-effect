@@ -4,9 +4,11 @@ import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 
-import { type ProgressState, renderProgressReport } from './render-progress-report.workflow.js'
-import { failAsProgress } from './reporter-failures.js'
+import { ProgressReporterName, type ProgressState, renderProgressReport } from './render-progress-report.workflow.js'
+import { failAsReporter } from './reporter-failed.js'
 import { ReporterOutput } from './reporter-output.service.js'
+
+const failAsProgress = failAsReporter(ProgressReporterName.literal)
 
 const readProgressStep = (input: {
   readonly state: ProgressState
