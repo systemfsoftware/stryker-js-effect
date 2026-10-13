@@ -2,7 +2,7 @@
   "name": "@systemfsoftware/stryker-bench",
   "private": true,
   "version": "0.1.0",
-  "description": "Report-only A/B bench orchestrator for main: on each push to main, benches the commit against its first parent, interleaved over two corpora, reading each run's own NDJSON. GitHub's 60-minute job timeout is the only kill; the leg's wall time is reported against its 10-minute target, never enforced.",
+  "description": "Report-only A/B bench orchestrator for main: each push to main is benched against the lane's last green main commit over the legs Turbo reports affected since then (the full corpus on a dispatch, a change to the lane's own inputs, or no green ancestor, when side A is the first parent), interleaved over two corpora, reading each run's own NDJSON. GitHub's 60-minute job timeout is the only kill; the leg's wall time is reported against its 10-minute target, never enforced.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
