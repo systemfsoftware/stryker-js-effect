@@ -2,22 +2,25 @@ import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class BenchRepoEntry extends S.Class<BenchRepoEntry>('BenchRepoEntry')({
+export const BenchRepoEntry = S.Struct({
   project: S.NonEmptyString,
   mutate: S.NonEmptyArray(S.NonEmptyString),
   testFiles: S.NonEmptyString.pipe(S.NonEmptyArray, S.optionalKey),
-}) {}
+})
+export type BenchRepoEntry = typeof BenchRepoEntry.Type
 
-export class BenchEnterpriseCorpus extends S.Class<BenchEnterpriseCorpus>('BenchEnterpriseCorpus')({
+export const BenchEnterpriseCorpus = S.Struct({
   fixture: S.NonEmptyString,
   config: S.NonEmptyString,
   mutate: S.NonEmptyArray(S.NonEmptyString),
-}) {}
+})
+export type BenchEnterpriseCorpus = typeof BenchEnterpriseCorpus.Type
 
-export class BenchCorpus extends S.Class<BenchCorpus>('BenchCorpus')({
+export const BenchCorpus = S.Struct({
   repo: S.NonEmptyArray(BenchRepoEntry),
   enterprise: BenchEnterpriseCorpus,
-}) {}
+})
+export type BenchCorpus = typeof BenchCorpus.Type
 
 export const BenchCorpusJson: S.Codec<BenchCorpus, string> = S.fromJsonString(BenchCorpus)
 
