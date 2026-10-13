@@ -1,3 +1,14 @@
+/**
+ * effect-imports — the import table, callee resolution and shadow analysis the
+ * opt-in concurrency and arid rules share.
+ *
+ * It answers, from a file's own `effect` imports, which module and export a
+ * visited callee resolves to (an aliased namespace or a named import counts; a
+ * local look-alike, an unimported name, a shadowed binding or a rebound global
+ * does not) and how each `effect` module a replacement needs is reached from
+ * that file. Pure and total: one expression per decision, no I/O, no throwing,
+ * no module-level state — the table is built once per Program and passed down.
+ */
 import type {
   ArrowFunctionExpression,
   BindingPattern,

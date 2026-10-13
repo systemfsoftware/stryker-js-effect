@@ -1,3 +1,11 @@
+/**
+ * EffectCall — the call-shape half the opt-in concurrency mutators share: given
+ * a covered Effect call it selects the form its argument count describes
+ * (data-first vs data-last, immediate vs pipe), reads the call's arity, and
+ * exposes how each `effect` module the replacement needs is reached from the
+ * file's own imports. The import table and callee resolution it builds on live
+ * in effect-imports.ts.
+ */
 import type {
   Argument,
   CallExpression,
