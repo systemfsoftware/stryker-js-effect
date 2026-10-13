@@ -62,17 +62,27 @@ export const loadShardPlan: {
     return { plan, file: resolved, directory: path.dirname(resolved) }
   }))
 
-export const admitLoadedPlan = (
-  loaded: LoadedShardPlan,
-): Effect.Effect<LoadedShardPlan, ShardPlanStale | GitCommandFailed, GitDiff> =>
+export const admitLoadedPlan: {
+  (
+    basePath: string,
+    loaded: LoadedShardPlan,
+  ): Effect.Effect<LoadedShardPlan, ShardPlanStale | GitCommandFailed, GitDiff>
+  (
+    loaded: LoadedShardPlan,
+  ): (basePath: string) => Effect.Effect<LoadedShardPlan, ShardPlanStale | GitCommandFailed, GitDiff>
+} = dual(2, (basePath: string, loaded: LoadedShardPlan): Effect.Effect<
+  LoadedShardPlan,
+  ShardPlanStale | GitCommandFailed,
+  GitDiff
+> =>
   Match.value(loaded.plan.scope).pipe(
     Match.tag('Unscoped', () => Effect.succeed(loaded)),
     Match.tag('DiffScoped', 'FullScope', (scope) =>
       Effect.gen(function*() {
         const git = yield* GitDiff
-        const head = yield* git.head(loaded.directory)
+        const head = yield* git.head(basePath)
         yield* Effect.fromResult(admitPlanHead(AdmitPlanHeadCommand.make({ scope, head })))
         return loaded
       })),
     Match.exhaustive,
-  )
+  ))

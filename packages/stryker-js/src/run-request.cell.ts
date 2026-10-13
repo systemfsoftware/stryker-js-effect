@@ -628,7 +628,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       ),
     CliShardRunRequested: (shard, channel) =>
       loadShardPlan(channel.environment.basePath, shard.plan).pipe(
-        Effect.flatMap(admitLoadedPlan),
+        Effect.flatMap((loaded) => admitLoadedPlan(channel.environment.basePath, loaded)),
         Effect.flatMap((loaded) =>
           runShard({
             plan: loaded.plan,

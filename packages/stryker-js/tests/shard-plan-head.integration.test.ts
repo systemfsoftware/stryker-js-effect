@@ -143,10 +143,8 @@ const prepareFixture = (): Effect.Effect<
     )
     const single = singleShardPlanOf(plan)
     const currentDiff = yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: realHead } })
-    yield* fs.writeFileString(
-      path.join(root, STALE_DIFF_FILE),
-      yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD } }),
-    )
+    const staleDiff = yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD } })
+    yield* fs.writeFileString(path.join(root, STALE_DIFF_FILE), staleDiff)
     yield* fs.writeFileString(
       path.join(root, FULL_STALE_FILE),
       yield* encodePlan({
@@ -163,6 +161,7 @@ const prepareFixture = (): Effect.Effect<
     yield* writeFile(elsewhere, 'stryker.config.mjs', CONFIG)
     yield* writeFile(elsewhere, 'src/math.js', SOURCE)
     yield* fs.writeFileString(path.join(elsewhere, CURRENT_FILE), currentDiff)
+    yield* fs.writeFileString(path.join(elsewhere, STALE_DIFF_FILE), staleDiff)
     return { root, realHead, elsewhere }
   }).pipe(Effect.orDie)
 
@@ -230,6 +229,21 @@ const observeGitFailure = (root: string): Effect.Effect<
     }
   })
 
+const observePlanAt = (
+  fixture: Fixture,
+  file: string,
+  outside: boolean,
+  mode: 'human' | 'machine',
+): Effect.Effect<
+  ShardObservation,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    return yield* observeShard(fixture, outside ? path.join(fixture.elsewhere, file) : file, mode)
+  })
+
 interface PlanRefusalObservation {
   readonly exitCode: number
   readonly namesTheCode: boolean
@@ -259,10 +273,11 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
   .live('the built stryker binary reads the real HEAD of a temporary git repository before spawning a shard')
   .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
-      'A <kind> plan whose head is not the repository HEAD refuses the shard before spawning a child',
+      'A <kind> plan whose head is not the repository HEAD is refused <where>',
       [
-        { kind: 'diff-scoped', file: STALE_DIFF_FILE },
-        { kind: 'full-scope', file: FULL_STALE_FILE },
+        { where: 'in the checkout', kind: 'diff-scoped', file: STALE_DIFF_FILE, outside: false },
+        { where: 'from outside the checkout', kind: 'diff-scoped', file: STALE_DIFF_FILE, outside: true },
+        { where: 'in the checkout', kind: 'full-scope', file: FULL_STALE_FILE, outside: false },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -270,7 +285,7 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             'fixture',
             () => prepareFixture(),
           ),
-          When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, row.file, 'human')),
+          When('the shard runs for a person')('ran', (s) => observePlanAt(s.fixture, row.file, row.outside, 'human')),
           Then('the run fails with the configuration class, names both commits and creates no shard output')((
             s,
             expect,
@@ -313,22 +328,30 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
       ),
     )
 
-    scenario(
-      'A diff-scoped plan made at the repository HEAD runs the shard and writes its output',
-      Gherkin.Do.pipe(
-        Given('a repository planned at HEAD into one shard with that same head')(
-          'fixture',
-          () => prepareFixture(),
+    scenarioOutline(
+      'A diff-scoped plan made at the repository HEAD <where> runs the shard and writes its output',
+      [
+        { where: 'inside the checkout', outside: false },
+        { where: 'outside the checkout', outside: true },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a repository planned at HEAD into one shard with that same head')(
+            'fixture',
+            () => prepareFixture(),
+          ),
+          When('the shard runs for a person')(
+            'ran',
+            (s) => observePlanAt(s.fixture, CURRENT_FILE, row.outside, 'human'),
+          ),
+          Then('the run is admitted, reaches a verdict and leaves the shard output directory')((s, expect) =>
+            expect({
+              reachedAVerdict: s.ran.exitCode === 0 || s.ran.exitCode === 1,
+              namedStalePlan: s.ran.stderr.includes('the shard plan was made at commit'),
+              shardDir: s.ran.shardDir,
+            }).toEqual({ reachedAVerdict: true, namedStalePlan: false, shardDir: true })
+          ),
         ),
-        When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, CURRENT_FILE, 'human')),
-        Then('the run is admitted, reaches a verdict and leaves the shard output directory')((s, expect) =>
-          expect({
-            reachedAVerdict: s.ran.exitCode === 0 || s.ran.exitCode === 1,
-            namedStalePlan: s.ran.stderr.includes('the shard plan was made at commit'),
-            shardDir: s.ran.shardDir,
-          }).toEqual({ reachedAVerdict: true, namedStalePlan: false, shardDir: true })
-        ),
-      ),
     )
 
     scenarioOutline(
