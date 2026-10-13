@@ -1,5 +1,7 @@
+import { ShardPlanDiffScoped, ShardPlanFullScope } from '@systemfsoftware/stryker-js-cli-contract'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -22,7 +24,32 @@ const commandCase = Arbitrary.map(
     }),
 )
 
+const headFieldsCase = Arbitrary.map(
+  Arbitrary.all({
+    scope: Arbitrary.schema(S.Union([ShardPlanDiffScoped, ShardPlanFullScope])),
+    head: Arbitrary.schema(S.String),
+    sources: Arbitrary.schema(S.String),
+  }),
+  ({ scope, head, sources }) => ({ scope, head, sources }),
+)
+
+const refusedCommandOf = (fields: {
+  readonly scope: typeof ShardPlanDiffScoped.Type | typeof ShardPlanFullScope.Type
+  readonly head: string
+  readonly sources: string
+}): boolean => Result.isFailure(S.decodeResult(AdmitPlanHeadCommand)(fields))
+
 describe('admitPlanHead', () => {
+  it.prop(
+    '∀x_AdmitPlanHeadCommand_≡RefusedWhenHeadEmpty',
+    { of: [headFieldsCase], subject: refusedCommandOf },
+    (subject, [fields]) =>
+      Arr.every(
+        [fields, { ...fields, head: '' }],
+        (drawn) => subject(drawn) === (drawn.head.length === 0),
+      ),
+  )
+
   it.prop(
     '∀scope-head-sources_AdmitPlanHead_≡AdmittedExactlyWhereTheCheckoutIsWhatThePlanWasScopedFrom',
     { of: [commandCase], subject: admitPlanHead },

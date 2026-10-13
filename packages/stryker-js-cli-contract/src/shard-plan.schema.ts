@@ -57,6 +57,8 @@ export type ShardPlan = typeof ShardPlan.Type
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+  const Boolean = await import('effect/Boolean')
   const Result = await import('effect/Result')
 
   const refusalOf = (plan: typeof ShardPlan.Encoded): string | undefined =>
@@ -64,6 +66,56 @@ if (import.meta.vitest !== void 0) {
       onFailure: (error) => error.message,
       onSuccess: () => undefined,
     })
+
+  const DiffScopedFields = S.Struct({
+    base: S.String,
+    head: S.String,
+    sources: S.String,
+    files: S.Array(S.String),
+  })
+
+  const FullScopeFields = S.Struct({
+    base: S.String,
+    head: S.String,
+    sources: S.String,
+    files: S.Array(S.String),
+    reason: S.String,
+  })
+
+  it.prop(
+    '∀x_ShardPlanDiffScoped_≡RefusedWhenBaseOrHeadEmpty',
+    { of: [DiffScopedFields], subject: refusalOf },
+    (subject, [fields]) =>
+      Arr.every(
+        [fields, { ...fields, base: '' }, { ...fields, head: '' }],
+        (drawn) =>
+          (subject({
+            version: 2,
+            scope: { _tag: 'DiffScoped', ...drawn },
+            targetSeconds: 1,
+            shards: [],
+            matrix: { include: [] },
+          }) !== undefined) === !Boolean.and(drawn.base.length > 0, drawn.head.length > 0),
+      ),
+  )
+
+  it.prop(
+    '∀x_ShardPlanFullScope_≡RefusedWhenBaseHeadOrReasonEmpty',
+    { of: [FullScopeFields], subject: refusalOf },
+    (subject, [fields]) =>
+      Arr.every(
+        [fields, { ...fields, base: '' }, { ...fields, head: '' }, { ...fields, reason: '' }],
+        (drawn) =>
+          (subject({
+            version: 2,
+            scope: { _tag: 'FullScope', ...drawn },
+            targetSeconds: 1,
+            shards: [],
+            matrix: { include: [] },
+          }) !== undefined) ===
+            !Boolean.and(Boolean.and(drawn.base.length > 0, drawn.head.length > 0), drawn.reason.length > 0),
+      ),
+  )
 
   it.prop(
     '∀s_ShardLabelDuplication_≡RefusedNamingTheLabel',
