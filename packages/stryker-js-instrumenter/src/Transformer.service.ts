@@ -8,6 +8,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { withGuards } from './apply-guards.js'
 import {
   type AridCallee,
   aridCode,
@@ -70,12 +71,7 @@ import {
 } from './effect-imports.js'
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
-import {
-  guardRelation,
-  GuardRelationCommand,
-  type GuardRelationDecision,
-  type GuardSite,
-} from './guard-relation.workflow.js'
+import { guardRelation, GuardRelationCommand, type GuardSite } from './guard-relation.workflow.js'
 import {
   MutantsUnapplied,
   MutantsUnplaced,
@@ -1424,33 +1420,6 @@ const planInstrumentation = (
     }),
   )
 
-const guardIndexOf = (
-  decisions: readonly GuardRelationDecision[],
-): ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard> =>
-  new Map(
-    decisions.flatMap((decision) =>
-      Match.value(decision).pipe(
-        Match.tag(
-          'GuardedByBlock',
-          (guarded): readonly (readonly [ApiMutant.MutantId, ApiMutant.Guard])[] => [[guarded.id, guarded.guard]],
-        ),
-        Match.tag('Guardless', () => []),
-        Match.exhaustive,
-      )
-    ),
-  )
-
-const guardOf = (
-  index: ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard>,
-  id: ApiMutant.MutantId,
-): ApiMutant.Guard | undefined => index.get(id)
-
-const withGuard = (mutant: Mutant, guard: ApiMutant.Guard | undefined): Mutant =>
-  Option.match(Option.fromUndefinedOr(guard), {
-    onNone: () => mutant,
-    onSome: (assigned) => ({ ...mutant, guard: assigned }),
-  })
-
 const applyOnePlacement = (
   placement: PlannedPlacement,
   path: TraversePath,
@@ -1568,7 +1537,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       Match.orElse((succeeded) => Effect.succeed(succeeded.success)),
     )
 
-    const guards = guardRelation(
+    const guardDecisions = guardRelation(
       GuardRelationCommand.make({
         policy: context.mutantSetPolicy,
         sites: plan.guardSites,
@@ -1579,8 +1548,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
         })),
       }),
     )
-    const guardsById = guardIndexOf(Result.getOrElse(guards, (neverError) => neverError))
-    mutantCollector.append(plan.mutants.map((mutant) => withGuard(mutant, guardOf(guardsById, mutant.id))))
+    mutantCollector.append(withGuards(plan.mutants, Result.getOrElse(guardDecisions, (neverError) => neverError)))
     yield* applyPlan(root, plan, context)
     yield* placeHeaderIfNeeded(plan.hasLiveMutants, options, root)
 
