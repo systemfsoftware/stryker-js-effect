@@ -6,11 +6,10 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type * as Scope from 'effect/Scope'
-import * as Stream from 'effect/Stream'
 import { removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
+import { committerArgs, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
 import { type CliOutcome, decodePlan, requireBinary, spawnCli } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
@@ -67,7 +66,7 @@ const JS_SOURCE = [
 
 const CHANGED_JS_SOURCE = JS_SOURCE.replace('value + 1', 'value + 2')
 
-const COMMITTER = ['-c', 'user.email=plan@test', '-c', 'user.name=plan'] as const
+const COMMITTER = committerArgs({ email: 'plan@test', name: 'plan' })
 
 const CONFIG_SINCE_TWO = 'HEAD~2'
 const CONFIG_SINCE_ONE = 'HEAD~1'
@@ -108,19 +107,6 @@ const projectFilesOf = (
     [`${project}/src/${project}.js`, JS_SOURCE],
   ])
 
-const writeFile = (
-  root: string,
-  file: string,
-  content: string,
-): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const target = path.join(root, file)
-    yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-    yield* fs.writeFileString(target, content)
-  }).pipe(Effect.orDie)
-
 const writeWorkspace = (
   files: ReadonlyArray<readonly [string, string]>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
@@ -130,31 +116,6 @@ const writeWorkspace = (
     yield* Effect.forEach(files, ([file, content]) => writeFile(root, file, content), { discard: true })
     return root
   }).pipe(Effect.orDie)
-
-const gitOutput = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const handle = yield* spawner.spawn(
-      ChildProcess.make('git', args, { cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }),
-    )
-    const stdout = yield* handle.stdout.pipe(Stream.decodeText, Stream.mkString)
-    const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString)
-    const exitCode = Number(yield* handle.exitCode)
-    yield* Effect.when(
-      Effect.die(new Error(`git ${args.join(' ')} failed (${exitCode}): ${stderr}`)),
-      Effect.succeed(exitCode !== 0),
-    )
-    return stdout.trim()
-  }).pipe(Effect.orDie)
-
-const execGit = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.asVoid(gitOutput(cwd, args))
 
 const commitAll = (
   root: string,

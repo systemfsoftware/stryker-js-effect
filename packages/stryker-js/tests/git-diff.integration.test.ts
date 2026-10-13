@@ -6,48 +6,14 @@ import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import * as Stream from 'effect/Stream'
+import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, writeFile } from './__fixtures__/git-repo.fixture.js'
 
 const Feature = makeFeature({ it })
 
-const COMMITTER = ['-c', 'user.email=contract@test', '-c', 'user.name=contract'] as const
-
-const execGit = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const handle = yield* ChildProcess.make('git', args, {
-      cwd,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
-    const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString)
-    const exitCode = Number(yield* handle.exitCode)
-    yield* Effect.when(
-      Effect.die(new Error(`git ${args.join(' ')} failed (${exitCode}): ${stderr}`)),
-      Effect.succeed(exitCode !== 0),
-    )
-  }).pipe(Effect.orDie)
-
-const writeFile = (
-  root: string,
-  file: string,
-  content: string,
-): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const target = path.join(root, file)
-    yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-    yield* fs.writeFileString(target, content)
-  }).pipe(Effect.orDie)
+const COMMITTER = committerArgs(CONTRACT_GIT_IDENTITY)
 
 const buildRepo = (): Effect.Effect<
   string,
