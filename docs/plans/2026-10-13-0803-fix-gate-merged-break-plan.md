@@ -5,12 +5,14 @@ status: active
 date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-13-0602-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-13-0732-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
 
 This revision corrects R1-R3 and U1 to the shipped gate mechanism, which compares each project's score to its recorded break inline instead of through `classifyExit` (full-path review run 20261013-061137-3bcdcd0e, finding 5).
+
+This third revision also clears the three schema-laws findings the same review run (`20261013-061137-3bcdcd0e`) marked on this branch's head. See "Revision 3" below for A (`thresholds` required), B (`BreakBreach` struct check) and C (`S.Natural`).
 
 ## Goal Capsule
 
@@ -53,7 +55,7 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 
 ### Edge review (destructive pass, Edge-First lens)
 
-- A merged report puts every file in a project, so `.` is empty and skipped. A multi-project report merged by an older CLI has no `projects` and a top-level break of null, so it gets no verdict. This is residual: `merge` and `gate` run from the same published CLI in one CI job (`.github/workflows/mutation.yml:300-303` merge, `:334-348` gate).
+- A merged report puts every file in a project, so `.` is empty and skipped. An unsharded report has no `projects`, and its files are judged as `.` against the report's top-level thresholds. A report that carries no `thresholds` at all — one written by an older CLI — is now refused as an unusable input through the gate's undecodable-report path (exit 2), not read as "no verdict". This is residual: `merge` and `gate` run from the same published CLI in one CI job (`.github/workflows/mutation.yml:300-303` merge, `:334-348` gate).
 - A report with no files has no score, so it gets no verdict and no "no valid mutant" line.
 - When the baseline check fails first, the break failure is not reported (A6). Both remediations ask for the survivors to be killed.
 - Projects are partitioned by explicit per-project `files` lists, not by path-prefix inference.
@@ -65,11 +67,20 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 - `stryker run` and the shard driver keep their exit behaviour.
 - When two shards disagree on a project's thresholds, the first shard's thresholds win. All shards of a project load the same config.
 
+## Revision 3 (full-path ce-code-review run 20261013-061137-3bcdcd0e)
+
+Clears the three schema-laws violations that review marked on this branch's head. Each is one commit.
+
+- A (finding #1). `thresholds` is required in `GateReportDocument` (`packages/stryker-js/src/gate-report.schema.ts`): the decoding default `{ break: null }` made an absent field mean "no verdict", a silent-pass route. Stryker always writes it and the published report schema declares it (`MutationTestResult.thresholds`, non-optional), so a report without it is refused through the gate's existing undecodable-report path (`run-request.cell.ts`, `GateInputUnusable`, exit class `ConfigError` → exit 2), never passed. `projects` keeps its decoding default `[]`, and `GateThresholds.break` stays absent-or-null as the one "no break" state. New CLI journey in `gate.integration.test.ts`: a report on disk without `thresholds` exits 2 with stderr naming the undecodable report. Rule: `schema-laws/tagged-unions-over-state-by-presence`.
+- B (finding #6). `BreakBreach` (`packages/stryker-js/src/gate-score-break.workflow.ts`) now carries `percentage < threshold` as a struct check, and `breachOf` builds one only for a real breach; the consumer comparison `isBelowItsBreak` is deleted. A refusal property draws the unrefined base, appends the percentage boundaries, and compares acceptance against the relation written independently. Behaviour is byte-identical for every gate run. Rule: `schema-laws/cross-field-invariants-as-struct-checks`.
+- C (finding #8). `ScoreBelowBreak.projects` is `S.Natural`, the package idiom for a count (`cap-survivors.workflow.ts:19`), not `S.Int`. Rule: `schema-laws/invariants-as-refinements`.
+
 ## Implementation
 
-- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project's verdict comes from `isBelowItsBreak` (`packages/stryker-js/src/gate-score-break.workflow.ts:111`).
+- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project's verdict comes from `breachOf`, which builds a `BreakBreach` only when `percentage < threshold` (revision 3, B).
 - U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: MergedProjectThresholds, files }`, where `MergedProjectThresholds = Recorded VerdictThresholds | Unrecorded`; `shard-merge.ts` writes the `Unrecorded` variant when no shard stream of the project has a `verdict` line.
-- U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: the cell passes thresholds through and logs the decision's `lines`.
+- U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: `thresholds` is required (revision 3, A), the cell passes thresholds through, and logs the decision's `lines`.
 - U4 (landed `e581c9fa0`). A2, READMEs, changeset.
 - U5 (landed `7ec745776`). A5 and A6 in `gate.integration.test.ts`; README row rewritten.
 - U6 (landed `af63359f9`). No threshold edit (R8): `base.js` and the four dogfood `stryker.config.ts` files equal `main`, and no floors changeset ships. The changeset migration and the README row name the project's own config.
+- U7 (revision 3). `gate-report.schema.ts` requires `thresholds`; `gate.integration.test.ts` adds the threshold-less-report journey; `gate-score-break.workflow.ts` adds the `BreakBreach` struct check with its refusal property and moves `ScoreBelowBreak.projects` to `S.Natural`.
