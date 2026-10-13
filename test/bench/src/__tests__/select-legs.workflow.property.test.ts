@@ -1,10 +1,16 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { AffectedLegs, FullCorpus, type LegSelection, NoBenchBase } from '../bench-plan.schema.js'
+import {
+  AffectedLegs,
+  type BaseChoice,
+  FirstParentBase,
+  FullCorpus,
+  GreenBase,
+  type LegSelection,
+} from '../bench-plan.schema.js'
 import { selectLegs, SelectLegsCommand } from '../select-legs.workflow.js'
 
 const ENTRIES = ['packages/a', 'packages/b', 'test/e2e/fixture'] as const
@@ -35,76 +41,47 @@ const LANE_FILES = [
 const OTHER_FILES = ['README.md', 'packages/a/src/index.ts', '.github/workflows/ci.yml', 'docs/plans/x.md']
 
 const shaArb = Arbitrary.schema(S.Literals(SHAS))
-const optionShaArb = Arbitrary.schema(S.Literals(SHAS).pipe(S.Option))
+const firstParentBaseArb = Arbitrary.schema(FirstParentBase)
 const affectedArb = Arbitrary.array(Arbitrary.schema(S.Literals(PACKAGE_PATHS)), { maxLength: 4 })
 const otherFilesArb = Arbitrary.array(Arbitrary.schema(S.Literals(OTHER_FILES)), { maxLength: 3 })
 const laneFileArb = Arbitrary.schema(S.Literals(LANE_FILES))
 const viaHarnessArb = Arbitrary.schema(S.Boolean)
 
-type Selected = Result.Result<LegSelection, NoBenchBase>
+type Selected = Result.Result<LegSelection, never>
 
 const commandOf = (
-  event: 'push' | 'workflow_dispatch',
-  green: Option.Option<string>,
-  parent: Option.Option<string>,
+  base: BaseChoice,
   changedFiles: ReadonlyArray<string>,
   affectedPaths: ReadonlyArray<string>,
 ): SelectLegsCommand =>
   SelectLegsCommand.make({
-    event,
-    head: 'head',
-    greenAncestor: green,
-    firstParent: parent,
+    base,
     entries: [...ENTRIES],
     engineDirs: [ENGINE],
     changedFiles: [...changedFiles],
     affectedPaths: [...affectedPaths],
   })
 
-const isFullCorpusFrom = (
-  result: Selected,
-  base: string,
-  reason: FullCorpus['reason'],
-): boolean =>
+const isFullCorpusFrom = (result: Selected, base: string, reason: FullCorpus['reason']): boolean =>
   Result.isSuccess(result) && S.is(FullCorpus)(result.success) && result.success.base === base &&
   result.success.reason === reason && result.success.legs.join() === ENTRIES.join()
 
-const isNoBase = (result: Selected): boolean =>
-  Result.isFailure(result) && S.is(NoBenchBase)(result.failure) && result.failure.head === 'head'
-
 describe('selectLegs', () => {
   it.prop(
-    '∀gpfa_Dispatch_≡TheFullCorpusAgainstTheFirstParentWhateverTheGreenAncestor',
-    { of: [optionShaArb, optionShaArb, otherFilesArb, affectedArb], subject: selectLegs },
-    (subject, [green, parent, files, affected]) => {
-      const result = subject(commandOf('workflow_dispatch', green, parent, files, affected))
-      return Option.match(parent, {
-        onNone: () => isNoBase(result),
-        onSome: (base) => isFullCorpusFrom(result, base, 'dispatch'),
-      })
-    },
+    '∀bfa_FirstParentBase_≡TheFullCorpusAgainstThatParentForItsReasonWhateverTheDiff',
+    { of: [firstParentBaseArb, otherFilesArb, affectedArb], subject: selectLegs },
+    (subject, [parent, files, affected]) =>
+      isFullCorpusFrom(subject(commandOf(parent, files, affected)), parent.sha, parent.reason),
   )
 
   it.prop(
-    '∀pfa_PushWithNoGreenAncestor_≡TheFullCorpusAgainstTheFirstParent',
-    { of: [optionShaArb, otherFilesArb, affectedArb], subject: selectLegs },
-    (subject, [parent, files, affected]) => {
-      const result = subject(commandOf('push', Option.none(), parent, files, affected))
-      return Option.match(parent, {
-        onNone: () => isNoBase(result),
-        onSome: (base) => isFullCorpusFrom(result, base, 'no-green-ancestor'),
-      })
-    },
-  )
-
-  it.prop(
-    '∀gplfah_PushChangingLaneInputsOrTheHarness_≡TheFullCorpusAgainstTheGreenAncestor',
-    { of: [shaArb, optionShaArb, laneFileArb, otherFilesArb, affectedArb, viaHarnessArb], subject: selectLegs },
-    (subject, [green, parent, laneFile, files, affected, viaHarness]) => {
+    '∀glfah_GreenBaseChangingLaneInputsOrTheHarness_≡TheFullCorpusAgainstTheGreenBase',
+    { of: [shaArb, laneFileArb, otherFilesArb, affectedArb, viaHarnessArb], subject: selectLegs },
+    (subject, [green, laneFile, files, affected, viaHarness]) => {
       const changedFiles = viaHarness ? files : [...files, laneFile]
       const affectedPaths = viaHarness ? [...affected, HARNESS] : affected
       return isFullCorpusFrom(
-        subject(commandOf('push', Option.some(green), parent, changedFiles, affectedPaths)),
+        subject(commandOf(GreenBase.make({ sha: green }), changedFiles, affectedPaths)),
         green,
         'lane-inputs-changed',
       )
@@ -112,10 +89,10 @@ describe('selectLegs', () => {
   )
 
   it.prop(
-    '∀gpfa_PushFromTheGreenAncestor_≡RunsEachLegWhoseOwnerOrTheEngineIsAffectedAndSkipsTheRest',
-    { of: [shaArb, optionShaArb, otherFilesArb, affectedArb], subject: selectLegs },
-    (subject, [green, parent, files, affected]) => {
-      const result = subject(commandOf('push', Option.some(green), parent, files, affected))
+    '∀gfa_GreenBase_≡RunsEachLegWhoseOwnerOrTheEngineIsAffectedAndSkipsTheRest',
+    { of: [shaArb, otherFilesArb, affectedArb], subject: selectLegs },
+    (subject, [green, files, affected]) => {
+      const result = subject(commandOf(GreenBase.make({ sha: green }), files, affected))
       const engine = affected.includes(ENGINE)
       const expectedLegs = ENTRIES.filter((entry) => engine || affected.some((path) => path === OWNER[entry]))
       const expectedSkipped = ENTRIES.filter((entry) => !expectedLegs.includes(entry))

@@ -36,6 +36,35 @@ export class NoBenchBase extends S.TaggedError<NoBenchBase>()('NoBenchBase', {
   }
 }
 
+const GreenRunListing = S.Struct({ sha: S.NonEmptyString, createdAtSeconds: S.Int })
+
+export const GreenRunsJson = GreenRunListing.pipe(S.Array, S.fromJsonString)
+
+export const GreenRun = S.Struct({ ...GreenRunListing.fields, ancestor: S.Boolean })
+export type GreenRun = typeof GreenRun.Type
+
+const BaseChoiceTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/BaseChoice')
+type BaseChoiceTypeId = typeof BaseChoiceTypeId
+
+export class GreenBase extends S.TaggedClass<GreenBase>()('GreenBase', {
+  sha: S.NonEmptyString,
+}) {
+  readonly [BaseChoiceTypeId] = BaseChoiceTypeId
+}
+
+export const FirstParentReason = S.Literals(['dispatch', 'no-green-ancestor'])
+export type FirstParentReason = typeof FirstParentReason.Type
+
+export class FirstParentBase extends S.TaggedClass<FirstParentBase>()('FirstParentBase', {
+  sha: S.NonEmptyString,
+  reason: FirstParentReason,
+}) {
+  readonly [BaseChoiceTypeId] = BaseChoiceTypeId
+}
+
+export const BaseChoice = S.Union([GreenBase, FirstParentBase])
+export type BaseChoice = typeof BaseChoice.Type
+
 const TurboAffectedWire = S.Struct({
   data: S.Struct({ affectedPackages: S.Struct({ items: S.Array(S.Struct({ path: S.String })) }) }),
 })
@@ -63,6 +92,17 @@ const textFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
   decodes(FullCorpus, { _tag: 'FullCorpus', base: value, reason: 'dispatch', legs: [SHA] }),
   decodes(FullCorpus, { _tag: 'FullCorpus', base: SHA, reason: 'dispatch', legs: [value] }),
   decodes(NoBenchBase, { _tag: 'NoBenchBase', head: value }),
+  decodes(GreenRun, { sha: value, createdAtSeconds: 0, ancestor: true }),
+  decodes(GreenBase, { _tag: 'GreenBase', sha: value }),
+  decodes(FirstParentBase, { _tag: 'FirstParentBase', sha: value, reason: 'dispatch' }),
+]
+
+const firstParentReasonVerdicts = (reason: string): ReadonlyArray<boolean> => [
+  Result.isSuccess(S.decodeUnknownResult(FirstParentBase)({ _tag: 'FirstParentBase', sha: SHA, reason })),
+]
+
+const createdAtVerdicts = (seconds: number): ReadonlyArray<boolean> => [
+  decodes(GreenRun, { sha: SHA, createdAtSeconds: seconds, ancestor: false }),
 ]
 
 const fullCorpusVerdicts = (reason: string, legCount: number): ReadonlyArray<boolean> => [
@@ -100,6 +140,28 @@ if (import.meta.vitest !== void 0) {
         (reason) =>
           Arr.every([0, 1, 2, Math.abs(count) % 5], (legs) =>
             Arr.every(subject(reason, legs), (accepted) => accepted === (reasons.includes(reason) && legs > 0))),
+      ),
+  )
+
+  const firstParentReasons = ['dispatch', 'no-green-ancestor']
+
+  it.prop(
+    '∀s_FirstParentReasonRefusal_≡OnlyADispatchOrNoGreenAncestor',
+    { of: [S.String], subject: firstParentReasonVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'lane-inputs-changed', 'dispatch ', ...firstParentReasons], drawn),
+        (reason) => Arr.every(subject(reason), (accepted) => accepted === firstParentReasons.includes(reason)),
+      ),
+  )
+
+  it.prop(
+    '∀n_GreenRunCreatedAtRefusal_≡OnlySafeIntegerSeconds',
+    { of: [S.Finite], subject: createdAtVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([0, 1.5, -2, Number.MAX_SAFE_INTEGER, 2 ** 53, Number.NaN, Number.POSITIVE_INFINITY], drawn),
+        (seconds) => Arr.every(subject(seconds), (accepted) => accepted === Number.isSafeInteger(seconds)),
       ),
   )
 }

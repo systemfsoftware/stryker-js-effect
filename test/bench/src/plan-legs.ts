@@ -4,11 +4,19 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { ChildProcessSpawner } from 'effect/process'
-import type * as Result from 'effect/Result'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchCorpusJson } from './bench-corpus.schema.js'
-import { type LegSelection, type NoBenchBase, TurboAffectedPaths } from './bench-plan.schema.js'
+import {
+  type BaseChoice,
+  type GreenRun,
+  GreenRunsJson,
+  type LegSelection,
+  type NoBenchBase,
+  TurboAffectedPaths,
+} from './bench-plan.schema.js'
+import { chooseBase, ChooseBaseCommand } from './choose-base.workflow.js'
 import { runChecked, runCommand } from './command.js'
 import { ENGINE_BUILD_DIRS } from './engine-dirs.js'
 import { BenchSetupFailed } from './prepare-side.schema.js'
@@ -34,7 +42,9 @@ const setupFailed = (step: string, detail: string): BenchSetupFailed => BenchSet
 
 const linesOf = (text: string): ReadonlyArray<string> => Arr.filter(text.split('\n'), (line) => line.length > 0)
 
-const greenRunShas = (input: PlanLegsInput) =>
+const GREEN_RUNS_JQ = '[.workflow_runs[] | {sha: .head_sha, createdAtSeconds: (.created_at | fromdateiso8601)}]'
+
+const greenRunListing = (input: PlanLegsInput) =>
   runChecked({
     step: STEP_GREEN_RUNS,
     argv: [
@@ -42,18 +52,28 @@ const greenRunShas = (input: PlanLegsInput) =>
       'api',
       `repos/${input.repository}/actions/workflows/bench.yml/runs?branch=main&event=push&status=success&per_page=100`,
       '--jq',
-      '.workflow_runs[].head_sha',
+      GREEN_RUNS_JQ,
     ],
     cwd: input.repoRoot,
-  }).pipe(Effect.map((outcome) => linesOf(outcome.stdout)))
-
-const isStrictAncestor = (input: PlanLegsInput, sha: string) =>
-  runCommand({ argv: ['git', 'merge-base', '--is-ancestor', sha, input.head], cwd: input.repoRoot }).pipe(
-    Effect.map((outcome) => outcome.exitCode === 0 && sha !== input.head),
+  }).pipe(
+    Effect.flatMap((outcome) =>
+      S.decodeEffect(GreenRunsJson)(outcome.stdout).pipe(
+        Effect.mapError((error) => setupFailed(STEP_GREEN_RUNS, `gh printed no green-run listing: ${error.message}`)),
+      )
+    ),
   )
 
-const greenAncestorOf = (input: PlanLegsInput) =>
-  Effect.flatMap(greenRunShas(input), (shas) => Effect.findFirst(shas, (sha) => isStrictAncestor(input, sha)))
+const isAncestor = (input: PlanLegsInput, sha: string) =>
+  runCommand({ argv: ['git', 'merge-base', '--is-ancestor', sha, input.head], cwd: input.repoRoot }).pipe(
+    Effect.map((outcome) => outcome.exitCode === 0),
+  )
+
+const greenRunsOf = (input: PlanLegsInput): Effect.Effect<ReadonlyArray<GreenRun>, BenchSetupFailed, PlanPlatform> =>
+  Effect.flatMap(
+    greenRunListing(input),
+    (listing) =>
+      Effect.forEach(listing, (run) => Effect.map(isAncestor(input, run.sha), (ancestor) => ({ ...run, ancestor }))),
+  )
 
 const firstParentOf = (input: PlanLegsInput) =>
   runCommand({ argv: ['git', 'rev-parse', '--verify', '--quiet', `${input.head}^1`], cwd: input.repoRoot }).pipe(
@@ -103,35 +123,44 @@ const corpusEntries = (input: PlanLegsInput) =>
     return Arr.append(Arr.map(corpus.repo, (entry) => entry.project), corpus.enterprise.fixture)
   })
 
-const diffSince = (input: PlanLegsInput, green: Option.Option<string>) =>
-  Option.match(green, {
-    onNone: () => Effect.succeed({ changedFiles: [], affectedPaths: [] }),
-    onSome: (base) =>
-      Effect.all({ changedFiles: changedFilesSince(input, base), affectedPaths: affectedPathsSince(input, base) }),
+const NO_DIFF = { changedFiles: [], affectedPaths: [] }
+
+const diffSince = (input: PlanLegsInput, base: BaseChoice) =>
+  Match.valueTags(base, {
+    GreenBase: (green) =>
+      Effect.all({
+        changedFiles: changedFilesSince(input, green.sha),
+        affectedPaths: affectedPathsSince(input, green.sha),
+      }),
+    FirstParentBase: () => Effect.succeed(NO_DIFF),
   })
 
-const greenAncestorFor = (input: PlanLegsInput) =>
+const greenRunsFor = (input: PlanLegsInput) =>
   Match.value(input.event).pipe(
-    Match.when('push', () => greenAncestorOf(input)),
-    Match.when('workflow_dispatch', () => Effect.succeed(Option.none<string>())),
+    Match.when('push', () => greenRunsOf(input)),
+    Match.when('workflow_dispatch', () => Effect.succeed<ReadonlyArray<GreenRun>>([])),
     Match.exhaustive,
   )
+
+const legsFrom = (input: PlanLegsInput, entries: Arr.NonEmptyArray<string>, base: BaseChoice) =>
+  Effect.map(diffSince(input, base), (diff) =>
+    selectLegs(SelectLegsCommand.make({
+      base,
+      entries,
+      engineDirs: [...ENGINE_BUILD_DIRS],
+      ...diff,
+    })))
 
 export const planLegs = (
   input: PlanLegsInput,
 ): Effect.Effect<Result.Result<LegSelection, NoBenchBase>, BenchSetupFailed, PlanPlatform> =>
   Effect.gen(function*() {
     const entries = yield* corpusEntries(input)
-    const greenAncestor = yield* greenAncestorFor(input)
+    const greenRuns = yield* greenRunsFor(input)
     const firstParent = yield* firstParentOf(input)
-    const diff = yield* diffSince(input, greenAncestor)
-    return selectLegs(SelectLegsCommand.make({
-      event: input.event,
-      head: input.head,
-      greenAncestor,
-      firstParent,
-      entries,
-      engineDirs: [...ENGINE_BUILD_DIRS],
-      ...diff,
-    }))
+    const choice = chooseBase(ChooseBaseCommand.make({ event: input.event, head: input.head, greenRuns, firstParent }))
+    return yield* Result.match(choice, {
+      onFailure: (noBase) => noBase.pipe(Result.fail, Effect.succeed),
+      onSuccess: (base) => legsFrom(input, entries, base),
+    })
   })
