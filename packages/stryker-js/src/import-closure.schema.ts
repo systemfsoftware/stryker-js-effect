@@ -1,6 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const ImportClosureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/TestFileClosure')
 type ImportClosureTypeId = typeof ImportClosureTypeId
@@ -29,14 +33,91 @@ export class TestFileClosure extends S.TaggedClass<TestFileClosure>()('TestFileC
   readonly [ImportClosureTypeId] = ImportClosureTypeId
 }
 
-export const ExportEntrySchema = S.Union([S.String, S.Record(S.String, S.String)])
-export type ExportEntry = typeof ExportEntrySchema.Type
+const EntryPathSchema = S.TaggedStruct('EntryPath', { path: S.String })
+export type EntryPath = typeof EntryPathSchema.Type
+
+const EntryFallbacksTag = S.TaggedStruct('EntryFallbacks', {})
+export type EntryFallbacks = typeof EntryFallbacksTag.Type & { readonly fallbacks: ReadonlyArray<PackageEntry> }
+
+const EntryMapTag = S.TaggedStruct('EntryMap', {})
+export type EntryMap = typeof EntryMapTag.Type & { readonly entries: { readonly [key: string]: PackageEntry } }
+
+const EntryNullSchema = S.TaggedStruct('EntryNull', {})
+export type EntryNull = typeof EntryNullSchema.Type
+
+const EntryScalarSchema = S.TaggedStruct('EntryScalar', { value: S.Union([S.Finite, S.Boolean]) })
+export type EntryScalar = typeof EntryScalarSchema.Type
+
+export type PackageEntry = EntryPath | EntryFallbacks | EntryMap | EntryNull | EntryScalar
+
+const EntryFallbacksSchema = EntryFallbacksTag.pipe(
+  S.fieldsAssign({ fallbacks: S.Array(S.suspend((): S.Codec<PackageEntry> => PackageEntrySchema)) }),
+)
+
+const EntryMapSchema = EntryMapTag.pipe(
+  S.fieldsAssign({ entries: S.Record(S.String, S.suspend((): S.Codec<PackageEntry> => PackageEntrySchema)) }),
+)
+
+export const PackageEntrySchema: S.Codec<PackageEntry> = S.suspend((): S.Codec<PackageEntry> =>
+  S.Union([EntryPathSchema, EntryFallbacksSchema, EntryMapSchema, EntryNullSchema, EntryScalarSchema])
+).annotate({ identifier: 'PackageEntry', recursionBudget: { maxDepth: 4, depthSize: 'small' } })
+
+export const PackageEntryFieldSchema = S.Union([PackageEntrySchema, S.TaggedStruct('EntryUndeclared', {})])
+export type PackageEntryField = typeof PackageEntryFieldSchema.Type
+
+const isJsonList = (json: S.Json): json is S.JsonArray => Array.isArray(json)
+
+const isJsonObject = (json: S.Json): json is S.JsonObject => Predicate.isObject(json)
+
+const entryOf = (json: S.Json): PackageEntry =>
+  Match.value(json).pipe(
+    Match.when(Predicate.isString, (path): PackageEntry => ({ _tag: 'EntryPath', path })),
+    Match.when(Predicate.isNull, (): PackageEntry => ({ _tag: 'EntryNull' })),
+    Match.when(
+      isJsonList,
+      (fallbacks): PackageEntry => ({ _tag: 'EntryFallbacks', fallbacks: fallbacks.map(entryOf) }),
+    ),
+    Match.when(isJsonObject, (record): PackageEntry => ({
+      _tag: 'EntryMap',
+      entries: Object.fromEntries(Object.entries(record).map(([key, target]) => [key, entryOf(target)])),
+    })),
+    Match.orElse((value): PackageEntry => ({ _tag: 'EntryScalar', value })),
+  )
+
+const jsonOf = (entry: PackageEntry): S.Json =>
+  Match.value(entry).pipe(
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): S.Json => path,
+      EntryFallbacks: ({ fallbacks }): S.Json => fallbacks.map(jsonOf),
+      EntryMap: ({ entries }): S.Json =>
+        Object.fromEntries(Object.entries(entries).map(([key, target]) => [key, jsonOf(target)])),
+      EntryNull: (): S.Json => null,
+      EntryScalar: ({ value }): S.Json => value,
+    }),
+  )
+
+const declaredFieldOf = (json: Option.Option<S.Json>): Option.Option<PackageEntryField> =>
+  Option.some(Option.match(json, { onNone: (): PackageEntryField => ({ _tag: 'EntryUndeclared' }), onSome: entryOf }))
+
+const declaredJsonOf = (field: Option.Option<PackageEntryField>): Option.Option<S.Json> =>
+  Option.flatMap(field, (present) =>
+    Match.value(present).pipe(
+      Match.tag('EntryUndeclared', () => Option.none<S.Json>()),
+      Match.orElse((entry) => Option.some(jsonOf(entry))),
+    ))
+
+const PackageEntryFieldFromKey = S.optionalKey(S.Json).pipe(
+  S.decodeTo(
+    PackageEntryFieldSchema,
+    SchemaTransformation.transformOptional({ decode: declaredFieldOf, encode: declaredJsonOf }),
+  ),
+)
 
 export const PackageManifestSchema = S.Struct({
-  exports: S.optionalKey(S.Union([S.String, S.Record(S.String, ExportEntrySchema)])),
-  imports: S.optionalKey(S.Json),
-  main: S.optionalKey(S.String),
-  module: S.optionalKey(S.String),
+  exports: PackageEntryFieldFromKey,
+  imports: PackageEntryFieldFromKey,
+  main: PackageEntryFieldFromKey,
+  module: PackageEntryFieldFromKey,
 })
 export type PackageManifest = typeof PackageManifestSchema.Type
 

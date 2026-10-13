@@ -1,6 +1,5 @@
 export * from './annotation.schema.js'
 export * from './bake-key.schema.js'
-export * from './bench-corpus.schema.js'
 export * from './bench-order.js'
 export * from './bench-report.schema.js'
 export * from './bench-run.schema.js'
