@@ -1,8 +1,9 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
 import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
@@ -431,6 +432,51 @@ Feature('Streaming a run to machine readers')
             drainFailureLogged: s.result.messages.join('\n').includes('stryker.output.drain_failed'),
             stdout: s.result.stdout,
           }).toEqual({ drainFailureLogged: true, stdout: [] })
+        ),
+      ),
+    )
+
+    scenario(
+      'A broken report sink beside a writable stream file is logged as a drain failure, never as a file failure',
+      Gherkin.Do.pipe(
+        Given('a machine run streaming to a writable file whose report sink always breaks')(
+          'fixture',
+          () =>
+            Effect.sync(() => {
+              const messages: Array<string> = []
+              const capturing = Logger.make((options) => {
+                messages.push(String(options.message))
+              })
+              const failingStdio = Stdio.layerTest({
+                stdout: () => Sink.die(new Error('the report sink broke')),
+              })
+              const platform = Layer.mergeAll(Engine.nodePlatformLayer, failingStdio)
+              const drain = RunEvent.RunEventDrain.layerFile.pipe(Layer.provide(platform))
+              return { messages, services: Layer.mergeAll(platform, drain, Logger.layer([capturing])) }
+            }),
+        ),
+        When('the run opens, reports a failure, and closes')(
+          'logged',
+          (s) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-drain-' })
+                const drain = yield* RunEvent.RunEventDrain
+                yield* drain.setProgressStreamFile(pathService.join(directory, 'stream.jsonl'))
+                const stream = yield* RunEvent.makeRunEventStream({ mode: 'machine', signal: 'tty' })
+                yield* stream.open
+                yield* offerAll(stream, [RUN_FAILED])
+                yield* stream.closeAndDrain
+                return s.fixture.messages.join('\n')
+              }),
+            ).pipe(Effect.provide(s.fixture.services)),
+        ),
+        Then('the defect is logged as a drain failure and never as a file failure')((s, expect) =>
+          expect({
+            drainFailed: s.logged.includes('stryker.output.drain_failed'),
+            fileFailed: s.logged.includes('stryker.output.drain_file_failed'),
+          }).toEqual({ drainFailed: true, fileFailed: false })
         ),
       ),
     )

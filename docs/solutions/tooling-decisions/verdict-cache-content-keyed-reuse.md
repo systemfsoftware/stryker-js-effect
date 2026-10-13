@@ -89,9 +89,10 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   path the crawl starts from. The stream file the CLI opens before the engine
   reads its config is one the engine excludes, because `pinnedRequestOf` sets
   the resolved name as a command-line option, which wins the engine's config
-  merge. Gate:
+  merge. Gate, after `pnpm --filter @systemfsoftware/stryker-js build`:
   `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/progress-stream-file.integration.test.ts`
-  re-runs a project twice and fails when the second run re-runs a mutant.
+  re-runs the built CLI on a project twice and fails when the second run
+  re-runs a mutant.
 - **Refusal is named.** Every mutant a key refuses carries exactly one reason
   by fixed precedence - semantics changed, policy changed, run inputs changed,
   closure changed, a flaky dependency, a timeout that has not reproduced, or no

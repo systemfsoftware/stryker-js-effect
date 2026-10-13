@@ -7,6 +7,6 @@ A mutation run now writes its event stream to the `progressStreamFile` set in th
 Breaking:
 
 - A non-empty `progressStreamFile` in your config moves a mutation run's stream off `reports/mutation-stream.jsonl`.
-- A config function is called once more per run: the stream path comes from its first answer, every other option from its second, so it must answer the same each time and not fail.
+- A config function is called once more per run: the stream path comes from its first answer, every other option from its second.
 - Your own `reports/mutation-stream.jsonl` is no longer a project input.
 - `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed; the `Configuration.defaultOptions` effect yields `progressStreamFile`.

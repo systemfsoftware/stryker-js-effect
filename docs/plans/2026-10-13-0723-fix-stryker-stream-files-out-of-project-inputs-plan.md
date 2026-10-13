@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0641-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0657-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-13-0641-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whether `stryker run` or `stryker --help` ran in it before (shard outputs are OQ6). A `progressStreamFile` set in the config file is where `stryker run` writes its stream, and a stream file that cannot be opened or written never silences the run's `stdout` records.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0641 plan, executed in `2838944a`; its full review found no P0, P1 or P2, but R9 said a drain defect "is not recovered" when the backstop ignores it, R7 and the package README claimed any spelling where glob syntax still compiles as a glob, and the drain-level log name was a literal spelled twice. This plan carries the corrected contract and 0641 is removed in the same PR (REPO-D2). 0641 superseded 0601 (`54aeca2b`), 0547 (`014b542a`), 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0657 plan, executed in `e54e7ba5`; its full review found no P0 or P1, but the round-13 disposition that no test could stage the file drain's backstop was false (the drain suite already stages a defect through a dying `stdout` sink), the CONST-W3 waiver did not name the backstop's log name, the glob caveat omitted `{`, OQ7 said a leading `!` negates the rule, and the changeset said a config function "must" answer the same each time, which nothing enforces. This plan carries the corrected contract and 0657 is removed in the same PR (REPO-D2). 0657 superseded 0641 (`2838944a`), 0601 (`54aeca2b`), 0547 (`014b542a`), 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
 - **Open blockers:** none. OQ1, OQ2, OQ4, OQ5, OQ6 and OQ7 go to the root and OQ3 to PR #320; none gates this unit.
 
@@ -62,7 +62,7 @@ Cause in code:
 - R4. A config file that cannot be read or is invalid, including an invalid `progressStreamFile`, is reported exactly as today. The stream still opens, at the flag or default path.
 - R5. A stream file written at the default path by any `stryker` command never changes the next run's inputs.
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
-- R7. A configured or flagged output path inside the project is left out of the inputs however its separators are spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from. The rule compiles as an ignore glob, so a path holding glob syntax (`!`, `*`, `?`, `[`) keeps its glob meaning (OQ7); the package README tells users to keep those characters out.
+- R7. A configured or flagged output path inside the project is left out of the inputs however its separators are spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from. The rule compiles as an ignore glob, so a path holding glob syntax (`!`, `*`, `?`, `[`, `{`) keeps its glob meaning (OQ7); the package README tells users to keep those characters out.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
 - R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure (`stryker.output.drain_file_failed`) on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed open, write and sync errors count. Anything else that ends the drain (a defect, an interruption, a failure closing the file) is logged as `stryker.output.drain_failed`, the name the plain drain already uses; the drain stops there, its remaining records are lost, and the run's exit code is unchanged, as on `main`. In human mode `stdout` never carried the records, so only the log applies.
 
@@ -78,6 +78,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - AE6. Covers R6. Config sets `progressStreamFile: ''`. Both runs stream records on `stdout`; the second run's `reuse` record is in `reports/mutation-stream.jsonl` and reuses every mutant.
 - AE7. Covers R4. A config that throws while loading, and a config whose `progressStreamFile` is `null`: each run exits 2, its error record names `stryker.config.mjs` or `progressStreamFile` respectively, and the stream is at `reports/mutation-stream.jsonl`.
 - AE8. Covers R9. Config sets `progressStreamFile: 'out/stream'`, an existing empty directory; and, separately, the flag names `/dev/full`, which opens and refuses every write (the row refuses to run where `/dev/full` is missing instead of degrading into an open failure). Each run exits 0, its `stdout` carries `mutantTested` records and ends with the verdict, and its `stderr` names `stryker.output.drain_file_failed` exactly once.
+- AE9. Covers R9's typed-only clause, in-process rather than through the binary, since only a defect reaches the backstop: the file drain (`RunEventDrain.layerFile`) streams to a writable temporary file while its `stdout` sink dies. The run closes, and the log names `stryker.output.drain_failed` and never `stryker.output.drain_file_failed`.
 
 ### Scope Boundaries
 
@@ -101,8 +102,8 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - **CONST-W3 declaration, waiving CONST-T4 ("Behavior Lives Where the Mutator Sees It") for three cases.** `packages/stryker-js/stryker.config.ts:15-19` mutates only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so three behaviours this PR adds go ungraded:
   1. the route match, config read and fallback that choose the run's stream path (`streamedRequestOf`, `flaggedRequestOf`, `pinnedRequestOf`, `packages/stryker-js/src/run-request.cell.ts`);
   2. the output-entry derivation (`isInsideProject`, `crawlEntryPathOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`);
-  3. the drain's fallback to `stdout` alone when the stream file cannot be opened or written (`drainToSinks`, `writeLineOf`, `logFileFailure`, `packages/stryker-js/src/run-event-stream.service.ts`).
-     The first two have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). The third is I/O inside a service's sink, with no decision to extract. AE1-AE8 grade all three through the built binary instead.
+  3. the drain's fallback to `stdout` alone when the stream file cannot be opened or written, and the log name it gives each failure kind (`drainToSinks`, `writeLineOf`, `logFileFailure`, the `DRAIN_FAILED` backstop in `drainFileOf`, `packages/stryker-js/src/run-event-stream.service.ts`).
+     The first two have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). The third is I/O inside a service's sink, with no decision to extract. AE1-AE8 grade all three through the built binary, and AE9 grades the backstop's log name in-process.
 
 ### Outstanding Questions
 
@@ -112,13 +113,14 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - OQ4 (for the root, outside this PR). The default stream path is spelled in two packages: `DEFAULT_PROGRESS_STREAM_FILE` here and the option default in `packages/stryker-js-plugin-interface/src/stryker-options.schema.ts:252`. Should the plugin interface export it?
 - OQ5 (for the root, outside this PR). A config whose default export is a function is now called twice per `stryker run`, so one that throws or changes state on a later call fails a run `main` completed (measured below), and a shadowed legacy config warns twice. A `--plan --shard` parent and each of its children are `run` invocations, so one sharded run evaluates the config once more per child (adversarial lens, round 12; not measured here). Should the config loader settle the export once per process and reuse that snapshot for every read, as `--survivors` and `--mutant` would also want?
 - OQ6 (for the root, outside this PR). `stryker run --plan --shard` children stream to `<outDir>/<project>/mutation-stream.jsonl` (`packages/stryker-js/src/shard/shard-run.ts:34-48`), and `outDir` defaults to `<planDirectory>/reports/shards/<index>` under the base path (`:93-96`). When the plan's directory is a project's own root, a later plain run of that project includes the file and re-runs every mutant, as on `main` (adversarial lens, round 9; not measured here). A shard child whose stream file cannot be written also leaves the previous run's file in place, which `stryker merge` accepts when the mutant ids match (adversarial lens, round 10; as on `main`, where the child's file was not written either). Should shard outputs join `strykerOutputFilesOf`, should the default `outDir` leave the project, and should a shard child clear its stream file before it runs?
-- OQ7 (for the root, outside this PR). Output entries are normalized, then compiled as ignore globs like every user pattern (`compileIgnoreRule` in `admit-discovered-entry.workflow.ts`), as on `main`. A configured path containing glob syntax keeps its glob meaning: `out/stream?.jsonl` also leaves out `out/stream1.jsonl`, and a leading `!` negates the rule (adversarial lens, round 12; not measured here). Should Stryker's own output entries be matched as literal paths?
+- OQ7 (for the root, outside this PR). Output entries are normalized, then compiled as ignore globs like every user pattern (`compileIgnoreRule` in `admit-discovered-entry.workflow.ts`), as on `main`. A configured path containing glob syntax keeps its glob meaning: `out/stream?.jsonl` also leaves out `out/stream1.jsonl`, `out/{a}.jsonl` matches `out/a.jsonl` and not itself, and a leading `!` makes the rule a negation, which `applyIgnoreRule` treats as a no-op, so the stream file stays an input. Every rule also compiles case-insensitively, so the always-excluded default also leaves out `Reports/Mutation-Stream.jsonl` (adversarial lens, rounds 12 and 14; not measured here). Should Stryker's own output entries be matched as literal, case-sensitive paths?
 
 ### Sources
 
 - The variant tables above were run with `packages/stryker-js/dist/main.mjs` built from `ec1769de` and from `65953faa`, in throwaway projects under `/tmp`, deleted afterwards.
 - Prior learning restored here: `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md` ("a run never feeds its own inputs"; `strykerOutputFilesOf` is the one list).
 - Same defect class upstream: [vercel/turborepo#7784](https://github.com/vercel/turborepo/issues/7784), [vercel/turborepo#7480](https://github.com/vercel/turborepo/discussions/7480).
+- Effect separates typed errors from defects and interruptions: `tapError` observes only the first, `tapCause` the whole cause ([Effect v4, Error Channel Operations](https://effect.website/docs/v4/error-management/error-channel-operations)). The drain logs the first as a file failure and the cause at its backstop as `drain_failed`.
 
 ---
 
@@ -176,8 +178,9 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 #### U7. The drain writes `stdout` when its file cannot be opened or written
 
-- **Goal:** R9, AE8.
-- **Files:** `packages/stryker-js/src/run-event-stream.service.ts`.
+- **Goal:** R9, AE8, AE9.
+- **Files:** `packages/stryker-js/src/run-event-stream.service.ts`, `packages/stryker-js/tests/run-event-stream.integration.test.ts`.
+- **Verification:** AE9 failed first on `54aeca2b`, whose backstop still logged `stryker.output.drain_file_failed` (`drainFailed: false`, `fileFailed: true`), and passes on this head. The defect comes from a test `Stdio` sink; no production source is edited.
 
 ### Review Dispositions
 
@@ -373,6 +376,20 @@ Round 13, full-path report-only review of `2838944a` (0 P0, 0 P1, 0 P2, 6 P3):
 | A failure closing the file reaches the backstop and is logged as `drain_failed`             | P3  | correctness                     | Accepted, stated in R9                                                                                                                    |
 | R7 and the package README claim any spelling; `!` or `[` in a path still compiles as a glob | P3  | correctness                     | Fixed: R7 names separators and points glob syntax at OQ7; the README tells users to keep glob characters out of the path                  |
 | The backstop's log name has no test                                                         | P3  | testing, adversarial            | Not admitted: the built CLI reaches the backstop only through a defect or an interruption, which no test can stage without editing source |
+
+Round 14, full-path report-only review of `e54e7ba5` (0 P0, 0 P1, 1 P2, 8 P3):
+
+| Finding                                                                                           | Sev | Lens               | Disposition                                                                                                                                |
+| ------------------------------------------------------------------------------------------------- | --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| The CONST-W3 waiver does not name the backstop's log name, a consumer-visible `stderr` change     | P2  | adversarial        | Fixed: case 3 names the log name per failure kind and the `DRAIN_FAILED` backstop; AE9 grades it                                           |
+| Round 13's "no test can stage the backstop" does not hold: the drain suite stages a defect        | P3  | testing, standards | Fixed: AE9 in `tests/run-event-stream.integration.test.ts`, failing first on `54aeca2b`                                                    |
+| `{` is glob syntax the caveat omits                                                               | P3  | adversarial        | Fixed: R7, OQ7 and the package README list `{`                                                                                             |
+| OQ7 says a leading `!` negates the rule; `applyIgnoreRule` makes a negated rule a no-op           | P3  | correctness        | Fixed: OQ7 states the no-op and its consequence                                                                                            |
+| The always-excluded default compiles case-insensitively, so `Reports/Mutation-Stream.jsonl` drops | P3  | adversarial        | Accepted: every ignore rule compiles so, as on `main`; OQ7 asks whether output entries should match case-sensitively                       |
+| The changeset says a config function "must" answer the same each time and not fail                | P3  | correctness        | Fixed: the bullet states which answer each option comes from                                                                               |
+| The learning's gate command needs a built `dist`                                                  | P3  | learnings          | Fixed: the gate names the build                                                                                                            |
+| R9's human-mode clause has no acceptance row                                                      | P3  | testing            | Not admitted: human mode runs the same `drainToSinks`, latch and log as AE8 with `stdout` off, so a row would repeat AE8's oracle          |
+| R5's "any command" is exercised through `--help` only                                             | P3  | testing            | Not admitted: the default path is excluded by one unconditional entry in `strykerOutputFilesOf`, the same for every command that writes it |
 
 ### Verification Contract
 
