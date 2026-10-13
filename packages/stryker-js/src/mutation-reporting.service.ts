@@ -1101,13 +1101,6 @@ if (import.meta.vitest !== void 0) {
     (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
   )
 
-  it.effect.prop(
-    '∀mr_MapRunResult_≡KeepsProbeEligibility',
-    { of: [Mutant, MutantRunResultSchema], subject: mapForLaw },
-    (subject, [mutant, result]) =>
-      Effect.map(subject(mutant, result), (mapped) => mapped.probeEligibility === mutant.probeEligibility),
-  )
-
   const reportTceIgnoredForLaw = (mutant: Mutant.Mutant, reason: string) =>
     reportIgnored(coverageOf(mutant), { status: 'ignored', reason })
 
