@@ -35,7 +35,7 @@ export class VerdictPassed extends S.TaggedClass<VerdictPassed>()('VerdictPassed
 
 export class VerdictFailed extends S.TaggedClass<VerdictFailed>()('VerdictFailed', {
   id: Mutant.MutantId,
-  diagnostics: S.Array(DiagnosticLine),
+  diagnostics: S.NonEmptyArray(DiagnosticLine),
 }) {}
 
 export class VerdictIgnored extends S.TaggedClass<VerdictIgnored>()('VerdictIgnored', {

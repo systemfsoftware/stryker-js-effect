@@ -2269,9 +2269,9 @@ const renderedOf = (
 ): Effect.Effect<Outcome> =>
   Effect.map(describeDiagnostics(ctx.self, diagnostics), (rendered): Outcome => ({
     mutant,
-    check: Boolean.match(rendered.length === 0, {
-      onTrue: () => VerdictPassed.make({ id: mutant.id }),
-      onFalse: () => VerdictFailed.make({ id: mutant.id, diagnostics: [...rendered] }),
+    check: Arr.match(rendered, {
+      onEmpty: () => VerdictPassed.make({ id: mutant.id }),
+      onNonEmpty: (lines) => VerdictFailed.make({ id: mutant.id, diagnostics: lines }),
     }),
     decision,
     comparison,
