@@ -25,7 +25,8 @@ const sharesSourceFields = (materialized: Mutant.Mutant, original: Mutant.Mutant
   materialized.fileName === original.fileName &&
   materialized.mutatorName === original.mutatorName &&
   materialized.replacement === original.replacement &&
-  Equal.equals(materialized.location, original.location)
+  Equal.equals(materialized.location, original.location) &&
+  Equal.equals(materialized.probeEligibility, original.probeEligibility)
 
 describe('materializeMutantPlans', () => {
   it.prop(
