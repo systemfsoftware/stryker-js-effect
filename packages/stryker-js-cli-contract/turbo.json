@@ -5,7 +5,14 @@
     "test": {
       "inputs": [
         "$TURBO_EXTENDS$",
-        "$TURBO_ROOT$/pnpm-workspace.yaml"
+        "$TURBO_ROOT$/pnpm-workspace.yaml",
+        "$TURBO_ROOT$/.changeset/**",
+        "$TURBO_ROOT$/test/*/package.json",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/toolchain/*/package.json",
+        "$TURBO_ROOT$/packages/ignorers/*/package.json",
+        "$TURBO_ROOT$/packages/frameworks/*/package.json",
+        "$TURBO_ROOT$/packages/stryker-js-plugin-interface/contract/**"
       ],
       "cache": false
     }

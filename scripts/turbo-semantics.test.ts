@@ -190,12 +190,11 @@ importers:
 interface FixtureOptions {
   readonly bTurboJson?: string
   readonly rootTurboJson?: string
-  readonly rootPackageJson?: string
   readonly branch?: string
 }
 
 const seedFixture = async (dir: string, options: FixtureOptions): Promise<void> => {
-  await write(dir, 'package.json', options.rootPackageJson ?? rootPackageJson)
+  await write(dir, 'package.json', rootPackageJson)
   await write(dir, 'pnpm-workspace.yaml', pnpmWorkspace)
   await write(dir, 'pnpm-lock.yaml', lockfile)
   await write(dir, 'turbo.json', options.rootTurboJson ?? rootTurboJson())
@@ -404,6 +403,18 @@ Deno.test('a declared $TURBO_ROOT$ read of the lockfile or the workspace file mo
   }
 })
 
+Deno.test('a declared $TURBO_ROOT$ read on a cache: false task moves its hash and selects it', async () => {
+  const bTurboJson =
+    `{ "extends": ["//"], "tasks": { "test": { "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/shared.txt"], "cache": false } } }\n`
+  await withRepo({ bTurboJson }, async (dir) => {
+    const base = await head(dir)
+    const moved = await tasksMovedBy(dir, () => write(dir, 'shared.txt', 'shared\nmore\n'))
+    assertEqual(moved, ['@probe/b#test'], 'only the uncached reader of the root file changes hash')
+    await commit(dir, 'root input edit')
+    assertEqual(await selectedTasks(dir, { base }), ['@probe/b#test'], 'the uncached reader is selected')
+  })
+})
+
 const rootEntryTurboJson = (entry: string): string =>
   `{
   "$schema": "${SCHEMA}",
@@ -432,14 +443,27 @@ Deno.test("$TURBO_EXTENDS$ in a root package-task entry keeps none of the generi
   })
 })
 
-Deno.test('a $TURBO_ROOT$ read in a complete root package-task entry moves only that reader and selects it with its dependencies', async () => {
+Deno.test('a complete root package-task entry resolves $TURBO_DEFAULT$ in its package, and its $TURBO_ROOT$ read moves only that reader and selects it with its dependencies', async () => {
   const complete = rootEntryTurboJson(
-    '{ "inputs": ["src/**", "$TURBO_ROOT$/shared.txt"], "outputs": [], "dependsOn": ["build"], "env": ["NODE_ENV"] }',
+    '{ "inputs": ["$TURBO_DEFAULT$", "!**/README.md", "$TURBO_ROOT$/shared.txt"], "outputs": [], "dependsOn": ["build"], "env": ["NODE_ENV"] }',
   )
   await withRepo({ rootTurboJson: complete }, async (dir) => {
     const base = await head(dir)
     const entry = await resolvedDefinitionOf(dir, '@probe/b#test')
     assertEqual([entry.dependsOn, entry.env], [['build'], ['NODE_ENV']], 'a complete entry keeps what it declares')
+    const bySource = await tasksMovedBy(dir, () => write(dir, 'packages/b/src/index.js', 'export const b = 2\n'))
+    assert(
+      bySource.includes('@probe/b#test'),
+      `$TURBO_DEFAULT$ covers the package's source, got ${JSON.stringify(bySource)}`,
+    )
+    assert(
+      !bySource.includes('@probe/a#test'),
+      `$TURBO_DEFAULT$ stays inside the package, got ${JSON.stringify(bySource)}`,
+    )
+    const byReadme = await tasksMovedBy(dir, () => write(dir, 'packages/b/README.md', 'readme\n'))
+    assertEqual(byReadme, [], "the entry's README negation applies")
+    await git(dir, ['checkout', '-q', '--', '.'])
+    await git(dir, ['clean', '-q', '-fd'])
     const moved = await tasksMovedBy(dir, () => write(dir, 'shared.txt', 'shared\nmore\n'))
     assertEqual(moved, ['@probe/b#test'], 'only the reader of the root file changes hash')
     await commit(dir, 'root input edit')
