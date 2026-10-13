@@ -122,8 +122,12 @@ export const copyProject = (
 const CLI_ENV = { STRYKER_MODE: 'machine', NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' }
 
 const startCli = (cli: string, root: string, args: ReadonlyArray<string>) =>
-  Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
-    spawner.spawn(
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const present = yield* Effect.orDie(fs.exists(cli))
+    yield* Effect.when(Effect.die(new Error(`${cli} is missing - build the package first`)), Effect.succeed(!present))
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    return yield* spawner.spawn(
       ChildProcess.make(globalThis.process.execPath, [cli, ...args], {
         cwd: root,
         stdin: 'ignore',
@@ -132,7 +136,8 @@ const startCli = (cli: string, root: string, args: ReadonlyArray<string>) =>
         env: CLI_ENV,
         extendEnv: true,
       }),
-    ))
+    )
+  })
 
 export interface CliRun {
   readonly root: string
@@ -143,7 +148,7 @@ export interface CliRun {
 export const runCli = ({ root, args, cli = BUILT_CLI }: CliRun): Effect.Effect<
   CliOutcome,
   never,
-  ChildProcessSpawner.ChildProcessSpawner
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
   Effect.scoped(
     Effect.gen(function*() {
@@ -165,7 +170,7 @@ const isMutantEvent = (line: string): boolean => Option.exists(decodeEvent(line)
 export const runCliKilledAtFirstMutant = ({ root, args }: Omit<CliRun, 'cli'>): Effect.Effect<
   boolean,
   never,
-  ChildProcessSpawner.ChildProcessSpawner
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
   Effect.scoped(
     Effect.gen(function*() {

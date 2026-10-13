@@ -188,7 +188,9 @@ Feature('Running mutation testing on a project that was run under another root')
               return { ownRun, ownPlan, otherRun, restoredPlan, rerun }
             })),
         ),
-        Then("B's re-run executes no test and scores as its first run, and its plan is unchanged by the restore")(
+        Then(
+          "B's re-run executes no test, scores as its first run and says it skipped the other root's report, and its plan is unchanged by the restore",
+        )(
           (s, expect) =>
             expect({
               exits: [
@@ -201,12 +203,16 @@ Feature('Running mutation testing on a project that was run under another root')
               ownRunStatuses: statusesOf(s.observed.ownRun.scored),
               rerunExecutions: s.observed.rerun.executions,
               rerunScored: s.observed.rerun.scored,
+              rerunNamesSkippedReport: s.observed.rerun.output.includes(
+                'Skipped saved dry-run coverage: 1 recorded under another project root, 0 with no recorded root',
+              ),
               restoredPlan: s.observed.restoredPlan.plan,
             }).toEqual({
               exits: [0, 0, 0, 0, 0],
               ownRunStatuses: ['Killed', 'NoCoverage'],
               rerunExecutions: 0,
               rerunScored: s.observed.ownRun.scored,
+              rerunNamesSkippedReport: true,
               restoredPlan: s.observed.ownPlan.plan,
             }),
         ),
