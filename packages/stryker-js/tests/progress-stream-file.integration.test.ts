@@ -203,11 +203,12 @@ const leftBehind = (
 
 const reusedEveryMutant = (left: LeftBehind, before: Invocation, after: Invocation) => ({
   ran: left.reuse?.ran,
+  reusedSome: (left.reuse?.reused ?? 0) > 0,
   firstRunTested: before.testRuns > 0,
   testsRunAgain: after.testRuns - before.testRuns,
 })
 
-const EVERY_MUTANT_REUSED = { ran: 0, firstRunTested: true, testsRunAgain: 0 }
+const EVERY_MUTANT_REUSED = { ran: 0, reusedSome: true, firstRunTested: true, testsRunAgain: 0 }
 
 Feature('A stream file Stryker writes stays out of the next run', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
