@@ -10,6 +10,7 @@ import * as Result from 'effect/Result'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
+import { AnsiCode, type AnsiColor } from '../reporting/ansi.schema.js'
 import {
   type ClearTextRenderOptions,
   renderClearTextReport,
@@ -18,9 +19,11 @@ import {
   type ReportSpan,
   type Tone,
 } from './render-clear-text-report.workflow.js'
-import { failAsClearText } from './reporter-failures.js'
+import { failAsReporter } from './reporter-failed.js'
 import { type OutputChannel, ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
-import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
+import { HumanStreamRole } from './reporter-role.schema.js'
+
+const failAsClearText = failAsReporter(HumanStreamRole.literal)
 
 interface TerminalReport {
   readonly report: Report.MutationTestResult

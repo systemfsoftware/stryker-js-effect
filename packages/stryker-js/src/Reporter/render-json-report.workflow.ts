@@ -5,6 +5,8 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+export const JsonReporterName = S.Literal('json')
+
 const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/JsonReport')
 type JsonReportTypeId = typeof JsonReportTypeId
 

@@ -1,0 +1,260 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: e2e-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  leg:
+    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: lifecycle
+            files: tests/enterprise-mutation-lifecycle.e2e.test.ts
+          - shard: sabotage
+            files: tests/enterprise-monorepo-sabotage.e2e.test.ts
+          - shard: svelte-composite
+            files: tests/svelte-app.e2e.test.ts tests/enterprise-composite-checker.e2e.test.ts
+          - shard: rest-1
+            files: --shard=1/2
+          - shard: rest-2
+            files: --shard=2/2
+    name: e2e (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      RUNTIME: docker
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: stryker-js-ci
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+    steps:
+      - name: Record the leg start
+        run: echo "LEG_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: cachix/install-nix-action@v31
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+      - id: base
+        name: Base commit (first parent of the checked-out commit)
+        # Legs read the parent's `check` entry (this push's own `check` saves only at its end); a `workflow_dispatch` on an arbitrary branch may hit only the prefix fallback below.
+        run: |
+          base=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      # The base commit's entry is restored on its own, with no restore-keys: `actions/cache` searches
+      # this ref before main, so one step with a prefix fallback would return this ref's newest (stale)
+      # entry ahead of main's exact base entry. The prefix fallback runs only when the base has none.
+      - id: restore-base
+        name: Restore the Turbo cache of the base commit
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ steps.base.outputs.sha }}
+      - id: restore-newest
+        name: Restore the newest Turbo cache this ref can read
+        if: steps.restore-base.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-dist-
+      - name: Report the Turbo cache restore
+        env:
+          SHARD: ${{ matrix.shard }}
+          BASE_HIT: ${{ steps.restore-base.outputs.cache-hit }}
+          BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
+          NEWEST_KEY: ${{ steps.restore-newest.outputs.cache-matched-key }}
+        run: |
+          if [ "$BASE_HIT" = "true" ]; then
+            outcome="base hit ($BASE_KEY)"
+          elif [ -n "$NEWEST_KEY" ]; then
+            outcome="prefix fallback ($NEWEST_KEY)"
+          else
+            outcome="none (the leg rebuilds its closure)"
+          fi
+          echo "- e2e ($SHARD) Turbo cache: $outcome" >> "$GITHUB_STEP_SUMMARY"
+      - name: deno from the flake
+        run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
+      - name: Install process-compose (pinned)
+        run: |
+          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
+          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
+          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
+      - name: Start LGTM (blocks until probe-ready)
+        run: |
+          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
+          pnpm lgtm:up
+      - name: E2E lane
+        run: >-
+          pnpm test:e2e -- ${{ matrix.files }}
+          ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
+      - name: Export telemetry
+        if: always()
+        run: ./test/e2e/scripts/export-traces.ts
+      - name: Container logs on failure or cancellation
+        if: failure() || cancelled()
+        continue-on-error: true
+        run: |
+          mkdir -p e2e-telemetry/containers
+          for c in $(docker ps -aq); do
+            name=$(docker inspect --format '{{.Name}}' "$c" | sed 's|^/||')
+            docker logs "$c" > "e2e-telemetry/containers/${name}.log" 2>&1 || true
+          done
+      - name: Package telemetry
+        if: always()
+        run: tar czf e2e-telemetry.tar.gz e2e-telemetry
+      - name: Upload telemetry artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-telemetry-${{ github.run_id }}-${{ matrix.shard }}
+          path: e2e-telemetry.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+      - name: Leg wall time
+        if: always() && env.LEG_STARTED_AT != ''
+        env:
+          SHARD: ${{ matrix.shard }}
+          TARGET_SECONDS: "600"
+        run: |
+          elapsed=$(( $(date +%s) - LEG_STARTED_AT ))
+          wall="$(( elapsed / 60 ))m $(( elapsed % 60 ))s"
+          target="$(( TARGET_SECONDS / 60 ))m $(( TARGET_SECONDS % 60 ))s"
+          echo "### e2e ($SHARD): wall time $wall, target $target" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -gt "$TARGET_SECONDS" ]; then
+            over=$(( elapsed - TARGET_SECONDS ))
+            by="$(( over / 60 ))m $(( over % 60 ))s"
+            echo "Over the target by $by (code \`E2E_LEG_OVER_TARGET\`); the leg's outcome is unchanged." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=E2E_LEG_OVER_TARGET (${SHARD})::Leg ${SHARD} took ${wall}, ${by} over the ${target} target; its outcome is unchanged. Next action: if the leg stays over, move one of its files to another leg."
+          fi
+
+  report:
+    name: e2e report
+    needs: leg
+    if: always() && needs.leg.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Report this run against the previous e2e run on this ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEGS: ${{ needs.leg.result }}
+          REF_NAME: ${{ github.ref_name }}
+          THIS_SHA: ${{ github.sha }}
+          NEXT_ACTION: root opens a revert PR of the culprit squash commit or a root-fix P0
+        run: |
+          set -euo pipefail
+          # Any API read that still fails aborts the step; the trap names it so the red run keeps a code.
+          trap 'echo "::error title=E2E_REPORT_FAILED::The e2e report stopped at line $LINENO on a failed GitHub API read, so the range and culprit candidates are unknown. Next action: rerun this report job; if it fails again, read the leg jobs of this run and find the previous e2e run on ${REF_NAME} by hand, then ${NEXT_ACTION}."' ERR
+          # Workflow-command data escaping: a raw newline or `%` would cut the annotation short.
+          escape() { local s=${1//'%'/'%25'}; s=${s//$'\r'/'%0D'}; printf '%s' "${s//$'\n'/'%0A'}"; }
+          repo="$GITHUB_REPOSITORY"
+          server="$GITHUB_SERVER_URL/$repo"
+          # shellcheck disable=SC2016 # the backticks are markdown inside a jq string
+          as_candidates='.[] | "  - `\(.sha[0:12])` \(.commit.message | split("\n")[0])"'
+
+          if [ "$LEGS" = success ]; then
+            echo "### e2e: every leg passed at \`${THIS_SHA:0:12}\` (code \`E2E_GREEN\`)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          legs=$(gh api "repos/$repo/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("e2e (")) | select(.conclusion != "success") | "\(.name): \(.conclusion // .status)"')
+
+          # The previous run is the newest completed e2e run on this ref, other than this one, whose
+          # legs ran (success or failure) and whose commit is a strict ancestor of this one, so a
+          # dispatch of an older commit never takes a newer one as its previous run.
+          prev_sha="" prev_conclusion="" prev_url="" compare_error=""
+          compare_stderr=$(mktemp)
+          page=1
+          while [ -z "$prev_sha" ] && [ -z "$compare_error" ]; do
+            page_json=$(gh api -X GET "repos/$repo/actions/workflows/e2e.yml/runs" \
+              -f branch="$REF_NAME" -f status=completed -F per_page=100 -F page="$page")
+            runs=$(jq -r --argjson self "$GITHUB_RUN_ID" '.workflow_runs[]
+              | select(.id != $self) | select(.conclusion == "success" or .conclusion == "failure")
+              | "\(.id) \(.head_sha) \(.conclusion) \(.html_url)"' <<< "$page_json")
+            total=$(jq '.workflow_runs | length' <<< "$page_json")
+            while read -r id sha conclusion url; do
+              [ -n "$id" ] || continue
+              # `ahead` means this commit is ahead of the candidate: the candidate is a strict ancestor.
+              if ! relation=$(gh api "repos/$repo/compare/$sha...$THIS_SHA" --jq .status 2>"$compare_stderr"); then
+                compare_error="GET compare/${sha:0:12}...${THIS_SHA:0:12} failed: $(paste -sd ' ' "$compare_stderr")"
+                break
+              fi
+              [ "$relation" = ahead ] || continue
+              ran=$(gh api "repos/$repo/actions/runs/$id/jobs?filter=latest&per_page=100" \
+                --jq '[.jobs[] | select(.name | startswith("e2e (")) | select(.conclusion == "success" or .conclusion == "failure")] | length')
+              [ "$ran" -gt 0 ] || continue
+              prev_sha=$sha prev_conclusion=$conclusion prev_url=$url
+              break
+            done <<< "$runs"
+            [ "$total" -eq 100 ] || break
+            page=$(( page + 1 ))
+          done
+
+          next=$NEXT_ACTION
+          prev_note="${prev_sha:-none}${prev_conclusion:+ ($prev_conclusion)}"
+          if [ -n "$compare_error" ]; then
+            listed=0 count=0
+            candidates="  - (not determined)"
+            previous="unknown: $compare_error"
+            prev_note="unknown ($compare_error)"
+            span="unknown"
+            code=E2E_RED_PREVIOUS_UNKNOWN
+            why="the compare API failed while looking for the previous run, so the range is unknown"
+            next="rerun this report job; if the compare call fails again, find the previous e2e run on \`$REF_NAME\` by hand before choosing a culprit, then $NEXT_ACTION"
+          elif [ -n "$prev_sha" ]; then
+            compare=$(gh api "repos/$repo/compare/$prev_sha...$THIS_SHA")
+            count=$(jq '.total_commits' <<< "$compare")
+            listed=$(jq '.commits | length' <<< "$compare")
+            candidates=$(jq -r ".commits | $as_candidates" <<< "$compare")
+            span="$server/compare/$prev_sha...$THIS_SHA, $count commit(s)"
+            previous="\`${prev_sha:0:12}\` concluded \`$prev_conclusion\` ($prev_url)"
+            if [ "$prev_conclusion" = success ]; then
+              code=E2E_RED_AFTER_GREEN
+              why="the culprit is in the range"
+            else
+              code=E2E_RED_AFTER_RED
+              why="the previous run was red too, so the culprit may predate the range"
+            fi
+          else
+            count=1 listed=1
+            candidates=$(gh api "repos/$repo/commits/$THIS_SHA" | jq -r "[.] | $as_candidates")
+            span="$server/commit/$THIS_SHA (this commit alone), 1 commit(s)"
+            previous="none: no earlier e2e run on \`$REF_NAME\` ran its legs on an ancestor of this commit"
+            code=E2E_RED_NO_PREVIOUS
+            why="there is no previous e2e run to compare with"
+          fi
+
+          {
+            echo "### e2e: red at \`${THIS_SHA:0:12}\` (code \`$code\`)"
+            echo
+            echo "- This commit: \`$THIS_SHA\`"
+            echo "- Previous e2e run on \`$REF_NAME\`: $previous"
+            echo "- Range: $span; $why"
+            echo "- Legs not green:"
+            printf '%s\n' "$legs" | sed 's/^/  - /'
+            echo "- Culprit candidates:"
+            printf '%s\n' "$candidates"
+            if [ "$listed" -lt "$count" ]; then echo "  - (the compare API lists the first $listed of $count)"; fi
+            echo "- Next: $next"
+          } >> "$GITHUB_STEP_SUMMARY"
+          message="This commit $THIS_SHA. Previous e2e run on $REF_NAME: $prev_note. Range: $span; $why. Legs not green: $(printf '%s' "$legs" | paste -sd ';' -). Next action: $next."
+          echo "::error title=$code::$(escape "$message")"

@@ -161,7 +161,7 @@ const capturingFixture = (mode: 'machine' | 'human'): Effect.Effect<CapturedStre
     const stderr = yield* Ref.make<ReadonlyArray<string>>([])
     const stdio = capturingStdio(stdout, stderr)
     const stream = yield* RunEvent.makeRunEventStream({ mode, signal: 'tty' }).pipe(
-      Effect.provide(Layer.mergeAll(stdio, RunEvent.RunEventDrainLive.pipe(Layer.provide(stdio)))),
+      Effect.provide(Layer.mergeAll(stdio, RunEvent.RunEventDrain.layer.pipe(Layer.provide(stdio)))),
     )
     return { stream, stdout, stderr }
   })
@@ -411,7 +411,7 @@ Feature('Streaming a run to machine readers')
             })
             const stream = yield* RunEvent.makeRunEventStream({ mode: 'machine', signal: 'tty' }).pipe(
               Effect.provide(
-                Layer.mergeAll(failingStdio, RunEvent.RunEventDrainLive.pipe(Layer.provide(failingStdio))),
+                Layer.mergeAll(failingStdio, RunEvent.RunEventDrain.layer.pipe(Layer.provide(failingStdio))),
               ),
             )
             return { stream, stdout, messages, logging: Logger.layer([capturing]) }

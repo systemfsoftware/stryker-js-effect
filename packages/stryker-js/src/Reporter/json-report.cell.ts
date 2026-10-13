@@ -12,9 +12,11 @@ import * as S from 'effect/Schema'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { renderJsonReport } from './render-json-report.workflow.js'
-import { failAsJsonReporter } from './reporter-failures.js'
+import { JsonReporterName, renderJsonReport } from './render-json-report.workflow.js'
+import { failAsReporter } from './reporter-failed.js'
 import { ReporterOutput } from './reporter-output.service.js'
+
+const failAsJsonReporter = failAsReporter(JsonReporterName.literal)
 
 const reportOf = Filter.make((
   event: Reporter.ReporterEvent,
