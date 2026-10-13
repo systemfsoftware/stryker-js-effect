@@ -1,8 +1,10 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
-import { admitCaseProbe, CaseProbeCommand } from '../admit-case-probe.workflow.js'
+import { admitCaseProbe, CaseProbeCommand, CaseProbePairs } from '../admit-case-probe.workflow.js'
 
 const commandArb = Arbitrary.schema(CaseProbeCommand)
 
@@ -51,5 +53,12 @@ describe('admitCaseProbe', () => {
     (subject, [command]) =>
       JSON.stringify(pairsOf(subject, command.names)) ===
         JSON.stringify(pairsOf(subject, [...command.names].reverse())),
+  )
+
+  it.prop(
+    '∀p_CaseProbePairsRefusal_≡EmptyPairs',
+    { of: [S.Array(S.Struct({ name: S.String, swapped: S.String }))], subject: S.decodeUnknownResult(CaseProbePairs) },
+    (subject, [pairs]) =>
+      Result.isSuccess(subject({ _tag: 'CaseProbePairs', pairs })) === Arr.isReadonlyArrayNonEmpty(pairs),
   )
 })

@@ -1,9 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Array as Arr, Boolean, String as Str } from 'effect'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { JsonLine, RunEventRecordOpening, StreamFileFirstLine } from './stream-file-head.schema.js'
+import { RunEventRecordOpening, StreamFileFirstLine } from './stream-file-head.schema.js'
 
 const StreamOverwriteTypeId = Symbol.for('@systemfsoftware/stryker-js/StreamOverwriteDecision')
 type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
@@ -14,12 +15,52 @@ const startsWithRunEvent = (text: string) =>
 const sharesAPrefix = (text: string) => (opening: string) =>
   Boolean.some([opening.startsWith(text), text.startsWith(opening)])
 
+interface Scan {
+  readonly depth: number
+  readonly inString: boolean
+  readonly escaped: boolean
+  readonly closed: boolean
+}
+
+const OPENED: Scan = { depth: 0, inString: false, escaped: false, closed: false }
+
+const nestedBy = (scan: Scan, step: number): Scan => ({
+  ...scan,
+  depth: scan.depth + step,
+  closed: scan.depth + step === 0,
+})
+
+const stringStep = (scan: Scan, char: string): Scan =>
+  Match.value(char).pipe(
+    Match.when('\\', (): Scan => ({ ...scan, escaped: true })),
+    Match.when('"', (): Scan => ({ ...scan, inString: false })),
+    Match.orElse(() => scan),
+  )
+
+const structureStep = (scan: Scan, char: string): Scan =>
+  Match.value(char).pipe(
+    Match.when('"', (): Scan => ({ ...scan, inString: true })),
+    Match.whenOr('{', '[', () => nestedBy(scan, 1)),
+    Match.whenOr('}', ']', () => nestedBy(scan, -1)),
+    Match.orElse(() => scan),
+  )
+
+const scanStep = (scan: Scan, char: string): Scan =>
+  Match.value(scan).pipe(
+    Match.when({ closed: true }, () => scan),
+    Match.when({ escaped: true }, (): Scan => ({ ...scan, escaped: false })),
+    Match.when({ inString: true }, () => stringStep(scan, char)),
+    Match.orElse(() => structureStep(scan, char)),
+  )
+
+const closesItsOutermostValue = (text: string) => Arr.reduce(text.split(''), OPENED, scanStep).closed
+
 const isTornRecord = (command: StreamOverwriteCommand) =>
   Boolean.every([
     command.wholeFileRead,
     command.leadingText.length > 0,
     !command.leadingText.includes('\n'),
-    Option.isNone(S.decodeOption(JsonLine)(command.leadingText)),
+    !closesItsOutermostValue(command.leadingText),
     RunEventRecordOpening.literals.some(sharesAPrefix(command.leadingText)),
   ])
 
