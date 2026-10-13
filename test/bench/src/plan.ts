@@ -1,5 +1,6 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
+import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -103,4 +104,19 @@ const program = Effect.gen(function*() {
   Effect.catchTag('ConfigError', (error) => failWith('Bench plan environment incomplete', error.message)),
 )
 
-NodeRuntime.runMain({ disableErrorReporting: true })(program.pipe(Effect.provide(nodeServicesLayer)))
+const writeWallTime = Effect.gen(function*() {
+  const startedAtSeconds = yield* Config.Number('JOB_STARTED_AT')
+  const stepSummary = yield* Config.NonEmptyString('GITHUB_STEP_SUMMARY')
+  const nowMs = yield* Clock.currentTimeMillis
+  const fs = yield* FileSystem.FileSystem
+  const seconds = Math.round((nowMs - startedAtSeconds * 1000) / 1000)
+  yield* fs.writeFileString(
+    stepSummary,
+    `\n**Plan job wall time:** ${seconds} s through the plan step; GitHub's 60-minute job timeout is the only kill.\n`,
+    { flag: 'a' },
+  )
+}).pipe(Effect.ignore)
+
+NodeRuntime.runMain({ disableErrorReporting: true })(
+  program.pipe(Effect.ensuring(writeWallTime), Effect.provide(nodeServicesLayer)),
+)

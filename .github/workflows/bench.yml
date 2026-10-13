@@ -44,6 +44,9 @@ jobs:
       base: ${{ steps.plan.outputs.base }}
       targets: ${{ steps.targets.outputs.targets }}
     steps:
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
