@@ -1,7 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -33,7 +32,9 @@ const JSON_REPORT = 'out/report.json'
 
 const CONFIG_FILE = 'stryker.config.mjs'
 
-const settingsOf = (streamFile: string, testCommand = 'true') =>
+const COUNT_TEST_RUN = 'echo run >> "$STRYKER_TEST_RUNS"'
+
+const settingsOf = (streamFile: string, testCommand = COUNT_TEST_RUN) =>
   `{
   testRunner: 'command',
   commandRunner: { command: '${testCommand}' },
@@ -109,6 +110,8 @@ const requireBuiltBinary = Effect.gen(function*() {
   )
 }).pipe(Effect.orDie)
 
+const testRunsOf = (root: string) => `${root}.test-runs`
+
 const prepareProject = (
   config: string,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
@@ -117,6 +120,7 @@ const prepareProject = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-stream-file-' }))
+    yield* Effect.addFinalizer(() => fs.remove(testRunsOf(root), { force: true }).pipe(Effect.ignore))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(root, 'package.json'), '{ "name": "stream-consumer", "type": "module" }\n')
     yield* fs.writeFileString(path.join(root, CONFIG_FILE), config)
@@ -129,6 +133,7 @@ interface Invocation {
   readonly stdout: string
   readonly stderr: string
   readonly defaultStreamPresent: boolean
+  readonly testRuns: number
 }
 
 const invoke = (
@@ -147,7 +152,13 @@ const invoke = (
           stdin: 'ignore',
           stdout: 'pipe',
           stderr: 'pipe',
-          env: { STRYKER_MODE: mode, NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
+          env: {
+            STRYKER_MODE: mode,
+            NO_COLOR: '1',
+            GITHUB_ACTIONS: '',
+            ALLOW_LOCAL_MUTATION: '1',
+            STRYKER_TEST_RUNS: testRunsOf(root),
+          },
           extendEnv: true,
         }),
       )
@@ -157,12 +168,13 @@ const invoke = (
       const printed = yield* Fiber.join(stdout)
       const logged = yield* Fiber.join(stderr)
       const defaultStreamPresent = yield* fs.exists(path.join(root, DEFAULT_STREAM))
-      const invocation: Invocation = { exitCode, stdout: printed, stderr: logged, defaultStreamPresent }
+      const testRuns = yield* readOptional(testRunsOf(root)).pipe(
+        Effect.map((text) => Option.getOrElse(text, () => '').split('\n').filter((line) => line.length > 0).length),
+      )
+      const invocation: Invocation = { exitCode, stdout: printed, stderr: logged, defaultStreamPresent, testRuns }
       return invocation
     }),
   ).pipe(Effect.orDie)
-
-const decodeReport = S.decodeOption(S.fromJsonString(Report.MutationTestResult))
 
 const eventsOf = (text: string): ReadonlyArray<RunEvent.RunEvent> =>
   text.split('\n').flatMap((line) => Option.toArray(S.decodeOption(RunEvent.RunEventWireLine)(line.trim())))
@@ -172,7 +184,6 @@ const readOptional = (file: string): Effect.Effect<Option.Option<string>, never,
 
 interface LeftBehind {
   readonly reuse: RunEvent.ReuseReported | undefined
-  readonly reportedMutants: number
 }
 
 const leftBehind = (
@@ -182,25 +193,21 @@ const leftBehind = (
   Effect.gen(function*() {
     const path = yield* Path.Path
     const stream = yield* readOptional(path.join(root, streamFile))
-    const report = yield* readOptional(path.join(root, JSON_REPORT))
     const left: LeftBehind = {
       reuse: Option.getOrUndefined(
         Option.map(stream, (text) => eventsOf(text).find((event) => S.is(RunEvent.ReuseReported)(event))),
       ),
-      reportedMutants: Option.match(Option.flatMap(report, decodeReport), {
-        onNone: () => 0,
-        onSome: (decoded) => Object.values(decoded.files).reduce((total, file) => total + file.mutants.length, 0),
-      }),
     }
     return left
   })
 
-const reusedEveryMutant = (left: LeftBehind) => ({
+const reusedEveryMutant = (left: LeftBehind, before: Invocation, after: Invocation) => ({
   ran: left.reuse?.ran,
-  reusedEveryReportedMutant: left.reportedMutants > 0 && left.reuse?.reused === left.reportedMutants,
+  firstRunTested: before.testRuns > 0,
+  testsRunAgain: after.testRuns - before.testRuns,
 })
 
-const EVERY_MUTANT_REUSED = { ran: 0, reusedEveryReportedMutant: true }
+const EVERY_MUTANT_REUSED = { ran: 0, firstRunTested: true, testsRunAgain: 0 }
 
 Feature('A stream file Stryker writes stays out of the next run', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
@@ -237,11 +244,11 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
           When('the project is run')('first', (s) => invoke(s.project, RUN)),
           When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
           When('the files the second run left are read')('left', (s) => leftBehind(s.project, row.streamAt)),
-          Then('the stream is at the configured path, every reported mutant is reused, and no default stream exists')(
+          Then('the stream is at the configured path, the second run runs no test, and no default stream exists')(
             (s, expect) =>
               expect({
                 exitCodes: [s.first.exitCode, s.second.exitCode],
-                ...reusedEveryMutant(s.left),
+                ...reusedEveryMutant(s.left, s.first, s.second),
                 defaultStreamPresent: s.second.defaultStreamPresent,
               }).toEqual({ exitCodes: [0, 0], ...EVERY_MUTANT_REUSED, defaultStreamPresent: false }),
           ),
@@ -259,7 +266,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         When('stryker is asked for help in the project')('help', (s) => invoke(s.project, HELP)),
         When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
         When('the files the last run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
-        Then('the help left a stream at the default path, and the last run reuses every reported mutant')(
+        Then('the help left a stream at the default path, and the last run runs no test')(
           (s, expect) =>
             expect({
               exitCodes: [s.first.exitCode, s.help.exitCode, s.second.exitCode],
@@ -268,7 +275,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
                 s.help.defaultStreamPresent,
                 s.second.defaultStreamPresent,
               ],
-              ...reusedEveryMutant(s.left),
+              ...reusedEveryMutant(s.left, s.first, s.second),
             }).toEqual({
               exitCodes: [0, 0, 0],
               defaultStreamPresent: [false, true, true],
@@ -288,11 +295,11 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         When('the project is run')('first', (s) => invoke(s.project, RUN)),
         When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
         When('the files the second run left are read')('left', (s) => leftBehind(s.project, DEFAULT_STREAM)),
-        Then('the stream is at the default path and every reported mutant is reused')((s, expect) =>
+        Then('the stream is at the default path and the second run runs no test')((s, expect) =>
           expect({
             exitCodes: [s.first.exitCode, s.second.exitCode],
             streamedOnStdout: eventsOf(s.second.stdout).length > 0,
-            ...reusedEveryMutant(s.left),
+            ...reusedEveryMutant(s.left, s.first, s.second),
           }).toEqual({ exitCodes: [0, 0], streamedOnStdout: true, ...EVERY_MUTANT_REUSED })
         ),
       ),
@@ -318,12 +325,12 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             flagged: leftBehind(s.project, 'out/flag.jsonl'),
             configured: Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
           })),
-        Then('the stream is at the flag path, not the configured one, and every reported mutant is reused')(
+        Then('the stream is at the flag path, not the configured one, and the second run runs no test')(
           (s, expect) =>
             expect({
               exitCodes: [s.first.exitCode, s.second.exitCode],
               configuredStreamWritten: Option.isSome(s.left.configured),
-              ...reusedEveryMutant(s.left.flagged),
+              ...reusedEveryMutant(s.left.flagged, s.first, s.second),
             }).toEqual({ exitCodes: [0, 0], configuredStreamWritten: false, ...EVERY_MUTANT_REUSED }),
         ),
       ),
@@ -339,10 +346,10 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         When('the project is run')('first', (s) => invoke(s.project, RUN)),
         When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
         When('the files the second run left are read')('left', (s) => leftBehind(s.project, FIRST_ANSWER)),
-        Then('the stream is at the first answer and every reported mutant is reused')((s, expect) =>
+        Then('the stream is at the first answer and the second run runs no test')((s, expect) =>
           expect({
             exitCodes: [s.first.exitCode, s.second.exitCode],
-            ...reusedEveryMutant(s.left),
+            ...reusedEveryMutant(s.left, s.first, s.second),
           }).toEqual({ exitCodes: [0, 0], ...EVERY_MUTANT_REUSED })
         ),
       ),
@@ -658,12 +665,12 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
           (s) => invoke(s.project, ['run'], 'human'),
         ),
         When('the files the second run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
-        Then('the second run wrote the stream file, logged no file failure, and reused every reported mutant')(
+        Then('the second run wrote the stream file, logged no file failure, and ran no test')(
           (s, expect) =>
             expect({
               exitCodes: [s.first.exitCode, s.second.exitCode],
               fileFailuresLogged: s.second.stderr.split(DRAIN_FILE_FAILED).length - 1,
-              ...reusedEveryMutant(s.left),
+              ...reusedEveryMutant(s.left, s.first, s.second),
             }).toEqual({ exitCodes: [0, 0], fileFailuresLogged: 0, ...EVERY_MUTANT_REUSED }),
         ),
       ),
