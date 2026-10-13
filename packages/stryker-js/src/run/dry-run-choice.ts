@@ -196,7 +196,7 @@ export interface CurrentRootCoverages {
 
 export const currentRootCoveragesOf = Effect.fnUntraced(function*(texts: readonly string[], basePath: string) {
   const path = yield* Path.Path
-  const currentRoot = path.resolve(basePath)
+  const currentRoot = path.join(basePath, '.')
   const candidates = priorCoveragesOf(texts)
   const candidatesDecision = candidatesDecisionOf(currentRoot, candidates)
   return {

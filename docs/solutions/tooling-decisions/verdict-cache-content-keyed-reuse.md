@@ -96,8 +96,8 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   every mutant id - the verdict cache, survivor baselines, rerun ids - so it is
   a deliberate migration, not a side edit.
 - **Saved coverage is bound to the root that recorded it, and the root is
-  checked first.** The dry run records its project root as `path.resolve(basePath)`,
-  which for an absolute base path is the prefix of every file name `mutantIdOf` hashes,
+  checked first.** The dry run records its project root as
+  `path.join(basePath, '.')`, the prefix of every file name `mutantIdOf` hashes,
   inside the coverage record it persists, so every writer (end-of-run report,
   checkpoint, dry-run-only report) carries it. Before any digest comparison,
   and even on a forced run, the `dryRunReuse` workflow refuses coverage
@@ -106,13 +106,12 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   the current root. The root is compared as spelled, never as its real path:
   one directory reached through a symlink and through its real path yields two
   sets of mutant ids, so a real-path match would reuse coverage that matches no
-  current mutant and score every mutant NoCoverage. A relative base path and
-  its absolute spelling resolve to one root while hashing different file
-  names; `runInputsDigestOf` refuses that pair instead, because it looks up the
-  manifest and lockfile along the path as spelled. Gate: the integration feature
-  "Running mutation testing through the API on one project whose base path is
-  spelled two ways", where a run after either other spelling must score as a
-  fresh run. The root comes only from the coverage record, never from
+  current mutant and score every mutant NoCoverage. A relative base path keeps
+  its relative root, so it and its absolute spelling are two roots too. Gate:
+  the integration feature "Running mutation testing through the API on one
+  project whose base path is spelled two ways", where a run after either
+  other spelling must score as a fresh run. The root comes only from the
+  coverage record, never from
   the report header: `unionIncrementalReports` takes a merged report's header
   from the first shard but its coverage from the first shard that has one, so
   a header fallback admits another root's coverage. Among several restored
