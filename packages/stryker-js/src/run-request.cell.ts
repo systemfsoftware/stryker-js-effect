@@ -161,9 +161,8 @@ const streamedRequestOf = (
       'run',
       () =>
         readConfig(invocation.options, { command: 'run', mode: invocation.environment.mode.mode }).pipe(
-          Effect.map(progressStreamFileName),
-          Effect.orElseSucceed(() => progressStreamFileName(invocation.options)),
-          Effect.map((fileName) => pinnedRequestOf(invocation, fileName)),
+          Effect.map((resolved) => pinnedRequestOf(invocation, progressStreamFileName(resolved))),
+          Effect.orElseSucceed(() => flaggedRequestOf(invocation)),
         ),
     ),
     Match.orElse(() => Effect.succeed(flaggedRequestOf(invocation))),

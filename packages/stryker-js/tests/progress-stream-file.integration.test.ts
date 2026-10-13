@@ -54,6 +54,8 @@ export default () => {
 
 const THROWING_CONFIG = "throw new Error('the config cannot be loaded')\n"
 
+const INVALID_STREAM_CONFIG = configNaming('__STREAM__').replace("'__STREAM__'", 'null')
+
 const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
 
 const RUN = ['run', '--json']
@@ -169,6 +171,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM },
         { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}` },
         { spelling: 'a path with a doubled slash', streamFile: 'out//stream.jsonl' },
+        { spelling: 'a path with a trailing slash', streamFile: `${CONFIGURED_STREAM}/` },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -290,21 +293,26 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
       ),
     )
 
-    scenario(
-      'A config that cannot be loaded is refused and the stream still opens at the default path',
-      Gherkin.Do.pipe(
-        Given('a project whose config throws while it is loaded')('project', () => prepareProject(THROWING_CONFIG)),
-        When('the project is run')('run', (s) => invoke(s.project, RUN)),
-        Then('the run exits with a config error naming the config file, and the stream is at the default path')(
-          (s, expect) => {
-            const failure = eventsOf(s.run.stdout).find((event) => S.is(RunEvent.RunFailed)(event))
-            return expect({
-              exitCode: s.run.exitCode,
-              namesTheConfigFile: failure?.error.includes(CONFIG_FILE),
-              defaultStreamPresent: s.run.defaultStreamPresent,
-            }).toEqual({ exitCode: 2, namesTheConfigFile: true, defaultStreamPresent: true })
-          },
+    scenarioOutline(
+      'A config that <failure> is refused as before and the stream still opens at the default path',
+      [
+        { failure: 'throws while it is loaded', config: THROWING_CONFIG, named: CONFIG_FILE },
+        { failure: 'names an invalid stream file', config: INVALID_STREAM_CONFIG, named: 'progressStreamFile' },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a project whose config is refused')('project', () => prepareProject(row.config)),
+          When('the project is run')('run', (s) => invoke(s.project, RUN)),
+          Then('the run exits with a config error naming what is wrong, and the stream is at the default path')(
+            (s, expect) => {
+              const failure = eventsOf(s.run.stdout).find((event) => S.is(RunEvent.RunFailed)(event))
+              return expect({
+                exitCode: s.run.exitCode,
+                namesTheCause: failure?.error.includes(row.named),
+                defaultStreamPresent: s.run.defaultStreamPresent,
+              }).toEqual({ exitCode: 2, namesTheCause: true, defaultStreamPresent: true })
+            },
+          ),
         ),
-      ),
     )
   })
