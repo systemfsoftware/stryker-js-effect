@@ -63,7 +63,10 @@
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./oxlint.config.ts": {
+      "default": "./oxlint.config.ts"
+    }
   },
   "publishConfig": {
     "exports": {
@@ -71,7 +74,10 @@
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
       },
-      "./package.json": "./package.json"
+      "./package.json": "./package.json",
+      "./oxlint.config.ts": {
+        "default": "./oxlint.config.ts"
+      }
     }
   }
 }
