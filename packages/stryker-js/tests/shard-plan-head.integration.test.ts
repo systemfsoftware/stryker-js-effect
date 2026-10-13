@@ -575,26 +575,35 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             const plannedIds = yield* plannedIdsOf(s.fixture.root)
             yield* writeFile(s.fixture.root, SPARE_FILE, SPARE_SOURCE)
             yield* writeFile(s.fixture.root, 'stryker.config.mjs', PLANNED_FILE_CONFIG)
-            const ran = yield* runLeaf(s.fixture.root, CURRENT_FILE, '.', 'human')
-            return { ran, plannedIds, shardDir: yield* shardDirExists(s.fixture.root) }
+            const leaf = yield* runLeaf(s.fixture.root, CURRENT_FILE, '.', 'human')
+            const shardDir = yield* shardDirExists(s.fixture.root)
+            const orchestrated = yield* runShard(s.fixture.root, CURRENT_FILE, 'human')
+            return { leaf, orchestrated, plannedIds, shardDir }
           })),
-        Then('the run exits two naming the plan, every missing id, and the next action')((s, expect) =>
+        Then('both the single project run and the orchestrated run exit two naming the plan and the missing ids')((
+          s,
+          expect,
+        ) =>
           expect({
-            exitCode: s.ran.ran.exitCode,
-            namesThePlan: s.ran.ran.stderr.includes(CURRENT_FILE),
-            namesTheCount: s.ran.ran.stderr.includes(
+            leafExitCode: s.ran.leaf.exitCode,
+            leafNamesThePlan: s.ran.leaf.stderr.includes(CURRENT_FILE),
+            leafNamesTheCount: s.ran.leaf.stderr.includes(
               `schedules ${new Set(s.ran.plannedIds).size} mutant(s) this run does not discover`,
             ),
-            namesAMissingId: s.ran.plannedIds.some((id) => s.ran.ran.stderr.includes(id)),
-            namesTheNext: s.ran.ran.stderr.includes('re-run stryker plan'),
-            shardDir: s.ran.shardDir,
+            leafNamesAMissingId: s.ran.plannedIds.some((id) => s.ran.leaf.stderr.includes(id)),
+            leafNamesTheNext: s.ran.leaf.stderr.includes('re-run stryker plan'),
+            leafShardDir: s.ran.shardDir,
+            orchestratedExitCode: s.ran.orchestrated.exitCode,
+            orchestratedNamesTheRefusal: s.ran.orchestrated.stderr.includes('the shard plan at'),
           }).toEqual({
-            exitCode: 2,
-            namesThePlan: true,
-            namesTheCount: true,
-            namesAMissingId: true,
-            namesTheNext: true,
-            shardDir: false,
+            leafExitCode: 2,
+            leafNamesThePlan: true,
+            leafNamesTheCount: true,
+            leafNamesAMissingId: true,
+            leafNamesTheNext: true,
+            leafShardDir: false,
+            orchestratedExitCode: 2,
+            orchestratedNamesTheRefusal: true,
           })
         ),
       ),

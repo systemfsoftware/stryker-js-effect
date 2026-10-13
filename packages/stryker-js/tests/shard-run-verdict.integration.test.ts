@@ -160,7 +160,7 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
               return yield* runSingleShard(s.fixture.root, 'human')
             }).pipe(Effect.orDie),
         ),
-        Then('the run fails with the runtime class, naming the second project, its exit class and its error')(
+        Then('the run fails with the configuration class, naming the second project, its exit class and its error')(
           (s, expect) =>
             expect({
               exitCode: s.ran.exitCode,
@@ -168,7 +168,7 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
               namesTheChildReason: s.ran.stderr.includes('the second fixture config is broken'),
               namesTheChildClass: s.ran.stderr.includes('exit 2 (ConfigError)'),
             }).toStrictEqual({
-              exitCode: 3,
+              exitCode: 2,
               namesTheProject: true,
               namesTheChildReason: true,
               namesTheChildClass: true,
