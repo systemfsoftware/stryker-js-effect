@@ -327,6 +327,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.mutationReporting.judgeScore",
+    "name": "stryker.mutationReporting.judgeScore",
+    "attributes": {}
+  },
+  {
     "id": "stryker.mutationReporting.manifestVersion",
     "name": "stryker.mutationReporting.manifestVersion",
     "attributes": {}
@@ -564,6 +569,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.report.sarif",
+    "name": "stryker.report.sarif",
+    "attributes": {}
+  },
+  {
     "id": "stryker.reporterStream.attach",
     "name": "stryker.reporterStream.attach",
     "attributes": {}
@@ -773,15 +783,6 @@
     "id": "RpcServer.onEventBatch",
     "name": "RpcServer.onEventBatch",
     "attributes": {}
-  },
-  {
-    "id": "rpc.typeQuery",
-    "name": "rpc.typeQuery",
-    "attributes": {
-      "rpc.method": {
-        "type": "string"
-      }
-    }
   },
   {
     "id": "stryker.run.conclude",
