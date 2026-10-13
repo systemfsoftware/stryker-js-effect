@@ -8,6 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as PlatformError from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
@@ -134,38 +135,56 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
 const hasErrnoCode = (cause: unknown): cause is { readonly code: string } =>
   Predicate.hasProperty(cause, 'code') && Predicate.isString(cause.code)
 
-const settleRemoval = (rejected: PlatformError.PlatformError): Effect.Effect<void, PlatformError.PlatformError> =>
+const removalErrorTagByCode: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
+  ENOENT: 'NotFound',
+  EACCES: 'PermissionDenied',
+  EPERM: 'PermissionDenied',
+  EEXIST: 'AlreadyExists',
+  EISDIR: 'BadResource',
+  ENOTDIR: 'BadResource',
+  EBUSY: 'Busy',
+  ELOOP: 'BadResource',
+}
+
+const removalErrorTag = (code: string | undefined): PlatformError.SystemErrorTag =>
+  Option.getOrElse(
+    Option.fromNullishOr(code).pipe(Option.flatMap((defined) => Option.fromNullishOr(removalErrorTagByCode[defined]))),
+    (): PlatformError.SystemErrorTag => 'Unknown',
+  )
+
+const settleRemoval = (code: string | undefined, path: string): Effect.Effect<void, PlatformError.PlatformError> =>
   Result.match(
-    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code: rejected.reason.description })),
+    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code })),
     {
       onFailure: (impossible) => Effect.fail(impossible),
       onSuccess: (removal) =>
         Match.value(removal).pipe(
           Match.tag('DirectoryKept', () => Effect.void),
           Match.tag('DirectoryAbsent', () => Effect.void),
-          Match.tag('RemovalFailed', () => Effect.fail(rejected)),
+          Match.tag('RemovalFailed', (failed) =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: removalErrorTag(failed.code),
+                module: 'EmptyDirectory',
+                method: 'removeIfEmpty',
+                syscall: 'rmdir',
+                pathOrDescriptor: path,
+                description: failed.code,
+              }),
+            )),
           Match.exhaustive,
         ),
     },
   )
 
-const nodeEmptyDirectoryLayer = Layer.succeed(
+export const nodeEmptyDirectoryLayer = Layer.succeed(
   EmptyDirectory,
   EmptyDirectory.of({
     removeIfEmpty: (path) =>
       Effect.tryPromise({
         try: () => globalThis.process.getBuiltinModule('node:fs/promises').rmdir(path),
-        catch: (cause) =>
-          PlatformError.systemError({
-            _tag: 'Unknown',
-            module: 'EmptyDirectory',
-            method: 'removeIfEmpty',
-            syscall: 'rmdir',
-            pathOrDescriptor: path,
-            description: hasErrnoCode(cause) ? cause.code : undefined,
-            cause,
-          }),
-      }).pipe(Effect.catch(settleRemoval)),
+        catch: (cause) => hasErrnoCode(cause) ? cause.code : undefined,
+      }).pipe(Effect.catch((code) => settleRemoval(code, path))),
   }),
 )
 

@@ -32,7 +32,7 @@ export class RemovalFailed extends S.TaggedClass<RemovalFailed>()('RemovalFailed
 export const EmptyDirectoryRemoval = S.Union([DirectoryKept, DirectoryAbsent, RemovalFailed])
 export type EmptyDirectoryRemoval = typeof EmptyDirectoryRemoval.Type
 
-const DirectoryNotEmptyCode = S.Literals(['ENOTEMPTY', 'EEXIST'])
+const DirectoryKeptCode = S.Literals(['ENOTEMPTY', 'EEXIST', 'ENOTDIR'])
 
 const DirectoryMissingCode = S.Literal('ENOENT')
 
@@ -44,7 +44,7 @@ const removalOfOtherCode = (code: string | undefined): EmptyDirectoryRemoval =>
 
 const decide = (command: ClassifyEmptyDirectoryRemovalCommand): Result.Result<EmptyDirectoryRemoval, never> =>
   Result.succeed(
-    Boolean.match(S.is(DirectoryNotEmptyCode)(command.code), {
+    Boolean.match(S.is(DirectoryKeptCode)(command.code), {
       onTrue: (): EmptyDirectoryRemoval => DirectoryKept.make({}),
       onFalse: () => removalOfOtherCode(command.code),
     }),
