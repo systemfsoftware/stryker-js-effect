@@ -4,8 +4,6 @@ import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
-import type { IncrementalReport } from './IncrementalReport.schema.js'
-
 export const ProjectFile = S.Struct({
   name: S.String,
   mutate: Instrument.MutateDescriptionSchema,
@@ -17,7 +15,6 @@ export type ProjectFile = typeof ProjectFile.Type
 
 export interface Project {
   readonly fileDescriptions: Instrument.FileDescriptions
-  readonly incrementalReport: IncrementalReport | undefined
   readonly testFiles: readonly string[]
   readonly files: ReadonlyMap<string, ProjectFile>
   readonly filesToMutate: ReadonlyMap<string, ProjectFile>
@@ -53,7 +50,6 @@ if (import.meta.vitest !== void 0) {
     const unique = Arr.dedupeWith(drawn, ([left], [right]) => left.name === right.name)
     return {
       fileDescriptions: {},
-      incrementalReport: undefined,
       testFiles: [],
       files: new Map(Arr.map(unique, ([file]) => [file.name, file] as const)),
       filesToMutate: new Map(

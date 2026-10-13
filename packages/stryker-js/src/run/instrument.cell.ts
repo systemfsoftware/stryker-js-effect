@@ -23,6 +23,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface InstrumentDone extends PrepareDone {
   readonly mutants: readonly Mutant.Mutant[]
+  readonly fileContentDigests: Readonly<Record<string, string>>
   readonly sandbox: SandboxHandle
   readonly concurrency: {
     readonly testRunners: number
@@ -45,6 +46,7 @@ const sandboxDirectoriesOf = (input: { readonly command: PrepareDone; readonly b
 type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly prev: PrepareDone
   readonly filesToMutate: readonly Instrument.File[]
+  readonly fileContentDigests: Readonly<Record<string, string>>
   readonly instrumentResult: Instrument.InstrumentResult
   readonly instrumentedProject: Project
   readonly sandbox: SandboxHandle
@@ -58,6 +60,7 @@ const writeInstrument = (raw: InstrumentRaw) =>
       ...raw.prev,
       project: raw.instrumentedProject,
       mutants: raw.instrumentResult.mutants,
+      fileContentDigests: raw.fileContentDigests,
       sandbox: raw.sandbox,
       concurrency: {
         testRunners: raw.concurrency.testRunners,
@@ -75,7 +78,7 @@ const gatherInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(fun
 ) {
   yield* Scope.Scope
   const env = yield* RunEnvironment
-  const { filesToMutate, instrumentResult, instrumentedProject } = yield* instrumentFiles(command)
+  const { filesToMutate, fileContentDigests, instrumentResult, instrumentedProject } = yield* instrumentFiles(command)
 
   const directories = sandboxDirectoriesOf({ command, basePath: env.basePath })
   const sandbox = yield* makeSandbox({
@@ -98,6 +101,7 @@ const gatherInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(fun
     pluginCount: command.loadedPlugins.pluginModulePaths.length,
     prev: command,
     filesToMutate,
+    fileContentDigests,
     instrumentResult,
     instrumentedProject,
     sandbox,

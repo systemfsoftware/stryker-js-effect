@@ -40,12 +40,14 @@ const UNWRITTEN_OUTPUTS = ['.stryker-scratch/leftover.txt', 'reports/mutation-st
 const NAMED_OUTPUTS = [
   '`tempDirName`',
   '`incrementalFile`',
+  'the temp files a write of `incrementalFile` leaves beside it',
   '`progressStreamFile`',
   '`reports/mutation-stream.jsonl`',
   '`htmlReporter.fileName`',
   '`jsonReporter.fileName`',
   'the SARIF file beside `jsonReporter.fileName`',
   '`reports/mutation/reproducers.json`',
+  '`verdictStore.directory` of a filesystem verdict store',
 ]
 
 const FOREIGN_REPORT = 'reports/coverage/lcov.info'

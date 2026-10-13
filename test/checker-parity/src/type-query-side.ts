@@ -37,7 +37,7 @@ export interface FileContent {
 
 export interface BranchWorkerRpcsShape {
   readonly capabilities: (
-    request: Plugin.CheckerDigestRequest,
+    request: Plugin.CheckerCapabilitiesRequest,
   ) => Effect.Effect<TypeQuery.CheckerCapabilities, Checker.CheckerFailed | RpcClientError>
   readonly typeQuery: (
     request: TypeQuery.TypeQueryRequest,

@@ -22,8 +22,6 @@ import {
 
 const Feature = makeFeature({ it })
 
-const SOURCES_FILE = 'reports/elsewhere.json'
-
 const TS_PROJECT = [
   ['package.json', '{ "type": "module" }\n'],
   [
@@ -159,62 +157,6 @@ Feature('Running mutation testing on a project that was run under another root')
             planned: s.observed.withoutReports.plan.length > 0,
             withReports: s.observed.withReports.plan,
           }).toEqual({ exits: [0, 0, 0], planned: true, withReports: s.observed.withoutReports.plan })
-        ),
-      ),
-    )
-
-    scenario(
-      'A project holding its own report and one restored from another root re-executes nothing and plans as before the restore',
-      Gherkin.Do.pipe(
-        Given("root B run once, then root A's report restored into B through incrementalSources")(
-          'observed',
-          () =>
-            Effect.scoped(Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const sources = `  incrementalSources: ['${SOURCES_FILE}'],\n  ignorePatterns: ['${SOURCES_FILE}'],\n`
-              const logA = yield* logFile
-              const logB = yield* logFile
-              const rootA = yield* writeProject(jsProjectFiles({ log: logA }))
-              const rootB = yield* writeProject(jsProjectFiles({ log: logB, configExtras: sources }))
-              const ownRun = yield* runCounted({ root: rootB, log: logB, args: ['run'] })
-              const outside = yield* scratchDirectory
-              const ownPlan = yield* planOf(rootB, path.join(outside, 'own.json'))
-              const otherRun = yield* runCounted({ root: rootA, log: logA, args: ['run'] })
-              const restored = yield* Effect.orDie(fs.readFileString(path.join(rootA, INCREMENTAL_FILE)))
-              yield* writeFiles(rootB, [[SOURCES_FILE, restored]])
-              const restoredPlan = yield* planOf(rootB, path.join(outside, 'restored.json'))
-              const rerun = yield* runCounted({ root: rootB, log: logB, args: ['run'] })
-              return { ownRun, ownPlan, otherRun, restoredPlan, rerun }
-            })),
-        ),
-        Then(
-          "B's re-run executes no test, scores as its first run and says it skipped the other root's report, and its plan is unchanged by the restore",
-        )(
-          (s, expect) =>
-            expect({
-              exits: [
-                s.observed.ownRun,
-                s.observed.ownPlan,
-                s.observed.otherRun,
-                s.observed.restoredPlan,
-                s.observed.rerun,
-              ].map(exitOf),
-              ownRunStatuses: statusesOf(s.observed.ownRun.scored),
-              rerunExecutions: s.observed.rerun.executions,
-              rerunScored: s.observed.rerun.scored,
-              rerunNamesSkippedReport: s.observed.rerun.output.includes(
-                'Skipped saved dry-run coverage: 1 recorded under another project root, 0 with no recorded root',
-              ),
-              restoredPlan: s.observed.restoredPlan.plan,
-            }).toEqual({
-              exits: [0, 0, 0, 0, 0],
-              ownRunStatuses: ['Killed', 'NoCoverage'],
-              rerunExecutions: 0,
-              rerunScored: s.observed.ownRun.scored,
-              rerunNamesSkippedReport: true,
-              restoredPlan: s.observed.ownPlan.plan,
-            }),
         ),
       ),
     )

@@ -167,11 +167,19 @@ export const exec = (
   }).pipe(Effect.map((output) => ({ exitCode: output.code, stdout: output.stdout(), stderr: output.stderr() })))
 }
 
-export type GuestFileReader = (relativePath: string) => Promise<string>
+export interface GuestEntry {
+  readonly name: string
+  readonly isDirectory: boolean
+}
+
+export interface GuestFiles {
+  readonly read: (relativePath: string) => Promise<string>
+  readonly list: (relativePath: string) => Promise<ReadonlyArray<GuestEntry>>
+}
 
 export interface StreamedExecOptions {
   readonly env: Record<string, string>
-  readonly interruptOnLine: (line: string, readGuestFile: GuestFileReader) => Promise<boolean>
+  readonly interruptOnLine: (line: string, guestFiles: GuestFiles) => Promise<boolean>
 }
 
 export interface StreamedExecResult {
@@ -187,7 +195,7 @@ const LINE_FEED = '\n'
 const drainStreamedExec = async (
   handle: ExecHandle,
   options: StreamedExecOptions,
-  readGuestFile: GuestFileReader,
+  guestFiles: GuestFiles,
 ): Promise<StreamedExecResult> => {
   const stdoutDecoder = new TextDecoder()
   const stderrDecoder = new TextDecoder()
@@ -203,7 +211,7 @@ const drainStreamedExec = async (
       return
     }
     consulting = true
-    options.interruptOnLine(line, readGuestFile)
+    options.interruptOnLine(line, guestFiles)
       .then(async (decided) => {
         consulting = false
         if (!decided || interrupted) {
@@ -243,8 +251,18 @@ const drainStreamedExec = async (
   return { exitCode, stdout: stdout.join(''), stderr: stderr.join(''), interrupted }
 }
 
-const guestFileReader = (forked: SandboxFork): GuestFileReader => (relativePath) =>
-  sandboxOf(forked).fs().readToString(`${GuestJobs.GUEST_WORKROOT}/${relativePath}`)
+const guestPathOf = (relativePath: string): string => `${GuestJobs.GUEST_WORKROOT}/${relativePath}`
+
+const baseNameOf = (entryPath: string): string => entryPath.slice(entryPath.lastIndexOf('/') + 1)
+
+const guestFilesOf = (forked: SandboxFork): GuestFiles => ({
+  read: (relativePath) => sandboxOf(forked).fs().readToString(guestPathOf(relativePath)),
+  list: async (relativePath) =>
+    (await sandboxOf(forked).fs().list(guestPathOf(relativePath))).map((entry) => ({
+      name: baseNameOf(entry.path),
+      isDirectory: entry.kind === 'directory',
+    })),
+})
 
 export const execStreaming = (
   forked: SandboxFork,
@@ -258,7 +276,7 @@ export const execStreaming = (
         cmd,
         (builder) => builder.args(args).cwd(GuestJobs.GUEST_WORKROOT).envs(options.env),
       )
-      return await drainStreamedExec(handle, options, guestFileReader(forked))
+      return await drainStreamedExec(handle, options, guestFilesOf(forked))
     },
     catch: (cause) =>
       new SandboxForkFailure({ step: `stream ${argv.join(' ')}`, sandboxName: forked.name, detail: describe(cause) }),
@@ -267,7 +285,7 @@ export const execStreaming = (
 
 export const readFile = (forked: SandboxFork, relativePath: string): Effect.Effect<string, SandboxForkFailure> =>
   Effect.tryPromise({
-    try: () => sandboxOf(forked).fs().readToString(`${GuestJobs.GUEST_WORKROOT}/${relativePath}`),
+    try: () => guestFilesOf(forked).read(relativePath),
     catch: (cause) =>
       new SandboxForkFailure({ step: `read ${relativePath}`, sandboxName: forked.name, detail: describe(cause) }),
   })

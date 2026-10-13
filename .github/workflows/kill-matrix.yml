@@ -219,6 +219,12 @@ jobs:
             mkdir -p "$KILL_MATRIX_OUT/$dir"
             cp "$merged" "$KILL_MATRIX_OUT/$dir/stryker-incremental.json"
           done
+          report="reports/mutation/mutation.json"
+          if [ ! -f "$report" ]; then
+            echo "::error title=No kill matrix report::$report is missing, so the merged run recorded no mutant verdicts"
+            exit 1
+          fi
+          cp "$report" "$KILL_MATRIX_OUT/mutation.json"
 
       - name: Summarise the kill matrix
         run: |
@@ -236,10 +242,13 @@ jobs:
           const unreported = []
           let corpusKilled = 0
           let corpusMulti = 0
+          const report = JSON.parse(readFileSync(`${process.env.KILL_MATRIX_OUT}/mutation.json`, 'utf8'))
+          const files = Object.entries(report.files ?? {})
           for (const project of process.env.PROJECTS.split(',').map((p) => p.trim()).filter(Boolean)) {
-            const report = JSON.parse(readFileSync(`${process.env.KILL_MATRIX_OUT}/${project}/stryker-incremental.json`, 'utf8'))
-            if (report.mutantSetPolicy !== 'full') notFull.push(`${project} (${report.mutantSetPolicy})`)
-            const mutants = Object.values(report.files ?? {}).flatMap((file) => file.mutants ?? [])
+            const incremental = JSON.parse(readFileSync(`${process.env.KILL_MATRIX_OUT}/${project}/stryker-incremental.json`, 'utf8'))
+            if (incremental.mutantSetPolicy !== 'full') notFull.push(`${project} (${incremental.mutantSetPolicy})`)
+            const prefix = `${project.split(/[/\\]+/).filter(Boolean).join('/')}/`
+            const mutants = files.filter(([file]) => file.startsWith(prefix)).flatMap(([, file]) => file.mutants ?? [])
             const reported = new Set(mutants.map((mutant) => mutant.id))
             const missing = (planned.get(project) ?? []).filter((id) => !reported.has(id))
             if (missing.length > 0) unreported.push(`${project}: ${missing.length} planned ids missing, e.g. ${missing.slice(0, 5).join(' ')}`)

@@ -66,6 +66,7 @@ export interface CheckerResourceService {
   ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | Checker.CheckerFailed>
   readonly digest: (
     checkerName: string,
+    scope: 'config' | 'program',
   ) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
 }
 
@@ -133,8 +134,8 @@ const groupOf = (self: CheckerHandle, checkerName: string, mutants: readonly Che
     CheckerHandle.slot(self).group({ checkerName, mutants: [...mutants] }),
   )
 
-const digestOf = (self: CheckerHandle, checkerName: string) =>
-  CheckerHandle.slot(self).digest({ checkerName }).pipe(
+const digestOf = (self: CheckerHandle, checkerName: string, scope: 'config' | 'program') =>
+  CheckerHandle.slot(self).digest({ checkerName, scope }).pipe(
     Effect.withSpan(SpanTaxonomy.Spans.checkerDigest.name, { attributes: { 'stryker.checker.name': checkerName } }),
   )
 
@@ -173,14 +174,16 @@ export const group: {
 export const digest: {
   (
     checkerName: string,
+    scope: 'config' | 'program',
   ): (self: CheckerHandle) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
   (
     self: CheckerHandle,
     checkerName: string,
+    scope: 'config' | 'program',
   ): Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
 } = dual(
   (args) => isCheckerHandle(args[0]),
-  (self: CheckerHandle, checkerName: string) => digestOf(self, checkerName),
+  (self: CheckerHandle, checkerName: string, scope: 'config' | 'program') => digestOf(self, checkerName, scope),
 )
 
 export const makeCheckerHandle = (client: CheckerClient): CheckerHandle => CheckerHandle.make({}, client)

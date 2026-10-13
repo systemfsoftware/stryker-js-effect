@@ -417,7 +417,7 @@ const resolveBareSpecifierOf = (
         importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
     }))
 
-const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntrypoint.name)(function*(
+export const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntrypoint.name)(function*(
   specifier: string,
   basePath: string,
 ): Effect.fn.Return<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {

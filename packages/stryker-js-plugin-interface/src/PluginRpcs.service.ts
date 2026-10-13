@@ -14,6 +14,7 @@ import {
 } from './TestRunner.schema.js'
 
 import {
+  CheckerCapabilitiesRequest,
   CheckerCheckResult,
   CheckerDigestRequest,
   CheckerGroupResult,
@@ -77,10 +78,14 @@ const digest: TracedRpc<'digest', typeof CheckerDigestRequest, typeof ProgramDig
 
 const checkerCapabilities: TracedRpc<
   'capabilities',
-  typeof CheckerDigestRequest,
+  typeof CheckerCapabilitiesRequest,
   typeof CheckerCapabilities,
   typeof CheckerFailed
-> = Rpc.make('capabilities', { payload: CheckerDigestRequest, success: CheckerCapabilities, error: CheckerFailed })
+> = Rpc.make('capabilities', {
+  payload: CheckerCapabilitiesRequest,
+  success: CheckerCapabilities,
+  error: CheckerFailed,
+})
   .middleware(TraceContextMiddleware)
 
 const typeQuery: TracedRpc<'typeQuery', typeof TypeQueryRequest, typeof TypeQueryResponse, typeof TypeQueryRefused> =

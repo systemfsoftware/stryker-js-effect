@@ -11,6 +11,9 @@ import {
   ValidateOptionsCommand,
 } from '../run/validate-options-admission.workflow.js'
 
+const REMOVED_OPTION_WARNING =
+  'Removed stryker config option "incrementalSources" (removed-option): verdicts are now read from the verdict store; delete the option and set "verdictStore" to share verdicts between runs, shards or machines.'
+
 const commandOf = <A>(options: Record<string, A>): ValidateOptionsCommand =>
   ValidateOptionsCommand.make({ options, schema: {} })
 
@@ -82,6 +85,42 @@ describe('validateOptionsAdmission', () => {
       return ignoreStatic && perTest === false
         ? refusedWith(decision, 'ignoreStatic')
         : S.is(OptionsValidated)(decision)
+    },
+  )
+
+  it.prop(
+    '∀op_RemovedOption_≡IncrementalSourcesAlwaysWarnsWithCodeAndNextAction',
+    { of: [S.Boolean, S.Boolean], subject: validateOptionsAdmission },
+    (subject, [unknownOptions, present]) => {
+      const config = {
+        mutate: [],
+        ignoreStatic: false,
+        coverageAnalysis: 'perTest',
+        warnings: { unknownOptions },
+      }
+      const decision = decide(
+        subject,
+        present ? { ...config, incrementalSources: ['reports/other-shard.json'] } : config,
+      )
+      return S.is(OptionsValidated)(decision) &&
+        decision.warnings.includes(REMOVED_OPTION_WARNING) === present &&
+        decision.warnings.includes('Unknown stryker config option "incrementalSources".') === false
+    },
+  )
+
+  it.prop(
+    '∀u_UnknownOption_≡OtherUnknownOptionsStillWarnWhenRequested',
+    { of: [S.Boolean], subject: validateOptionsAdmission },
+    (subject, [unknownOptions]) => {
+      const decision = decide(subject, {
+        mutate: [],
+        ignoreStatic: false,
+        coverageAnalysis: 'perTest',
+        warnings: { unknownOptions },
+        mysteryOption: 1,
+      })
+      return S.is(OptionsValidated)(decision) &&
+        decision.warnings.some((warning) => warning.includes('"mysteryOption"')) === unknownOptions
     },
   )
 })

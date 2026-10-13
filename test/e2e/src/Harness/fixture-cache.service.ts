@@ -12,6 +12,7 @@ import {
   Match,
   Option,
   Path,
+  Record,
   Result,
   Schema,
   Scope,
@@ -65,7 +66,7 @@ export type BakePlatform =
 type StagePlatform = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 
 interface StagedClosure {
-  readonly dependencies: Readonly<Record<string, string>>
+  readonly fixtures: Readonly<Record<string, Readonly<Record<string, string>>>>
   readonly manifests: Readonly<Record<string, Schema.Json>>
 }
 
@@ -102,12 +103,15 @@ const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
 
+const ON_REQUEST_PACKAGES = ['@systemfsoftware/stryker-js-verdict-store-s3']
+
 const ENTRY_PACKAGES = [
   '@systemfsoftware/stryker-js',
   '@systemfsoftware/stryker-js-svelte',
   '@systemfsoftware/stryker-js-vitest-runner',
   '@systemfsoftware/stryker-js-typescript-checker',
-] as const
+  ...ON_REQUEST_PACKAGES,
+]
 
 type Argv = readonly [string, ...Array<string>]
 
@@ -269,13 +273,23 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     return kept.flat().sort()
   })
 
-const stageClosure = (destination: string, closure: StagedClosure) =>
+const plannedDependenciesOf = (closure: StagedClosure, fixtureId: string) =>
+  Option.match(Record.get(closure.fixtures, fixtureId), {
+    onNone: () =>
+      Effect.fail(
+        new PackFailure({ step: STEP_INSTALL_PLAN, detail: `no closure install was planned for ${fixtureId}` }),
+      ),
+    onSome: (dependencies) => Effect.succeed(dependencies),
+  })
+
+const stageClosure = (destination: string, fixtureId: string, closure: StagedClosure) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
+    const dependencies = yield* plannedDependenciesOf(closure, fixtureId)
     const manifestPath = path.join(destination, MANIFEST_FILE_NAME)
     const manifest = yield* Effect.orDie(Schema.decodeEffect(JsonText)(yield* fs.readFileString(manifestPath)))
-    yield* fs.writeFileString(manifestPath, jsonTextOf(withClosureDevDependencies(manifest, closure.dependencies)))
+    yield* fs.writeFileString(manifestPath, jsonTextOf(withClosureDevDependencies(manifest, dependencies)))
     const lockPath = path.join(destination, LOCKFILE_NAME)
     const lock = yield* Effect.option(Effect.flatMap(fs.readFileString(lockPath), Schema.decodeEffect(JsonText)))
     yield* Option.match(lock, {
@@ -301,7 +315,7 @@ const stageFixtures = (
         yield* fs.copy(path.join(environment.resourcesDir, fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
         yield* rewriteStagedManifests(fixtureId, destination, catalogs)
-        yield* stageClosure(destination, closure)
+        yield* stageClosure(destination, fixtureId, closure)
       }),
     { discard: true, concurrency: STAGE_CONCURRENCY },
   )
@@ -587,6 +601,7 @@ const stagedManifestsOf = (input: FixtureInput) =>
     (file) =>
       Schema.decodeEffect(Schema.fromJsonString(FixtureManifest))(new TextDecoder().decode(file.bytes)).pipe(
         Effect.map((manifest): StagedFixtureManifest => ({
+          fixture: input.fixtureId,
           path: `${input.fixtureId}/${file.relativePath}`,
           manifest,
         })),
@@ -609,14 +624,21 @@ const closureInstallOf = (
     const packed = yield* Effect.forEach(packsInput.packs, packedMemberOf)
     const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members: packed.map(({ member }) => member), fixtures, workspace })),
+      installClosure(
+        InstallClosureCommand.make({
+          members: packed.map(({ member }) => member),
+          fixtures,
+          workspace,
+          onRequest: ON_REQUEST_PACKAGES,
+        }),
+      ),
     ).pipe(
       Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
     )
     return {
-      dependencies: install.dependencies,
+      fixtures: Object.fromEntries(install.fixtures.map((planned) => [planned.fixture, planned.dependencies])),
       manifests: Object.fromEntries(packed.map(({ fileName, json }) => [fileName, json])),
-    }
+    } satisfies StagedClosure
   })
 
 const fixtureInputsOf = (

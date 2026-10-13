@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "runId": {
@@ -277,6 +277,10 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "checkerConfigChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "closureChanged": {
                     "type": "integer",
                     "minimum": 0
@@ -297,6 +301,14 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "entryUnreadable": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "storeUnavailable": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "noPriorRecord": {
                     "type": "integer",
                     "minimum": 0
@@ -310,9 +322,12 @@
                   "semanticsChanged",
                   "policyChanged",
                   "runInputsChanged",
+                  "checkerConfigChanged",
                   "closureChanged",
                   "timeoutUnreproduced",
                   "flakyDependency",
+                  "entryUnreadable",
+                  "storeUnavailable",
                   "noPriorRecord"
                 ],
                 "additionalProperties": true
@@ -373,7 +388,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "role": {
@@ -938,6 +953,10 @@
               "type": "integer",
               "minimum": 0
             },
+            "checkerConfigChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
             "closureChanged": {
               "type": "integer",
               "minimum": 0
@@ -958,6 +977,14 @@
               "type": "integer",
               "minimum": 0
             },
+            "entryUnreadable": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "storeUnavailable": {
+              "type": "integer",
+              "minimum": 0
+            },
             "noPriorRecord": {
               "type": "integer",
               "minimum": 0
@@ -971,9 +998,12 @@
             "semanticsChanged",
             "policyChanged",
             "runInputsChanged",
+            "checkerConfigChanged",
             "closureChanged",
             "timeoutUnreproduced",
             "flakyDependency",
+            "entryUnreadable",
+            "storeUnavailable",
             "noPriorRecord"
           ],
           "additionalProperties": true
@@ -1174,7 +1204,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "runId": {
@@ -1575,7 +1605,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "code": {
@@ -1720,7 +1750,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "code": {
@@ -1757,7 +1787,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "rule": {

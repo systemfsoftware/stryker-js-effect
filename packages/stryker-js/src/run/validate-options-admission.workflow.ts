@@ -149,6 +149,20 @@ const customValidationErrors = (options: Options.StrykerOptions): readonly strin
 
 const OPTIONS_ADDED_BY_STRYKER: readonly string[] = ['set', 'configFile', '$schema']
 
+const REMOVED_OPTIONS: Record<string, string> = {
+  incrementalSources:
+    'verdicts are now read from the verdict store; delete the option and set "verdictStore" to share verdicts between runs, shards or machines',
+}
+
+const isRemovedOptionName = (option: string): boolean => Object.hasOwn(REMOVED_OPTIONS, option)
+
+const removedOptionWarningsOf = (names: readonly string[]): readonly string[] =>
+  names
+    .filter((name) => name.endsWith('_comment') === false)
+    .filter((name) => OPTIONS_ADDED_BY_STRYKER.includes(name) === false)
+    .filter(isRemovedOptionName)
+    .map((name) => `Removed stryker config option "${name}" (removed-option): ${REMOVED_OPTIONS[name]}.`)
+
 const schemaPropertyNames = (schema: ValidationSchemaDocument): readonly string[] =>
   Match.value(schema['properties']).pipe(
     Match.when(isNonNullObject, (properties) => Object.keys(properties)),
@@ -163,6 +177,7 @@ const excessOptionNames = (
   return Object.keys(options)
     .filter((key) => key.endsWith('_comment') === false)
     .filter((key) => OPTIONS_ADDED_BY_STRYKER.includes(key) === false)
+    .filter((key) => isRemovedOptionName(key) === false)
     .filter((key) => schemaKeys.includes(key) === false)
 }
 
@@ -353,6 +368,7 @@ const markOptions = (
   options: Options.StrykerOptions,
   schema: ValidationSchemaDocument,
 ): readonly string[] => [
+  ...removedOptionWarningsOf(Object.keys(options)),
   ...excessOptionWarningsOf(options, schema),
   ...unserializableOptionsWarningsOf(options),
 ]
@@ -368,13 +384,21 @@ const validatedOf = (
         options,
         warnings: [...commandRunnerWarningsOf(options), ...markOptions(options, schema)],
       }),
-    onFalse: () => OptionsRefused.make({ errors: customErrors, warnings: commandRunnerWarningsOf(options) }),
+    onFalse: () =>
+      OptionsRefused.make({
+        errors: customErrors,
+        warnings: [...commandRunnerWarningsOf(options), ...removedOptionWarningsOf(Object.keys(options))],
+      }),
   })
 }
 
 const validationDecisionOf = (command: ValidateOptionsCommand): OptionsValidationDecision =>
   Result.match(decodeOptions(command.options), {
-    onFailure: (failure) => OptionsUndecodable.make({ message: failure.message, warnings: [] }),
+    onFailure: (failure) =>
+      OptionsUndecodable.make({
+        message: failure.message,
+        warnings: removedOptionWarningsOf(Object.keys(command.options)),
+      }),
     onSuccess: (options) => validatedOf(options, command.schema),
   })
 
