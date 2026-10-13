@@ -6,17 +6,17 @@ topic: contract-law-treeless-history
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan
 execution: code
-supersedes: docs/plans/2026-10-13-1946-fix-contract-law-treeless-history-plan.md
+supersedes: docs/plans/2026-10-13-2022-fix-contract-law-treeless-history-plan.md
 ---
 
 # Find the contract law's version commit in one fetch from a treeless clone - Plan
 
-This plan supersedes plan 1946. PR #349 implemented 1946 at `27e170749`, and its full-path review (run `20261013-201147-956b156e`) changed three parts of the contract:
+This plan supersedes plan 2022, which superseded the root-approved plan 1946.
 
-- KD1: one shared reader step, so the counted scenario grades the call `readWorkspace` makes;
-- KD2: a stricter probe, plus a full-clone assertion that can fail;
-- U1: a fixture whose manifest changes after the release, with rows that compare commit counts.
-  Everything else stands as written in 1946.
+- Plan 2022 was executed at `ce95938f6`. Its full-path review (run `20261013-202552-6497b0be`) found no P0 or P1.
+- The validator rejected both P2s.
+- Fixed here: R4 and U1 restate the failing-first numbers, which belonged to the 12-commit fixture, for the shipped fixture.
+- The reader, the scenario and every other part of 2022 are unchanged.
 
 ## Goal Capsule
 
@@ -37,7 +37,7 @@ Review status: written for root review. No branch and no code exist yet.
   - the real-workspace case, which stays live against the repository's own history.
 - R2. **One round trip.** In a partial clone that has `main`'s commits but not their trees, finding the version commit costs one fetch from the promisor remote, however many first-parent commits separate the version commit from the base. A full clone fetches nothing; today it fetches nothing either.
 - R3. **No budget games.** The 30,000 ms test timeout, CI's fetch filter (`ci.yml:48`, `ci.yml:84`), retries and skips are all unchanged. `.github/workflows/` stays untouched.
-- R4. **Failing first.** A new committed scenario counts the fetches the reader makes against a local `file://` origin with N first-parent commits after the version commit. It fails on today's reader with N fetches (12 for N = 12) and passes after the fix with 1. It counts round trips, not milliseconds, so it holds on a slow or loaded runner, and it needs no network.
+- R4. **Failing first.** A new committed scenario counts the round trips the reader makes to a local `file://` origin with N first-parent commits after the version commit. On today's reader the count grows with N; after the fix it is the same at every N (U1 rows). It counts round trips, not milliseconds, so it holds on a slow or loaded runner, and it needs no network.
 - R5. **Green on the exact head.** The PR's `check` runs the case in CI's real clone shape and passes.
 
 ### Out of scope
@@ -152,7 +152,7 @@ One commit, one PR off `main`, under `fix(stryker-js-cli-contract)`.
 
 - **Observed:**
   - With the fix, the treeless rows cost 1 tree prefetch plus 2 lazy blob fetches (`--filter=blob:none --stdin`) for the manifests the pickaxe compares, the same at 6 and 24 commits (GIT_TRACE2 on a shell replica).
-  - On `main`'s reader the replica costs 9 and 27, so both treeless rows are red.
+  - On `main`'s reader the count grows by one per commit: 9 and 27 on one shell replica, and 10 and 28 on two independent replicas from review run `20261013-202552-6497b0be`. Both treeless rows are red either way.
   - The first committed version of this scenario (12 commits, unchanged manifest) failed on `main`'s reader with 13 round trips (`27e170749` work log), then passed with the fix.
   - The full row fails for a reader that always prefetches: its round trips stay 0, but the clone gains a promisor remote.
 - **Admission** (`skill://test-layer-selection`): this is a "Known bug report / regression" deterministic test at integration altitude. It spawns real git, which the in-process gate refuses, because the subject is git's own fetch behaviour and no in-process stand-in reproduces lazy fetching. The file already spawns real git in its other `live` scenarios. The root ordered a committed failing-first measurement, and the deviation is declared in the PR body.
