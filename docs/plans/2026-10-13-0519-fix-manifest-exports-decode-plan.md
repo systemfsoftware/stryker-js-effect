@@ -2,7 +2,7 @@
 title: Manifest exports the resolver cannot read stop making the whole package.json unreadable - Plan
 type: fix
 date: 2026-10-13
-supersedes: docs/plans/2026-10-13-0239-fix-manifest-exports-decode-plan.md
+supersedes: docs/plans/2026-10-13-0441-fix-manifest-exports-decode-plan.md
 topic: manifest-exports-decode
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -14,10 +14,10 @@ execution: code
 ## Goal Capsule
 
 - **Objective.** A project that links a workspace package whose `package.json` declares `exports` in any shape Node accepts keeps its verdicts across an edit no test reaches, and re-tests them after an edit to the file the runtime loads.
-- **Means.** Decode every manifest key the resolver reads as plain JSON and interpret entries inside the pure decision, resolving each condition object to the file the runtime loads (KTD1, KTD2).
-- **Authority.** Conductor intent r41 (`.rulings/stream-d-r41-manifest-exports-intent.md`) as clarified by r46 (`.rulings/stream-d-r46-pr330-debate.md`) > this plan > the repo's packs and `CONSTITUTION.md`.
+- **Means.** Decode every manifest key the resolver reads into a tagged entry Type that has a variant for every JSON shape, and choose the target inside the pure decision by the entry's tag, resolving each condition object to the file the runtime loads (KTD1, KTD2).
+- **Authority.** Conductor intent r41 (`.rulings/stream-d-r41-manifest-exports-intent.md`) as clarified by r46 (`.rulings/stream-d-r46-pr330-debate.md`) and the root's r49 ruling on the schema (`.rulings/stream-d-r51b-prompt.md:3-6`) > this plan > the repo's packs and `CONSTITUTION.md`.
 - **Stop.** One PR off `origin/main` (#330), green on its exact head, with a patch changeset for `@systemfsoftware/stryker-js`, the review receipt and per-finding dispositions in its body.
-- **Why superseded.** U1-U3 of the 0239 plan shipped on `14a06fdab`. Its full-path review confirmed a P1: the first-value rule closes a `types`-first condition object over a `.d.ts` no runtime loads, so a runner that reports no `testFileModules` reuses a stale verdict after a runtime-only edit. r46 clarified that R3 means no correctness regression, not preserving a stale resolution. KTD2's condition rule, R3, OQ1 and the scope change with it, and U4 is added; the 0239 plan never reached `main` and is replaced in this PR.
+- **Why superseded.** The 0441 plan replaced the 0239 plan after its review confirmed a P1: the first-value rule closed a `types`-first condition object over a `.d.ts` no runtime loads. r46 clarified that R3 means no correctness regression, not preserving a stale resolution, which changed KTD2, R3, OQ1 and the scope, and added U4. Its U1-U4 shipped on `f6d463bec`. Its KTD1 then kept the manifest keys as `S.Json` and held the schema-laws `rich-type-over-foreign-encoded` rule for the root. The root's r49 ruling resolves that: the keys decode into a tagged entry Type in the schema file, and the target choice stays in the workflow. KTD1, U1 and the scope change with it. Neither earlier plan reached `main`; this plan replaces 0441 in this PR.
 
 ## Product Contract
 
@@ -46,7 +46,7 @@ The import closure decides which files a test file depends on. Incremental runs 
 - The condition rule: `@systemfsoftware/source` first (the workspace's own condition); otherwise the first key past `types` and `types@…` decides, and only `import`, `node` and `default` yield a target. `require`, `browser`, `module`, `module-sync`, `development` and user conditions leave the closure open, because the importer's syntax and the runner's resolver decide them and the static reader knows neither.
 - Array fallbacks keep the first-element rule. Node's `PACKAGE_TARGET_RESOLVE` continues past an element that is an invalid target or resolves to `null`, and never past a valid target whose file is missing; the first element yielding no target leaves the closure open, which is slow, never stale. Matching Node's continuation is not here.
 - Not here: Stream B's reuse suites (`plan-stream-location`, `incremental-reuse`, `lockfile-closure-digest` and the others). A new suite is added instead.
-- Not here: the schema-laws `rich-type-over-foreign-encoded` exception for decoding these keys as `S.Json`; it is held for the root's ruling.
+- In scope since r49: schema-laws `rich-type-over-foreign-encoded`. The root ruled that it and the workflow-only mutation ruling do not conflict (`.rulings/stream-d-r51b-prompt.md:3-6`): the codec is graded by its generated laws and the target choice by mutation, so no exception is recorded.
 
 ### Sources
 
@@ -62,8 +62,9 @@ The import closure decides which files a test file depends on. Incremental runs 
 
 ### Key Technical Decisions
 
-- KTD1. **`PackageManifestSchema` declares `exports`, `imports`, `main` and `module` as `S.optionalKey(S.Json)`.** The decode then fails only when `package.json` is not a JSON object. `main` and `module` are read as targets only when they are strings. `ExportEntrySchema` and its type are deleted along with their production uses. Rejected:
-  - Widening the `exports` schema to Node's grammar with a recursive `S.suspend` union. It still refuses the whole file on any shape outside the grammar, and it duplicates in the schema the reading the decision already does.
+- KTD1. **`PackageManifestSchema` keeps the foreign `package.json` as its Encoded side and decodes `exports`, `imports`, `main` and `module` into `PackageEntryField`** (r49). `PackageEntry` is a tagged tree with one variant per JSON shape: `EntryPath` (string), `EntryFallbacks` (array), `EntryMap` (object, key order kept), `EntryNull` and `EntryScalar` (number or boolean); an absent key is `EntryUndeclared`. The decode is total over JSON, so the manifest fails only when `package.json` is not a JSON object, and the generated round-trip, encode-stability and recursion laws grade the codec from the Type side. The schema holds no target choice: which condition, which fallback and which key form counts all stay in `selectManifestTarget`. `ExportEntrySchema` and its type are deleted along with their production uses. Rejected:
+  - `S.optionalKey(S.Json)` with the grammar read inside the decision (this plan's first KTD1). It keeps the producer's raw shape as the domain type, against `rich-type-over-foreign-encoded` rule 2.
+  - Widening the `exports` schema to Node's grammar (only the shapes Node accepts). It refuses the whole file on any shape outside the grammar, which is the defect the lesson records, and it moves the decision of what Node accepts into the codec, which mutation does not grade.
   - Widening `exports` only. It leaves `main`/`module` able to refuse the file, against the rule the lesson records.
 - KTD2. **One entry reader serves `exports` and `imports` at any depth, a present entry is final, and a condition object follows the runtime.**
   - Reading an entry:
@@ -87,12 +88,13 @@ The import closure decides which files a test file depends on. Incremental runs 
 ### Plan Gates (plan-discipline rule)
 
 - **Test-layer admission (`test-layer-selection`, `architect-property-tests` rule).** U2's laws draw the production `ManifestTargetCommand` schema and state relations over values derived from the draw. U3/U4 spawn the built CLI, which the skill's in-process gate refuses, but conductor intent r41 ("Ryan's rule") requires exactly this test and outranks the skill; the conflict is recorded here.
-- **Wiki probe.** `software-wiki` returned no document on reading `package.json` `exports`.
-- **Web probe.** Node's packages and ESM resolution documents (Sources).
+- **Wiki probe.** `software-wiki` returned no document on reading `package.json` `exports`, nor on decoding a foreign document into a total tagged union.
+- **Web probe.** Node's packages and ESM resolution documents (Sources). `PACKAGE_TARGET_RESOLVE` (Node `doc/api/esm.md`) branches on exactly these target kinds: a string, an array (it loops past invalid targets), a conditions object and `null`; anything else is an Invalid Package Target. KTD1's variants are those kinds, plus `EntryScalar` for the invalid numbers and booleans.
 - **Destructive review: assumptions it breaks.**
   - "First value is a safe approximation at any depth." It is not when the first branch is one no runtime takes (`types`); KTD2 now follows the runtime.
   - "A runner's observed modules make the static closure's file choice harmless." Only the Vitest runner reports them; KTD3 adds a runner that does not.
   - "An entry that yields nothing can fall back." It cannot: Node never falls back from a present entry.
+  - "A schema over a foreign document must either refuse or stay raw JSON." It need not: a decode with one variant per JSON shape is total, so the Type can be rich without refusing a file the reader could still use (KTD1).
 
 ### Sequencing
 
@@ -100,11 +102,11 @@ U1 → U2 → U3 → U4.
 
 ## Implementation Units
 
-### U1. Manifest keys decode as JSON, entries read at any depth
+### U1. Manifest keys decode into tagged entries, entries read at any depth
 
 - **Goal.** R1, R2, R4 at the decision.
-- **Files.** `packages/stryker-js/src/import-closure.schema.ts`; `packages/stryker-js/src/select-manifest-target.workflow.ts`; `packages/stryker-js/src/__tests__/select-manifest-target.workflow.property.test.ts` (types only).
-- **Approach.** KTD1 and KTD2. The lookup returns `Option<Option<string>>`: the outer layer says whether an entry exists, the inner one whether it yields a target.
+- **Files.** `packages/stryker-js/src/import-closure.schema.ts`; `packages/stryker-js/src/select-manifest-target.workflow.ts`; `packages/stryker-js/src/__tests__/select-manifest-target.workflow.property.test.ts` (fixtures built through the production codec).
+- **Approach.** KTD1 and KTD2. The decision dispatches exhaustively on the entry's tag. The lookup returns `Option<Option<string>>`: the outer layer says whether an entry exists, the inner one whether it yields a target. The laws keep writing manifests as `package.json` JSON and reach the decision through `PackageManifestSchema`, so they speak the grammar Node documents.
 
 ### U2. Laws for the decision
 
@@ -146,4 +148,4 @@ U1 → U2 → U3 → U4.
 - U1-U4 in one PR off `origin/main`, with a patch changeset for `@systemfsoftware/stryker-js`.
 - The lesson records the runtime-condition rule and its closure-only gate.
 - CI is green on the PR's exact head, except Bench's inherited budget aborts.
-- The PR body carries the two-sided results, the review receipt and every finding's disposition, with the schema-laws exception held for the root's ruling.
+- The PR body carries the two-sided results, the review receipt and every finding's disposition, each row naming its fixing commit.

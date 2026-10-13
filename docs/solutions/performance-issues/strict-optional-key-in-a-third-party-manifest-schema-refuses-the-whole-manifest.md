@@ -34,8 +34,8 @@ The import closure finds the files a test file depends on and digests them. Incr
 
 ## Solution
 
-- Decode the key as plain JSON, `imports: S.optionalKey(S.Json)`, so that key can never fail the decode.
-- Read entries one at a time in the pure decision `selectManifestTarget`. A string target, or a condition object whose chosen value is a string, resolves. Anything else gives `ManifestTargetMissing` for that one specifier, which opens only the closures that import it.
+- Decode the key into a tagged entry type that covers every JSON shape, so that key can never fail the decode. `PackageEntry` is `EntryPath | EntryFallbacks | EntryMap | EntryNull | EntryScalar` (a string, an array, an object, `null`, a number or boolean), and an absent key is `EntryUndeclared`. The foreign `package.json` stays the Encoded side; the decode is total, and the generated round-trip laws hold from the Type side (pack: schema-laws, `rich-type-over-foreign-encoded.md`).
+- Read entries one at a time in the pure decision `selectManifestTarget`, which dispatches on the entry's tag. A path, or a condition map whose chosen value is a path, resolves. Anything else gives `ManifestTargetMissing` for that one specifier, which opens only the closures that import it.
 - Regression gate: the import-closure integration scenario "Imports entries the resolver cannot read leave the rest of that package.json in force". A workspace package carries a nested-condition entry, a `null` entry and an array `imports` entry beside a valid `exports` map. A test file imports it through `exports` and must get a closed closure whose digest stays the same after an unrelated edit. With the strict key the scenario fails (`open: true`, the digest moves). With the fix it passes.
 
 ## Why This Works
@@ -49,7 +49,7 @@ Mechanism, in order:
 
 Before the change, the blast radius of an unsupported `imports` entry was nothing. After it, the blast radius was every test file that imports the package. The useful radius is only the closures that import that one `#` specifier.
 
-**Invariant: refuse at the granularity of use.** A schema that decodes a document another tool owns may refuse only what the reader would fail to use. A key whose grammar the reader handles only in part is decoded as `S.Json` and interpreted per entry inside the decision. The struct types only the keys that are needed whole.
+**Invariant: refuse at the granularity of use.** A schema that decodes a document another tool owns may refuse only what the reader would fail to use. A key whose grammar the reader handles only in part decodes into a tagged type whose variants cover every shape the document can hold, and the decision judges each entry by its tag. The struct types only the keys that are needed whole.
 
 ```ts
 // WRONG: one unsupported entry refuses exports, main and module too
@@ -57,12 +57,15 @@ const PackageManifestSchema = S.Struct({
   exports: S.optionalKey(S.Union([S.String, S.Record(S.String, ExportEntrySchema)])),
   imports: S.optionalKey(S.Record(S.String, ExportEntrySchema)),
 })
-
-// RIGHT: the key always decodes; the decision refuses one specifier
-const PackageManifestSchema = S.Struct({
-  imports: S.optionalKey(S.Json),
-})
-// selectManifestTarget: Predicate.isString(entry) -> target; condition object -> chosen string; else ManifestTargetMissing
+// RIGHT: the key always decodes into a tagged entry; the decision refuses one specifier
+const PackageEntryFieldFromKey = S.optionalKey(S.Json).pipe(
+  S.decodeTo(
+    PackageEntryFieldSchema,
+    SchemaTransformation.transformOptional({ decode: declaredFieldOf, encode: declaredJsonOf }),
+  ),
+)
+const PackageManifestSchema = S.Struct({ imports: PackageEntryFieldFromKey })
+// selectManifestTarget: EntryPath -> target; EntryMap -> chosen condition; any other tag -> ManifestTargetMissing
 ```
 
 The value is still decoded and never cast (pack: cell-architecture, `decode-never-cast.md`). Only the place where the typed refusal lands changes.
@@ -71,9 +74,9 @@ The value is still decoded and never cast (pack: cell-architecture, `decode-neve
 
 ## Prevention
 
-- Before you add a key to a schema over a document Stryker does not own, list every shape the owning tool accepts for that key. If the schema admits fewer shapes, decode the key as `S.Json` and refuse per entry in the decision.
+- Before you add a key to a schema over a document Stryker does not own, list every shape the owning tool accepts for that key. If the domain distinguishes fewer shapes, decode the key into a tagged type with a variant for each shape the document can hold, and refuse per entry in the decision.
 - Gate each such key with a scenario that puts an unsupported shape beside a supported field and asserts that the supported field still takes effect. A test that only uses valid shapes cannot see this failure. Here, the scenario named under Solution is the gate.
-- `exports`, `main` and `module` had the same flaw and are fixed the same way: every key of `PackageManifestSchema` decodes as `S.Json`, and `selectManifestTarget` reads each entry at any depth. A string is the target, an array yields its first element, `null` yields no target, and an `exports` object with no `.`-prefixed key is the root's conditions (Node's sugar for `{ ".": {...} }`); mixing both kinds of key yields no target, as Node refuses it. Nested conditions, array fallbacks, a top-level array, root conditions and a `null` subpath no longer fail the whole decode; the workspace's own `vitest-config`, `tsdown-config`, `stryker-config` and `oxlint-ignorer-config` manifests all use the nested shape `{ ".": { "import": { "types": "...", "default": "..." } } }`. Gate: the built-CLI feature "Reusing verdicts for tests that import a linked workspace package", whose outline runs each shape twice around an edit no test reaches.
+- `exports`, `main` and `module` had the same flaw and are fixed the same way: every key of `PackageManifestSchema` decodes into `PackageEntryField`, and `selectManifestTarget` reads each entry at any depth by its tag. A path is the target, fallbacks yield their first element, `EntryNull` yields no target, and an `exports` map with no `.`-prefixed key is the root's conditions (Node's sugar for `{ ".": {...} }`); mixing both kinds of key yields no target, as Node refuses it. Nested conditions, array fallbacks, a top-level array, root conditions and a `null` subpath no longer fail the whole decode; the workspace's own `vitest-config`, `tsdown-config`, `stryker-config` and `oxlint-ignorer-config` manifests all use the nested shape `{ ".": { "import": { "types": "...", "default": "..." } } }`. Gate: the built-CLI feature "Reusing verdicts for tests that import a linked workspace package", whose outline runs each shape twice around an edit no test reaches.
 - A condition object resolves to the file the runtime loads, never the first value. `@systemfsoftware/source` wins (the workspace's own condition); otherwise the first key past `types` and `types@…` decides: `import`, `node` or `default` is the target, and any other condition (`require`, `browser`, `module`, `development`, a user condition) yields no target, because the importer's syntax and the runner's resolver decide it and the static reader knows neither. Open is slow; a closure closed over a `.d.ts` no runtime loads is stale. The first-value rule closed `{ "types", "default" }` on the `.d.ts`, and only dry-run evidence (`CompleteDryRunResult.testFileModules`, which the Vitest runner reports and `analyzeImportClosure` adds to the closure) kept those verdicts honest. Gate: the same feature's runtime-edit outline with the `closure-only` test-runner fixture, which reports no `testFileModules`; it changes only the package's `.js` and expects every mutant tested again, and on the first-value rule its nested and flat `types`-first rows reused stale verdicts.
 
 ## Related Issues

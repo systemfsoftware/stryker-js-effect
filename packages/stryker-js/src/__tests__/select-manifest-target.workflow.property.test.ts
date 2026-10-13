@@ -2,14 +2,14 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
-import type * as S from 'effect/Schema'
+import * as S from 'effect/Schema'
 
 import {
   type ManifestTarget,
   ManifestTargetCommand,
   PackageExportRequest,
   PackageImportRequest,
-  type PackageManifest,
+  PackageManifestSchema,
 } from '../import-closure.schema.js'
 import { selectManifestTarget } from '../select-manifest-target.workflow.js'
 
@@ -31,29 +31,40 @@ const oneSegmentOf = (command: ManifestTargetCommand): string => textOf(command)
 
 const exportKeyOf = (subpath: string): string => (subpath.length === 0 ? '.' : `./${subpath}`)
 
+type ManifestWire = typeof PackageManifestSchema.Encoded
+
+const wireOf = (command: ManifestTargetCommand): ManifestWire =>
+  Result.getOrThrow(S.encodeResult(PackageManifestSchema)(command.manifest))
+
 const selected = (
   subject: SelectSubject,
-  manifest: PackageManifest,
+  wire: ManifestWire,
   request: PackageExportRequest | PackageImportRequest,
 ): string =>
-  Result.match(subject(ManifestTargetCommand.make({ manifest, request })), {
-    onFailure: () => 'refused',
-    onSuccess: (target) =>
-      Match.value(target).pipe(
-        Match.tagsExhaustive({
-          ManifestPathTarget: ({ target: path }) => `path:${path}`,
-          ManifestPackageTarget: ({ specifier }) => `package:${specifier}`,
-          ManifestTargetMissing: () => 'missing',
-        }),
-      ),
-  })
+  Result.match(
+    Result.flatMap(
+      S.decodeResult(PackageManifestSchema)(wire),
+      (manifest) => subject(ManifestTargetCommand.make({ manifest, request })),
+    ),
+    {
+      onFailure: () => 'refused',
+      onSuccess: (target) =>
+        Match.value(target).pipe(
+          Match.tagsExhaustive({
+            ManifestPathTarget: ({ target: path }) => `path:${path}`,
+            ManifestPackageTarget: ({ specifier }) => `package:${specifier}`,
+            ManifestTargetMissing: () => 'missing',
+          }),
+        ),
+    },
+  )
 
 const exported = (
   subject: SelectSubject,
   command: ManifestTargetCommand,
   exports: S.Json,
   subpath: string,
-) => selected(subject, { ...command.manifest, exports }, PackageExportRequest.make({ subpath }))
+) => selected(subject, { ...wireOf(command), exports }, PackageExportRequest.make({ subpath }))
 
 const ROOT_REQUEST = PackageExportRequest.make({ subpath: '' })
 
@@ -85,10 +96,10 @@ const targetOf = (command: ManifestTargetCommand): string => `./${oneSegmentOf(c
 
 const keysOf = (command: ManifestTargetCommand): ReadonlyArray<string> => ['outer', ...textOf(command).split('/')]
 
-const manifestExportsOf = (command: ManifestTargetCommand): S.Json => command.manifest.exports ?? null
+const manifestExportsOf = (command: ManifestTargetCommand): S.Json => wireOf(command).exports ?? null
 
 const imported = (subject: SelectSubject, command: ManifestTargetCommand, imports: S.Json, specifier: string) =>
-  selected(subject, { ...command.manifest, imports }, PackageImportRequest.make({ specifier }))
+  selected(subject, { ...wireOf(command), imports }, PackageImportRequest.make({ specifier }))
 
 describe('selectManifestTarget', () => {
   it.prop(
@@ -223,7 +234,7 @@ describe('selectManifestTarget', () => {
     '∀c_ManifestWithoutImports_≡EveryImportMissingWhateverItsExports',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const { imports: _dropped, ...withoutImports } = command.manifest
+      const { imports: _dropped, ...withoutImports } = wireOf(command)
       return selected(subject, withoutImports, PackageImportRequest.make({ specifier: `#${textOf(command)}` })) ===
         'missing'
     },
@@ -322,8 +333,8 @@ describe('selectManifestTarget', () => {
     (subject, [command]) => {
       const entry = manifestExportsOf(command)
       const main = targetOf(command)
-      const rootOf = (manifest: PackageManifest) => selected(subject, manifest, ROOT_REQUEST)
-      const declared = { imports: command.manifest.imports ?? null, exports: { '.': entry } }
+      const rootOf = (manifest: ManifestWire) => selected(subject, manifest, ROOT_REQUEST)
+      const declared = { imports: wireOf(command).imports ?? null, exports: { '.': entry } }
       return [
         rootOf({ ...declared, main }) === rootOf(declared),
         rootOf({ ...declared, exports: { './feature': entry }, main }) === `path:${main}`,
@@ -335,7 +346,7 @@ describe('selectManifestTarget', () => {
     '∀c_NullExports_≡ReadAsIfExportsWereAbsent',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const { exports: _dropped, ...withoutExports } = command.manifest
+      const { exports: _dropped, ...withoutExports } = wireOf(command)
       return selected(subject, { ...withoutExports, exports: null }, command.request) ===
         selected(subject, withoutExports, command.request)
     },
@@ -361,13 +372,14 @@ describe('selectManifestTarget', () => {
     '∀c_NonStringMainOrModule_≡ReadAsIfTheKeyWereAbsent',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const { main, module, ...rest } = command.manifest
+      const wire = wireOf(command)
+      const { main, module, ...rest } = wire
       const stringsOnly = {
         ...rest,
         ...(Predicate.isString(main) ? { main } : {}),
         ...(Predicate.isString(module) ? { module } : {}),
       }
-      return selected(subject, command.manifest, command.request) === selected(subject, stringsOnly, command.request)
+      return selected(subject, wire, command.request) === selected(subject, stringsOnly, command.request)
     },
   )
 })

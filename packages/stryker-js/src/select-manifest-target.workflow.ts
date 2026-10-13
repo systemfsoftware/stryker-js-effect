@@ -4,17 +4,19 @@ import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
-import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
+  type EntryMap,
   ManifestPackageTarget,
   ManifestPathTarget,
   type ManifestTarget,
   ManifestTargetCommand,
   ManifestTargetMissing,
   ManifestTargetSchema,
+  type PackageEntry,
+  type PackageEntryField,
   type PackageManifest,
 } from './import-closure.schema.js'
 
@@ -44,22 +46,18 @@ interface PatternMatch {
   readonly captured: string
 }
 
-const isEntryMap = (value: S.Json): value is S.JsonObject => Predicate.isObject(value)
+type EntryTable = EntryMap['entries']
 
-const ownValueOf = (record: S.JsonObject, key: string): Option.Option<S.Json> =>
+const ownValueOf = (record: EntryTable, key: string): Option.Option<PackageEntry> =>
   Boolean.match(Object.hasOwn(record, key), {
     onTrue: () => Option.fromUndefinedOr(record[key]),
     onFalse: () => Option.none(),
   })
 
-const stringOf = (value: S.Json | undefined): Option.Option<string> => Option.liftPredicate(value, Predicate.isString)
-
-const isEntryList = (value: S.Json): value is ReadonlyArray<S.Json> => Array.isArray(value)
-
 const isTypeCondition = (key: string): boolean =>
   [key === TYPE_CONDITION, key.startsWith(VERSIONED_TYPE_CONDITION_PREFIX)].some((flag) => flag)
 
-const runtimeConditionValueOption = (conditions: S.JsonObject): Option.Option<S.Json> =>
+const runtimeConditionValueOption = (conditions: EntryTable): Option.Option<PackageEntry> =>
   Option.flatMap(
     Option.filter(
       Arr.findFirst(Object.keys(conditions), (key) => !isTypeCondition(key)),
@@ -68,21 +66,24 @@ const runtimeConditionValueOption = (conditions: S.JsonObject): Option.Option<S.
     (key) => ownValueOf(conditions, key),
   )
 
-const conditionValueOption = (conditions: S.JsonObject): Option.Option<S.Json> =>
+const conditionValueOption = (conditions: EntryTable): Option.Option<PackageEntry> =>
   Option.orElse(ownValueOf(conditions, PACKAGE_SOURCE_CONDITION), () => runtimeConditionValueOption(conditions))
 
-const entryTargetOfEntry = (entry: S.Json): Option.Option<string> =>
+const entryTargetOfEntry = (entry: PackageEntry): Option.Option<string> =>
   Match.value(entry).pipe(
-    Match.when(Predicate.isString, stringOf),
-    Match.when(isEntryList, (fallbacks) => Option.flatMap(Arr.head(fallbacks), entryTargetOfEntry)),
-    Match.when(isEntryMap, (conditions) => Option.flatMap(conditionValueOption(conditions), entryTargetOfEntry)),
-    Match.orElse(() => Option.none()),
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): Option.Option<string> => Option.some(path),
+      EntryFallbacks: ({ fallbacks }) => Option.flatMap(Arr.head(fallbacks), entryTargetOfEntry),
+      EntryMap: ({ entries }) => Option.flatMap(conditionValueOption(entries), entryTargetOfEntry),
+      EntryNull: (): Option.Option<string> => Option.none(),
+      EntryScalar: (): Option.Option<string> => Option.none(),
+    }),
   )
 
-const exactEntryOption = (entries: S.JsonObject, key: string): Option.Option<Option.Option<string>> =>
+const exactEntryOption = (entries: EntryTable, key: string): Option.Option<Option.Option<string>> =>
   Option.map(ownValueOf(entries, key), entryTargetOfEntry)
 
-const entryTargetOption = (entries: S.JsonObject, key: string): Option.Option<string> =>
+const entryTargetOption = (entries: EntryTable, key: string): Option.Option<string> =>
   Option.flatten(exactEntryOption(entries, key))
 
 const patternMatchOf = (matchKey: string) => (key: string): Option.Option<PatternMatch> => {
@@ -108,7 +109,7 @@ const PATTERN_PRECEDENCE: Order.Order<PatternMatch> = Order.combine(
   Order.mapInput(Order.flip(Order.Number), (match: PatternMatch) => match.key.length),
 )
 
-const patternEntryOption = (entries: S.JsonObject, matchKey: string): Option.Option<Option.Option<string>> =>
+const patternEntryOption = (entries: EntryTable, matchKey: string): Option.Option<Option.Option<string>> =>
   Option.map(
     Arr.head(Arr.sort(Arr.getSomes(Object.keys(entries).map(patternMatchOf(matchKey))), PATTERN_PRECEDENCE)),
     (match) =>
@@ -118,7 +119,7 @@ const patternEntryOption = (entries: S.JsonObject, matchKey: string): Option.Opt
       ),
   )
 
-const mapEntryOption = (entries: S.JsonObject, matchKey: string): Option.Option<Option.Option<string>> =>
+const mapEntryOption = (entries: EntryTable, matchKey: string): Option.Option<Option.Option<string>> =>
   Option.orElse(exactEntryOption(entries, matchKey), () => patternEntryOption(entries, matchKey))
 
 const isRootSubpath = (subpath: string): boolean => subpath.length === 0
@@ -129,7 +130,7 @@ const entryKeyOf = (subpath: string): string =>
     onFalse: () => `${PACKAGE_RELATIVE_PREFIX}${subpath}`,
   })
 
-const rootEntryOption = (root: S.Json, subpath: string): Option.Option<Option.Option<string>> =>
+const rootEntryOption = (root: PackageEntry, subpath: string): Option.Option<Option.Option<string>> =>
   Boolean.match(isRootSubpath(subpath), {
     onTrue: () => Option.some(entryTargetOfEntry(root)),
     onFalse: () => Option.none(),
@@ -137,19 +138,23 @@ const rootEntryOption = (root: S.Json, subpath: string): Option.Option<Option.Op
 
 const isSubpathKey = (key: string): boolean => key.startsWith(DEFAULT_ENTRY_KEY)
 
-const objectExportsOption = (entries: S.JsonObject, subpath: string): Option.Option<Option.Option<string>> =>
-  Match.value(Object.keys(entries)).pipe(
-    Match.when((keys) => keys.every(isSubpathKey), () => mapEntryOption(entries, entryKeyOf(subpath))),
-    Match.when((keys) => !keys.some(isSubpathKey), () => rootEntryOption(entries, subpath)),
+const objectExportsOption = (map: EntryMap, subpath: string): Option.Option<Option.Option<string>> =>
+  Match.value(Object.keys(map.entries)).pipe(
+    Match.when((keys) => keys.every(isSubpathKey), () => mapEntryOption(map.entries, entryKeyOf(subpath))),
+    Match.when((keys) => !keys.some(isSubpathKey), () => rootEntryOption(map, subpath)),
     Match.orElse(() => Option.some(Option.none<string>())),
   )
 
-const exportsEntryOption = (exports: S.Json, subpath: string): Option.Option<Option.Option<string>> =>
+const exportsEntryOption = (exports: PackageEntryField, subpath: string): Option.Option<Option.Option<string>> =>
   Match.value(exports).pipe(
-    Match.when(isEntryMap, (entries) => objectExportsOption(entries, subpath)),
-    Match.when(Predicate.isString, (root) => rootEntryOption(root, subpath)),
-    Match.when(isEntryList, (root) => rootEntryOption(root, subpath)),
-    Match.orElse(() => Option.none()),
+    Match.tagsExhaustive({
+      EntryMap: (map) => objectExportsOption(map, subpath),
+      EntryPath: (root) => rootEntryOption(root, subpath),
+      EntryFallbacks: (root) => rootEntryOption(root, subpath),
+      EntryNull: (): Option.Option<Option.Option<string>> => Option.none(),
+      EntryScalar: (): Option.Option<Option.Option<string>> => Option.none(),
+      EntryUndeclared: (): Option.Option<Option.Option<string>> => Option.none(),
+    }),
   )
 
 const hasInvalidSegment = (target: string): boolean =>
@@ -168,8 +173,20 @@ const mapPathTargetOf = (target: string): ManifestTarget =>
     onFalse: () => pathTargetOf(target),
   })
 
+const pathOf = (field: PackageEntryField): Option.Option<string> =>
+  Match.value(field).pipe(
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): Option.Option<string> => Option.some(path),
+      EntryFallbacks: (): Option.Option<string> => Option.none(),
+      EntryMap: (): Option.Option<string> => Option.none(),
+      EntryNull: (): Option.Option<string> => Option.none(),
+      EntryScalar: (): Option.Option<string> => Option.none(),
+      EntryUndeclared: (): Option.Option<string> => Option.none(),
+    }),
+  )
+
 const mainTargetOption = (manifest: PackageManifest): Option.Option<string> =>
-  Option.orElse(stringOf(manifest.main), () => stringOf(manifest.module))
+  Option.orElse(pathOf(manifest.main), () => pathOf(manifest.module))
 
 const rootFallbackOption = (manifest: PackageManifest, subpath: string): Option.Option<string> =>
   Option.flatMap(Option.liftPredicate(subpath, isRootSubpath), () => mainTargetOption(manifest))
@@ -181,16 +198,25 @@ const fallbackTargetOf = (manifest: PackageManifest, subpath: string): ManifestT
   Option.match(rootFallbackOption(manifest, subpath), { onNone: missingTarget, onSome: pathTargetOf })
 
 const exportTargetOf = (manifest: PackageManifest, subpath: string): ManifestTarget =>
-  Option.match(
-    Option.flatMap(Option.fromUndefinedOr(manifest.exports), (exports) => exportsEntryOption(exports, subpath)),
-    { onNone: () => fallbackTargetOf(manifest, subpath), onSome: declaredTargetOf },
+  Option.match(exportsEntryOption(manifest.exports, subpath), {
+    onNone: () => fallbackTargetOf(manifest, subpath),
+    onSome: declaredTargetOf,
+  })
+
+const importEntriesOption = (imports: PackageEntryField): Option.Option<EntryTable> =>
+  Match.value(imports).pipe(
+    Match.tagsExhaustive({
+      EntryMap: ({ entries }): Option.Option<EntryTable> => Option.some(entries),
+      EntryPath: (): Option.Option<EntryTable> => Option.none(),
+      EntryFallbacks: (): Option.Option<EntryTable> => Option.none(),
+      EntryNull: (): Option.Option<EntryTable> => Option.none(),
+      EntryScalar: (): Option.Option<EntryTable> => Option.none(),
+      EntryUndeclared: (): Option.Option<EntryTable> => Option.none(),
+    }),
   )
 
 const importTargetOption = (manifest: PackageManifest, specifier: string): Option.Option<string> =>
-  Option.flatMap(
-    Option.filter(Option.fromUndefinedOr(manifest.imports), isEntryMap),
-    (imports) => Option.flatten(mapEntryOption(imports, specifier)),
-  )
+  Option.flatMap(importEntriesOption(manifest.imports), (imports) => Option.flatten(mapEntryOption(imports, specifier)))
 
 const isInvalidImportTarget = (target: string): boolean =>
   [target.length === 0, ...INVALID_IMPORT_TARGET_PREFIXES.map((prefix) => target.startsWith(prefix))].some((flag) =>
