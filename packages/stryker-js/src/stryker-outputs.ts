@@ -12,22 +12,38 @@ type OutputOptions = Pick<
   'tempDirName' | 'incrementalFile' | 'progressStreamFile' | 'htmlReporter' | 'jsonReporter'
 >
 
-const OPTION_OUTPUTS = ['tempDirName', 'incrementalFile', 'progressStreamFile'] as const
+interface StrykerOutput {
+  readonly label: string
+  readonly fileOf: (options: OutputOptions) => string
+}
 
-const REPORTER_OUTPUTS = ['htmlReporter', 'jsonReporter'] as const
+const optionOutput = (option: 'tempDirName' | 'incrementalFile' | 'progressStreamFile'): StrykerOutput => ({
+  label: `\`${option}\``,
+  fileOf: (options) => options[option],
+})
 
-export const strykerOutputFilesOf = (options: OutputOptions): readonly string[] => [
-  ...OPTION_OUTPUTS.map((option) => options[option]),
-  DEFAULT_PROGRESS_STREAM_FILE,
-  ...REPORTER_OUTPUTS.map((reporter) => options[reporter].fileName),
-  sarifFileNameOf(options.jsonReporter.fileName),
-  REPRODUCERS_FILE,
+const reporterOutput = (reporter: 'htmlReporter' | 'jsonReporter'): StrykerOutput => ({
+  label: `\`${reporter}.fileName\``,
+  fileOf: (options) => options[reporter].fileName,
+})
+
+const fixedOutput = (file: string): StrykerOutput => ({ label: `\`${file}\``, fileOf: () => file })
+
+const STRYKER_OUTPUTS: ReadonlyArray<StrykerOutput> = [
+  optionOutput('tempDirName'),
+  optionOutput('incrementalFile'),
+  optionOutput('progressStreamFile'),
+  fixedOutput(DEFAULT_PROGRESS_STREAM_FILE),
+  reporterOutput('htmlReporter'),
+  reporterOutput('jsonReporter'),
+  {
+    label: 'the SARIF file beside `jsonReporter.fileName`',
+    fileOf: (options) => sarifFileNameOf(options.jsonReporter.fileName),
+  },
+  fixedOutput(REPRODUCERS_FILE),
 ]
 
-export const strykerOutputSources: readonly string[] = [
-  ...OPTION_OUTPUTS.map((option) => `\`${option}\``),
-  `\`${DEFAULT_PROGRESS_STREAM_FILE}\``,
-  ...REPORTER_OUTPUTS.map((reporter) => `\`${reporter}.fileName\``),
-  'the SARIF file beside `jsonReporter.fileName`',
-  `\`${REPRODUCERS_FILE}\``,
-]
+export const strykerOutputFilesOf = (options: OutputOptions): readonly string[] =>
+  STRYKER_OUTPUTS.map((output) => output.fileOf(options))
+
+export const strykerOutputSources: readonly string[] = STRYKER_OUTPUTS.map((output) => output.label)
