@@ -191,15 +191,22 @@ const readVersionCommitEvidence = (repositoryRoot: string, mainBase: string, ref
     return evidence
   })
 
+const isMissingTree = (repositoryRoot: string, tree: string) =>
+  Effect.gen(function*() {
+    const args = ['--no-lazy-fetch', 'cat-file', '-e', tree]
+    const probed = yield* runGit(repositoryRoot, args)
+    if (probed.exitCode === 0) return false
+    if (probed.exitCode === 1 && probed.stderr === '') return true
+    return yield* Effect.die(new Error(`git ${args.join(' ')} exited ${probed.exitCode}: ${probed.stderr}`))
+  })
+
 const prefetchFirstParentTrees = (repositoryRoot: string, mainBase: string) =>
   Effect.gen(function*() {
     const trees = (yield* gitOutput(repositoryRoot, ['log', '--first-parent', '--format=%T', mainBase]))
       .split('\n')
       .filter((tree) => tree !== '')
     const oldest = trees.at(-1)
-    const present = oldest === undefined ||
-      (yield* runGit(repositoryRoot, ['--no-lazy-fetch', 'cat-file', '-e', oldest])).exitCode === 0
-    if (!present) {
+    if (oldest !== undefined && (yield* isMissingTree(repositoryRoot, oldest))) {
       yield* gitOutput(repositoryRoot, [
         'fetch',
         '--no-tags',
@@ -209,6 +216,13 @@ const prefetchFirstParentTrees = (repositoryRoot: string, mainBase: string) =>
         ...trees,
       ])
     }
+  })
+
+const readMainBaseWithTrees = (repositoryRoot: string) =>
+  Effect.gen(function*() {
+    const mainBase = yield* readMainBase(repositoryRoot)
+    if (Result.isSuccess(mainBase)) yield* prefetchFirstParentTrees(repositoryRoot, mainBase.success)
+    return mainBase
   })
 
 const readJsonDocumentsAt = (repositoryRoot: string, commit: string, directory: string) =>
@@ -254,9 +268,8 @@ const repositoryRootOf = () =>
 const readWorkspace = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const mainBase = yield* readMainBase(repositoryRoot)
+    const mainBase = yield* readMainBaseWithTrees(repositoryRoot)
     if (Result.isFailure(mainBase)) return Result.fail<readonly ContractVersionFailure[]>([mainBase.failure])
-    yield* prefetchFirstParentTrees(repositoryRoot, mainBase.success)
     const packages: PackageContracts[] = []
     const refusals: ContractVersionFailure[] = []
     for (const ref of PACKAGES) {
@@ -371,12 +384,20 @@ const shallowCloneOf = (source: string, depth: number) =>
     return root
   }).pipe(Effect.orDie)
 
-const commitsOutsideThePackage = (root: string, count: number) =>
+const MANIFEST_EDIT_AFTER_RELEASE = 2
+
+const commitsAfterTheRelease = (root: string, version: string, count: number) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     yield* Effect.forEach(Array.from({ length: count }, (_, offset) => offset + 1), (index) =>
       Effect.gen(function*() {
+        if (index === MANIFEST_EDIT_AFTER_RELEASE) {
+          yield* fs.writeFileString(
+            path.join(root, SCRATCH_PACKAGE, MANIFEST_FILE),
+            `{ "name": "scratch", "version": "${version}", "private": true }\n`,
+          )
+        }
         yield* fs.writeFileString(path.join(root, 'NOTES'), `main moved on ${index}\n`)
         yield* gitOutput(root, ['add', '-A'])
         yield* gitOutput(root, [...COMMITTER, 'commit', '-q', '--no-verify', '-m', `moved on ${index}`])
@@ -425,9 +446,8 @@ const roundTripsOf = (counted: CountedClone) =>
 
 const pickVersionCommit = (root: string) =>
   Effect.gen(function*() {
-    const mainBase = yield* readMainBase(root)
+    const mainBase = yield* readMainBaseWithTrees(root)
     if (Result.isFailure(mainBase)) return yield* Effect.die(new Error(renderFailure(mainBase.failure)))
-    yield* prefetchFirstParentTrees(root, mainBase.success)
     const mainVersion = yield* readVersionAt(root, mainBase.success, SCRATCH_PACKAGE)
     return versionCommitOf(yield* readVersionCommitEvidence(root, mainBase.success, SCRATCH_REF, mainVersion))
   })
@@ -1125,48 +1145,66 @@ Feature('The released contract documents bound what the workspace may declare ne
     )
 
     scenarioOutline(
-      'Finding the version commit fetches the walked history at most once, however long main ran since the release',
+      'Finding the version commit costs the same round trips however long main ran since the release',
       [
         {
           clone: 'a treeless clone that holds main’s commits but none of their trees',
           filter: ['--filter=tree:0'],
-          roundTrips: 1,
+          commits: 6,
+          roundTrips: 3,
+          partial: true,
         },
-        { clone: 'a full clone', filter: [], roundTrips: 0 },
+        {
+          clone: 'a treeless clone that holds main’s commits but none of their trees',
+          filter: ['--filter=tree:0'],
+          commits: 24,
+          roundTrips: 3,
+          partial: true,
+        },
+        { clone: 'a full clone', filter: [], commits: 24, roundTrips: 0, partial: false },
       ],
       (row) =>
         Gherkin.Do.pipe(
-          Given('an origin whose main released 1.2.0 and then moved on by twelve commits outside the package')(
+          Given(
+            `an origin whose main released 1.2.0 over 1.1.0, then moved on by ${row.commits} commits, one of which edits the manifest and keeps its version`,
+          )(
             'source',
-            () => Effect.tap(releasedRepository(['1.2.0']), (source) => commitsOutsideThePackage(source, 12)),
+            () =>
+              Effect.tap(
+                releasedRepository(['1.1.0', '1.2.0']),
+                (source) => commitsAfterTheRelease(source, '1.2.0', row.commits),
+              ),
           ),
           Given(`${row.clone} of that origin, counting every round trip it makes to the origin after checkout`)(
             'counted',
             (s) => countedCloneOf(s.source, row.filter),
           ),
           When('the law picks the version commit in that clone')(
-            'picked',
+            'outcome',
             (s) =>
               Effect.gen(function*() {
                 const picked = yield* pickVersionCommit(s.counted.clone)
+                const promisor = yield* runGit(s.counted.clone, ['config', '--get', 'remote.origin.promisor'])
                 return {
-                  baseline: Result.match(picked, {
-                    onFailure: (failure) => failure._tag,
-                    onSuccess: (commit) => commit,
-                  }),
-                  released: (yield* gitOutput(s.source, ['rev-list', '--max-parents=0', 'main'])).trim(),
-                  roundTrips: yield* roundTripsOf(s.counted),
+                  picked: {
+                    baseline: Result.match(picked, {
+                      onFailure: (failure) => failure._tag,
+                      onSuccess: (commit) => commit,
+                    }),
+                    roundTrips: yield* roundTripsOf(s.counted),
+                    partial: promisor.exitCode === 0 && promisor.stdout.trim() === 'true',
+                  },
+                  released: (yield* gitOutput(s.source, ['rev-list', '-1', '--grep=^1.2.0$', 'main'])).trim(),
                 }
               }).pipe(Effect.ensuring(Effect.all([removeRepository(s.source), removeRepository(s.counted.root)]))),
           ),
-          Then('it names the commit that released 1.2.0, and fetched from the origin no more than the clone lacks')((
-            s,
-            expect,
-          ) =>
-            expect(s.picked).toEqual({
-              baseline: s.picked.released,
-              released: s.picked.released,
+          Then(
+            'it names the commit that released 1.2.0, in the round trips its clone shape costs whatever the commit count, and leaves a full clone full',
+          )((s, expect) =>
+            expect(s.outcome.picked).toEqual({
+              baseline: s.outcome.released,
               roundTrips: row.roundTrips,
+              partial: row.partial,
             })
           ),
         ),

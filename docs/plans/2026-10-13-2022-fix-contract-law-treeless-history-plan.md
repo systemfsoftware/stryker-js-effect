@@ -6,9 +6,17 @@ topic: contract-law-treeless-history
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan
 execution: code
+supersedes: docs/plans/2026-10-13-1946-fix-contract-law-treeless-history-plan.md
 ---
 
 # Find the contract law's version commit in one fetch from a treeless clone - Plan
+
+This plan supersedes plan 1946. PR #349 implemented 1946 at `27e170749`, and its full-path review (run `20261013-201147-956b156e`) changed three parts of the contract:
+
+- KD1: one shared reader step, so the counted scenario grades the call `readWorkspace` makes;
+- KD2: a stricter probe, plus a full-clone assertion that can fail;
+- U1: a fixture whose manifest changes after the release, with rows that compare commit counts.
+  Everything else stands as written in 1946.
 
 ## Goal Capsule
 
@@ -110,10 +118,14 @@ All options were measured on a fresh treeless clone of red `main` `02bd69908`, f
 
 ## Key decisions
 
-- **KD1. The prefetch lives in `readWorkspace`, once per run, before the per-package loop** (`:234-263`). Both packages' walks share one base, so one request covers both. `pickVersionCommit` (`:353-359`), which the temporary-repository scenarios use, gets the same step, so they exercise the same path.
-- **KD2. A missing tree, not a config key, decides whether to prefetch.** The reader looks up the root tree of the oldest first-parent commit it can see and checks it with `git --no-lazy-fetch cat-file -e <tree>`, which never fetches. Exit 0 means the trees are local (a full or shallow clone), and the step does nothing, so local full clones and every existing temporary repository behave exactly as today. Shallow-but-not-partial checkouts keep their `history-truncated` refusal (`:996`). Any other exit means the trees are missing, so the reader prefetches from `origin`, the remote it already reads `main` from (`MAIN_REF`, `:57`).
-  - Measured: the treeless clone exits 1 and the full worktree exits 0.
-  - Rejected detection: `extensions.partialClone`. The treeless clone carries `remote.origin.promisor true` and `remote.origin.partialclonefilter tree:0`, but no `extensions.partialclone`, so detecting on that key would silently skip the prefetch.
+- **KD1. One reader step, `readMainBaseWithTrees`, reads the merge base and then prefetches.** `readWorkspace` (`:269-297`) and `pickVersionCommit` (`:439-445`) both call it, so the counted scenario, which runs through `pickVersionCommit`, grades the same function `readWorkspace` uses. It runs once per run, before the per-package loop, so one request covers both packages' walks.
+- **KD2. A missing tree, not a config key, decides whether to prefetch.** The reader probes the root tree of the oldest first-parent commit it can see with `git --no-lazy-fetch cat-file -e <tree>`, which never fetches.
+  - Exit 0: the trees are local (a full or shallow clone), and nothing is fetched.
+  - Exit 1 with empty stderr: the object is missing, so the reader prefetches from `origin`, the remote it already reads `main` from (`MAIN_REF`, `:57`).
+  - Any other exit (for example 129 for an unsupported option) dies with git's stderr, like every other git read.
+  - Measured: a missing object exits 1 with 0 bytes of stderr, a bad option exits 129 with usage text, the treeless clone's oldest tree exits 1, and the full worktree's exits 0.
+  - **Why the check is load-bearing:** a filtered fetch in a full clone transfers nothing, but registers `origin` as a promisor remote (`remote.origin.promisor true`, `remote.origin.partialclonefilter blob:none`, `core.repositoryformatversion 1`). An always-prefetch reader would turn a developer's full clone into a partial clone.
+  - Rejected detection: `extensions.partialClone`. A `git clone --filter=tree:0` carries `remote.origin.promisor true` but no `extensions.partialclone`.
   - `--no-lazy-fetch` needs git 2.44 or later. CI runs git 2.55.0 (`check` log of run `38445827562`, checkout step).
 - **KD3. A failed prefetch fails the case like any other git read** (`gitOutput`, `:124-131`), with the remote's stderr. It is not retried, and the walk does not fall back to lazy fetching.
 - **KD4. The fetch is bounded by first-parent history, not the whole repository.** It requests only root trees, plus their subtrees through `--filter=blob:none`. Blobs still arrive lazily, and only for the manifests the pickaxe compares. 274 tree ids are about 11 KB of arguments, far under the argument limit.
@@ -125,28 +137,31 @@ One commit, one PR off `main`, under `fix(stryker-js-cli-contract)`.
 ### U1. Failing first: count the reader's round trips
 
 - **Test file:** `packages/stryker-js-cli-contract/tests/contract-version-law.integration.test.ts`.
-- **New scenario outline:** "Finding the version commit fetches the walked history at most once, however long main ran since the release", with `{ live: 'spawns real git against a local origin' }`. It has two examples:
-  - a `--filter=tree:0` clone, which expects 1 round trip;
-  - a full clone, which expects 0.
-- **Given** an origin repository (`uploadpack.allowFilter`, `uploadpack.allowAnySHA1InWant`) built with the file's own `commitVersion` helper (`:298-307`). It holds `packages/scratch` set to 1.2.0, then 12 first-parent commits that change only a file outside the package.
-- **And** a clone in the example's shape over `file://`, checked out, with `origin/main` at the tip. Its `remote.origin.uploadpack` points at a wrapper script in the temporary directory. The script appends one line per invocation, then runs `git-upload-pack`, so each line is one round trip to the origin. The count is reset after checkout.
-- **When** the reader finds the version commit (`pickVersionCommit`).
-- **Then** it names the 1.2.0 commit, and the origin served the example's number of round trips.
+- **New scenario outline:** "Finding the version commit costs the same round trips however long main ran since the release", with `{ live: 'spawns real git against a local origin' }`.
+- **Given** an origin repository built with the file's own `releasedRepository` (`1.1.0`, then `1.2.0`, then a notes commit). `commitsAfterTheRelease` then adds N commits; the second of them rewrites the scratch manifest and keeps version 1.2.0. The origin sets `uploadpack.allowFilter` and `uploadpack.allowAnySHA1InWant`.
+- **And** a clone in the row's shape over `file://`, whose `remote.origin.uploadpack` is a wrapper script that appends one line per invocation, then runs `git-upload-pack`. The count is reset after checkout.
+- **When** the reader picks the version commit (`pickVersionCommit`).
+- **Then** the picked commit equals the origin's commit whose subject is `1.2.0` (read separately), the round trips equal the row's, and the clone's promisor state equals the row's.
+- **Rows:**
+
+  | Clone    | N  | Round trips | Promisor remote after |
+  | -------- | -- | ----------- | --------------------- |
+  | treeless | 6  | 3           | yes                   |
+  | treeless | 24 | 3           | yes                   |
+  | full     | 24 | 0           | no                    |
+
 - **Observed:**
-  - Today's reader fails the treeless example with 12 round trips. The offline probe gave 6/12/24 round trips for N = 6/12/24 without the prefetch, and 1/1/1 with it.
-  - The full example pins KD2: a reader that always prefetched would make 1 round trip and fail it.
-- **Admission** (`skill://test-layer-selection`):
-  - The table admits this as a "Known bug report / regression" deterministic test at integration altitude.
-  - Its in-process gate refuses spawning processes. The scenario still spawns git because the subject is git's own fetch behaviour, and no in-process stand-in reproduces lazy fetching.
-  - The file already spawns real git in its other `live` scenarios (`:947`, `:1024`, `:1029`, `:1055`).
-  - The root ordered a committed failing-first measurement for this P0.
-  - The deviation is declared here and in the PR body.
-- **Cleanup:** the scenario removes its temporary directories with `removeRepository` (`:361-362`).
+  - With the fix, the treeless rows cost 1 tree prefetch plus 2 lazy blob fetches (`--filter=blob:none --stdin`) for the manifests the pickaxe compares, the same at 6 and 24 commits (GIT_TRACE2 on a shell replica).
+  - On `main`'s reader the replica costs 9 and 27, so both treeless rows are red.
+  - The first committed version of this scenario (12 commits, unchanged manifest) failed on `main`'s reader with 13 round trips (`27e170749` work log), then passed with the fix.
+  - The full row fails for a reader that always prefetches: its round trips stay 0, but the clone gains a promisor remote.
+- **Admission** (`skill://test-layer-selection`): this is a "Known bug report / regression" deterministic test at integration altitude. It spawns real git, which the in-process gate refuses, because the subject is git's own fetch behaviour and no in-process stand-in reproduces lazy fetching. The file already spawns real git in its other `live` scenarios. The root ordered a committed failing-first measurement, and the deviation is declared in the PR body.
+- **Cleanup:** temporary directories are removed with `removeRepository`.
 
 ### U2. The fix
 
-- Add `prefetchFirstParentTrees(repositoryRoot, base)`. It lists `git log --first-parent --format=%T <base>` (commit objects only, nothing fetched) and checks the last listed tree with `git --no-lazy-fetch cat-file -e` (KD2). If that tree is missing, it runs one `git fetch --no-tags --no-write-fetch-head --filter=blob:none origin <listed trees>` through `gitOutput`. If the tree is present, it does nothing.
-- Call it in `readWorkspace` right after `readMainBase` succeeds, and in `pickVersionCommit`.
+- Add `isMissingTree` (KD2), `prefetchFirstParentTrees(repositoryRoot, base)` and `readMainBaseWithTrees` (KD1). `prefetchFirstParentTrees` It lists `git log --first-parent --format=%T <base>` (commit objects only, nothing fetched) and checks the last listed tree with `git --no-lazy-fetch cat-file -e` (KD2). If that tree is missing, it runs one `git fetch --no-tags --no-write-fetch-head --filter=blob:none origin <listed trees>` through `gitOutput`. If the tree is present, it does nothing.
+- `readWorkspace` and `pickVersionCommit` read the merge base through `readMainBaseWithTrees`.
 - Nothing else in the file changes: no decision code, no scenario, no timeout.
 
 ### U3. Record
@@ -159,8 +174,8 @@ One commit, one PR off `main`, under `fix(stryker-js-cli-contract)`.
 Everything runs for the changed package only. There is no local mutation run and no workspace-wide typecheck.
 
 1. **Red before.** The U1 scenario on today's reader fails with 12 round trips. The run is recorded in the PR body, with the reader change stashed.
-2. **Green after.** `pnpm --filter @systemfsoftware/stryker-js-cli-contract exec vitest run tests/contract-version-law.integration.test.ts` passes all 34 cases (32 today plus the two examples of U1), with the 30,000 ms timeout unchanged.
-3. **CI shape, locally.** In a fresh `--filter=tree:0` clone of the PR head (the `/tmp/p0-cvl` probe), the real-workspace case passes with at most 3 fetch processes, and its time is recorded.
+2. **Green after.** `pnpm --filter @systemfsoftware/stryker-js-cli-contract exec vitest run tests/contract-version-law.integration.test.ts` passes all 35 cases (32 today plus the three rows of U1), with the 30,000 ms timeout unchanged.
+3. **CI shape, locally.** In a fresh `--filter=tree:0` clone of the PR head (the `/tmp/p0-cvl` probe), the real-workspace case passes, and its time and fetches are recorded: 1,779 ms, with 1 prefetch plus 4 lazy blob fetches, against a timeout and 45 fetches on `main`'s reader.
 4. **Package gates.** For the package only: `typecheck`, `lint`, `lint:tsgo` and the full `test`, plus `dprint check` and the changeset validator.
 5. **CI.** `check` is green on the PR's exact head. The body quotes the case's duration from the `check` log if it is printed; it is printed only on failure, so a green `check` that executed the task is the evidence.
 6. **Review.** A full report-only `ce-code-review` on the final head, served by a non-Claude model (DeepSeek or MiniMax, no Grok). The served model and every finding's disposition go in the PR body.
