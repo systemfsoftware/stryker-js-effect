@@ -90,6 +90,8 @@ jobs:
             outcome="none (the leg rebuilds its closure)"
           fi
           echo "- e2e ($SHARD) Turbo cache: $outcome" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the lane's packages without the lane's arguments, which Turbo hashes into every task
+        run: pnpm exec turbo run build --filter=@systemfsoftware/stryker-e2e^...
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
       - name: Install process-compose (pinned)
@@ -103,7 +105,7 @@ jobs:
           pnpm lgtm:up
       - name: E2E lane
         run: >-
-          pnpm test:e2e -- ${{ matrix.files }}
+          pnpm test:e2e --only -- ${{ matrix.files }}
           ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
       - name: Export telemetry
         if: always()
