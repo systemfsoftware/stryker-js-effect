@@ -2,7 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { LegMeasured, LegNotMeasured } from '../bench-report.schema.js'
+import { LegClockBehind, LegElapsed } from '../leg-clock.schema.js'
 import { measureLeg, MeasureLegCommand } from '../measure-leg.workflow.js'
 
 describe('measureLeg', () => {
@@ -12,10 +12,10 @@ describe('measureLeg', () => {
     (subject, [rawStart, rawElapsed]) => {
       const startedAtSeconds = Math.abs(rawStart)
       const elapsedMs = Math.abs(rawElapsed)
-      const leg = Result.getOrThrow(
+      const elapsed = Result.getOrThrow(
         subject(MeasureLegCommand.make({ startedAtSeconds, nowMs: startedAtSeconds * 1000 + elapsedMs })),
       )
-      return S.is(LegMeasured)(leg) && leg.wallMs === elapsedMs
+      return S.is(LegElapsed)(elapsed) && elapsed.wallMs === elapsedMs
     },
   )
 
@@ -24,10 +24,10 @@ describe('measureLeg', () => {
     { of: [S.Int, S.Int], subject: measureLeg },
     (subject, [rawStart, rawBehind]) => {
       const startedAtSeconds = Math.abs(rawStart)
-      const leg = Result.getOrThrow(
+      const elapsed = Result.getOrThrow(
         subject(MeasureLegCommand.make({ startedAtSeconds, nowMs: startedAtSeconds * 1000 - Math.abs(rawBehind) - 1 })),
       )
-      return S.is(LegNotMeasured)(leg)
+      return S.is(LegClockBehind)(elapsed)
     },
   )
 })

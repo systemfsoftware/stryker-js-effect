@@ -1,8 +1,8 @@
+import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchSide } from '../bench-run.schema.js'
 import { RunPathRestored, RunPathUnrestored } from '../run-path.schema.js'
 import { settleRunPath, SettleRunPathCommand } from '../settle-run-path.workflow.js'
 

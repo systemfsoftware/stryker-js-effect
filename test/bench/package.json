@@ -14,22 +14,29 @@
   "scripts": {
     "bench": "tsx --conditions=@systemfsoftware/source src/main.ts",
     "typecheck": "tsc -b",
+    "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
-    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/tsgo": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-e2e-core": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/vitest": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "effect": "catalog:",
+    "fast-check": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "engines": {
     "node": ">=24.13.1"

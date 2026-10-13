@@ -13,11 +13,10 @@ import {
   type BenchRun,
   BenchRunMeasured,
   type BenchSide,
+  LegMeasured,
   LegNotMeasured,
   LegTargetMs,
   type LegTime,
-  measureLeg,
-  MeasureLegCommand,
   renderBenchReport,
   RenderBenchReportCommand,
   type SetupStep,
@@ -37,6 +36,8 @@ import * as S from 'effect/Schema'
 
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { BenchTarget } from './bench-target.schema.js'
+import type { LegClock } from './leg-clock.schema.js'
+import { measureLeg, MeasureLegCommand } from './measure-leg.workflow.js'
 import { prepareSide } from './prepare-side.service.js'
 import { runBench } from './run-bench.service.js'
 
@@ -130,10 +131,16 @@ const benchEnv = Effect.all({
   stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
 })
 
+const legTimeOf = (clock: LegClock): LegTime =>
+  Match.valueTags(clock, {
+    LegElapsed: (elapsed): LegTime => LegMeasured.make({ wallMs: elapsed.wallMs, targetMs: LegTargetMs.literal }),
+    LegClockBehind: (): LegTime => LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
+  })
+
 const legOf = (env: Pick<BenchEnv, 'jobStartedAtSeconds'>): Effect.Effect<LegTime> =>
-  Effect.map(
-    Clock.currentTimeMillis,
-    (nowMs) => Result.merge(measureLeg(MeasureLegCommand.make({ startedAtSeconds: env.jobStartedAtSeconds, nowMs }))),
+  Clock.currentTimeMillis.pipe(
+    Effect.map((nowMs) => measureLeg(MeasureLegCommand.make({ startedAtSeconds: env.jobStartedAtSeconds, nowMs }))),
+    Effect.map((decided) => decided.pipe(Result.merge, legTimeOf)),
   )
 
 const reportRunsOf = (runs: ReadonlyArray<BenchRun>): Array<BenchReportRun> =>

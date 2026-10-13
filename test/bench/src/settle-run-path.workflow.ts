@@ -1,9 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchSide } from './bench-run.schema.js'
 import { RunPathRestored, RunPathUnrestored } from './run-path.schema.js'
 
 export class SettleRunPathCommand extends S.TaggedClass<SettleRunPathCommand>()('SettleRunPathCommand', {

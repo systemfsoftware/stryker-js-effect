@@ -1,8 +1,7 @@
+import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
 import * as S from 'effect/Schema'
 
-import { BenchSide } from './bench-run.schema.js'
-
-const RunPathPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/RunPathPlan')
+const RunPathPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathPlan')
 type RunPathPlanTypeId = typeof RunPathPlanTypeId
 
 export class RunPathMoveIn extends S.TaggedClass<RunPathMoveIn>()('RunPathMoveIn', {
@@ -35,7 +34,7 @@ export class RunPathOutsideTree extends S.TaggedError<RunPathOutsideTree>()('Run
   }
 }
 
-const RunPathRestoredTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/RunPathRestored')
+const RunPathRestoredTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathRestored')
 type RunPathRestoredTypeId = typeof RunPathRestoredTypeId
 
 export class RunPathRestored extends S.TaggedClass<RunPathRestored>()('RunPathRestored', {

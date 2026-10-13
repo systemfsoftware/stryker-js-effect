@@ -1,9 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { BenchSide } from '@systemfsoftware/stryker-e2e-core'
 import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchSide } from './bench-run.schema.js'
 import { RunPathMoveIn, RunPathOccupied, RunPathOutsideTree, RunPathPlan } from './run-path.schema.js'
 
 export class PlanRunPathCommand extends S.TaggedClass<PlanRunPathCommand>()('PlanRunPathCommand', {
