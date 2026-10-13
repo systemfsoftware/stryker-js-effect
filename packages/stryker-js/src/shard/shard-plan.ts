@@ -12,6 +12,10 @@ import * as S from 'effect/Schema'
 import type { GitCommandFailed } from '../git-diff.schema.js'
 import { GitDiff } from '../git-diff.service.js'
 import { admitPlanHead, AdmitPlanHeadCommand, type AdmitPlanHeadError } from './admit-plan-head.workflow.js'
+import {
+  describeMissingShardMutants,
+  DescribeMissingShardMutantsCommand,
+} from './describe-missing-shard-mutants.workflow.js'
 import { ShardPlanInvalid, ShardPlanMutantsMissing } from './shard-plan.schema.js'
 
 export interface LoadedShardPlan {
@@ -20,6 +24,12 @@ export interface LoadedShardPlan {
   readonly directory: string
 }
 
+const missingIdsTextOf = (missingIds: ReadonlyArray<string>): string =>
+  Result.getOrElse(
+    describeMissingShardMutants(DescribeMissingShardMutantsCommand.make({ missingIds: [...missingIds] })),
+    (neverError) => neverError,
+  ).text
+
 export const missingPlannedMutants: (input: {
   readonly planFile: string
   readonly planned: ReadonlyArray<string>
@@ -27,7 +37,15 @@ export const missingPlannedMutants: (input: {
 }) => Option.Option<ShardPlanMutantsMissing> = ({ planFile, planned, discovered }) => {
   const discoveredIds = new Set(discovered)
   const missingIds = Arr.filter(Arr.dedupe(planned), (id) => !discoveredIds.has(id))
-  return Option.map(Arr.head(missingIds), () => ShardPlanMutantsMissing.make({ planFile, missingIds }))
+  return Option.map(
+    Arr.head(missingIds),
+    () =>
+      ShardPlanMutantsMissing.make({
+        planFile,
+        missingIds,
+        missingIdsText: missingIdsTextOf(missingIds),
+      }),
+  )
 }
 
 const decodeShardPlan = S.decodeUnknownResult(S.fromJsonString(ShardPlan))
