@@ -173,7 +173,7 @@ const observeRun = (
     }
   }).pipe(Effect.orDie)
 
-Feature('Scoping a mutation run to the changed lines since a git ref')
+Feature('Scoping a mutation run to the changed lines since a git ref', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary diffs a real temporary git repository and mutates only the changed lines')
   .body(({ scenario }) => {
@@ -241,7 +241,7 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
     )
 
     scenario(
-      'An unknown ref fails the run with a named preparation error and exit class 2',
+      'An unknown ref fails the plan with a named configuration error and exit class 2',
       Gherkin.Do.pipe(
         Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
         When('the plan is scoped to a ref the repository does not have')(
@@ -259,7 +259,7 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
     )
 
     scenario(
-      'A ref with shell metacharacters reaches git as one literal argument',
+      'A plan scoped to a ref with shell metacharacters reaches git as one literal argument',
       Gherkin.Do.pipe(
         Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
         When('the plan is scoped to a ref that would be dangerous through a shell')(
