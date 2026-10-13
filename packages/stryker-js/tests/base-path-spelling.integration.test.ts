@@ -61,6 +61,7 @@ interface ApiRun {
 const runThroughApi = (
   basePath: string,
   log: string,
+  reportsRoot: string = basePath,
 ): Effect.Effect<ApiRun, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const before = yield* lineCountOf(log)
@@ -71,17 +72,17 @@ const runThroughApi = (
       ports,
     )
     const exit = yield* Engine.mutationTestCell
-      .run({ cliOptions: optionsOf(basePath), targetMutatePatterns: undefined })
+      .run({ cliOptions: optionsOf(reportsRoot), targetMutatePatterns: undefined })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     yield* Queue.end(queue).pipe(Effect.andThen(Queue.takeAll(queue)), Effect.ignore)
     return {
       failure: Exit.match(exit, { onFailure: (cause) => Cause.pretty(cause), onSuccess: () => '' }),
-      scored: yield* scoredMutantsOf(basePath),
+      scored: yield* scoredMutantsOf(reportsRoot),
       executions: (yield* lineCountOf(log)) - before,
     }
   })
 
-Feature('Running mutation testing through the API on a project reached through a symlink')
+Feature('Running mutation testing through the API on one project whose base path is spelled two ways')
   .withLayer(Engine.nodePlatformLayer)
   .live('the engine runs real projects in temporary directories through its public API')
   .body(({ scenario }) => {
@@ -118,6 +119,48 @@ Feature('Running mutation testing through the API on a project reached through a
             viaLinkScored: s.observed.fresh.scored,
             viaRealPathScored: s.observed.fresh.scored,
             viaRealPathExecutions: s.observed.fresh.executions,
+          })
+        ),
+      ),
+    )
+    scenario(
+      'A run from the absolute path of a project last run from a relative path scores every mutant as a fresh run',
+      Gherkin.Do.pipe(
+        Given(
+          'a project run from a path relative to the working directory, then from its absolute path, and a copy run fresh',
+        )(
+          'observed',
+          () =>
+            Effect.scoped(Effect.gen(function*() {
+              const path = yield* Path.Path
+              const log = yield* logFile
+              const project = yield* writeProject(apiProjectFiles(log))
+              const viaRelativePath = yield* runThroughApi(
+                path.relative(globalThis.process.cwd(), project),
+                log,
+                project,
+              )
+              const viaAbsolutePath = yield* runThroughApi(project, log)
+              const freshLog = yield* logFile
+              const fresh = yield* runThroughApi(yield* writeProject(apiProjectFiles(freshLog)), freshLog)
+              return { viaRelativePath, viaAbsolutePath, fresh }
+            })),
+        ),
+        Then('the run from the absolute path scores and executes exactly as the fresh run')((s, expect) =>
+          expect({
+            failures: [s.observed.viaRelativePath, s.observed.viaAbsolutePath, s.observed.fresh].map((run) =>
+              run.failure
+            ),
+            freshStatuses: statusesOf(s.observed.fresh.scored),
+            viaRelativePathScored: s.observed.viaRelativePath.scored,
+            viaAbsolutePathScored: s.observed.viaAbsolutePath.scored,
+            viaAbsolutePathExecutions: s.observed.viaAbsolutePath.executions,
+          }).toEqual({
+            failures: ['', '', ''],
+            freshStatuses: ['Killed', 'NoCoverage'],
+            viaRelativePathScored: s.observed.fresh.scored,
+            viaAbsolutePathScored: s.observed.fresh.scored,
+            viaAbsolutePathExecutions: s.observed.fresh.executions,
           })
         ),
       ),
