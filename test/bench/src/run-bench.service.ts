@@ -25,11 +25,19 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { abortRunPath, AbortRunPathCommand } from './abort-run-path.workflow.js'
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { planRunPath, PlanRunPathCommand } from './plan-run-path.workflow.js'
 import type { PreparedSide } from './prepared-side.js'
 import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
-import { RunPathMoveBack, type RunPathMoveIn, RunPathRunEnd } from './run-path.schema.js'
+import {
+  type RunPathFailure,
+  RunPathMoveBack,
+  type RunPathMoveIn,
+  RunPathMoveInFailed,
+  RunPathRunEnd,
+  RunPathUnlisted,
+} from './run-path.schema.js'
 import { settleRunPath, SettleRunPathCommand } from './settle-run-path.workflow.js'
 import { workloadDigest } from './workload-digest.service.js'
 
@@ -117,8 +125,14 @@ const streamLines = (
     Effect.map((text) => text.split('\n')),
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
   )
+
 const orchestrationFailed = (code: BenchOrchestrationFailed['code'], reason: string): BenchOrchestrationFailed =>
   BenchOrchestrationFailed.make({ code, reason })
+
+const abortOf = (failure: RunPathFailure): BenchOrchestrationFailed => {
+  const abort = Result.merge(abortRunPath(AbortRunPathCommand.make({ failure })))
+  return BenchOrchestrationFailed.make({ code: abort.code, reason: abort.reason })
+}
 
 const planned = (
   input: RunBenchInput,
@@ -127,14 +141,9 @@ const planned = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const entries = yield* fs.readDirectory(input.runnerTemp).pipe(
-      Effect.mapError((cause) =>
-        orchestrationFailed(
-          'run-path-move-failed',
-          `side ${prepared.side}: ${input.runnerTemp} could not be listed to check the run path is absent: ${cause.message}`,
-        )
-      ),
+      Effect.mapError((cause) => RunPathUnlisted.make({ side: prepared.side, runnerTemp: input.runnerTemp, cause })),
     )
-    const plan = yield* Result.match(
+    const plan = yield* Effect.fromResult(
       planRunPath(
         PlanRunPathCommand.make({
           runnerTemp: input.runnerTemp,
@@ -145,22 +154,12 @@ const planned = (
           cli: prepared.cli,
         }),
       ),
-      {
-        onFailure: (outside) => Effect.fail(orchestrationFailed('run-path-move-failed', outside.message)),
-        onSuccess: Effect.succeed,
-      },
     )
     return yield* Match.valueTags(plan, {
-      RunPathOccupied: (occupied) =>
-        Effect.fail(
-          orchestrationFailed(
-            'run-path-occupied',
-            `side ${occupied.side}: ${occupied.runPath} already exists before the side's tree moved in`,
-          ),
-        ),
-      RunPathMoveIn: (moveIn) => Effect.succeed(moveIn),
+      RunPathOccupied: (occupied): Effect.Effect<RunPathMoveIn, RunPathFailure> => Effect.fail(occupied),
+      RunPathMoveIn: (moveIn): Effect.Effect<RunPathMoveIn, RunPathFailure> => Effect.succeed(moveIn),
     })
-  })
+  }).pipe(Effect.mapError(abortOf))
 
 const moveBackOf = <E>(outcome: Exit.Exit<void, E>): RunPathMoveBack =>
   Exit.match(outcome, {
@@ -183,10 +182,7 @@ const atRunPath = <A, R>(
       const fs = yield* FileSystem.FileSystem
       yield* fs.rename(moveIn.tree, moveIn.runPath).pipe(
         Effect.mapError((cause) =>
-          orchestrationFailed(
-            'run-path-move-failed',
-            `side ${moveIn.side}: ${moveIn.tree} could not be moved to the run path ${moveIn.runPath}: ${cause.message}`,
-          )
+          abortOf(RunPathMoveInFailed.make({ side: moveIn.side, tree: moveIn.tree, runPath: moveIn.runPath, cause }))
         ),
       )
       const exit = yield* Effect.exit(restore(use))
@@ -202,7 +198,7 @@ const atRunPath = <A, R>(
           }),
         ),
         {
-          onFailure: (unrestored) => Effect.fail(orchestrationFailed('run-path-unrestored', unrestored.message)),
+          onFailure: (unrestored) => unrestored.pipe(abortOf, Effect.fail),
           onSuccess: () => Effect.void,
         },
       )

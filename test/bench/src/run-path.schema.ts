@@ -79,6 +79,67 @@ export class RunPathUnrestored extends S.TaggedError<RunPathUnrestored>()('RunPa
   }
 }
 
+export class RunPathUnlisted extends S.TaggedError<RunPathUnlisted>()('RunPathUnlisted', {
+  side: BenchSide,
+  runnerTemp: S.NonEmptyString,
+  cause: S.optional(S.Unknown),
+}) {
+  override get message(): string {
+    return `side ${this.side}: ${this.runnerTemp} could not be listed to check the run path is absent: ${
+      causeText(this.cause)
+    }`
+  }
+}
+
+export class RunPathMoveInFailed extends S.TaggedError<RunPathMoveInFailed>()('RunPathMoveInFailed', {
+  side: BenchSide,
+  tree: S.NonEmptyString,
+  runPath: S.NonEmptyString,
+  cause: S.optional(S.Unknown),
+}) {
+  override get message(): string {
+    return `side ${this.side}: ${this.tree} could not be moved to the run path ${this.runPath}: ${
+      causeText(this.cause)
+    }`
+  }
+}
+
+export const RunPathFailure = S.Union([
+  RunPathUnlisted,
+  RunPathOutsideTree,
+  RunPathOccupied,
+  RunPathMoveInFailed,
+  RunPathUnrestored,
+])
+export type RunPathFailure = typeof RunPathFailure.Type
+
+const RunPathAbortTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathAbort')
+type RunPathAbortTypeId = typeof RunPathAbortTypeId
+
+export class RunPathOccupiedAbort extends S.TaggedClass<RunPathOccupiedAbort>()('RunPathOccupiedAbort', {
+  code: S.Literal('run-path-occupied'),
+  reason: S.String,
+}) {
+  readonly [RunPathAbortTypeId] = RunPathAbortTypeId
+}
+
+export class RunPathMoveFailedAbort extends S.TaggedClass<RunPathMoveFailedAbort>()('RunPathMoveFailedAbort', {
+  code: S.Literal('run-path-move-failed'),
+  reason: S.String,
+}) {
+  readonly [RunPathAbortTypeId] = RunPathAbortTypeId
+}
+
+export class RunPathUnrestoredAbort extends S.TaggedClass<RunPathUnrestoredAbort>()('RunPathUnrestoredAbort', {
+  code: S.Literal('run-path-unrestored'),
+  reason: S.String,
+}) {
+  readonly [RunPathAbortTypeId] = RunPathAbortTypeId
+}
+
+export const RunPathAbort = S.Union([RunPathOccupiedAbort, RunPathMoveFailedAbort, RunPathUnrestoredAbort])
+export type RunPathAbort = typeof RunPathAbort.Type
+
 const PATH = 'p'
 const RUN_SUCCEEDED = { _tag: 'RunSucceeded' } as const
 
@@ -95,7 +156,19 @@ const pathFieldVerdicts = (value: string): ReadonlyArray<boolean> => [
   decodes(RunPathRestored, { _tag: 'RunPathRestored', side: 'A', tree: value }),
   decodes(RunPathUnrestored, { _tag: 'RunPathUnrestored', side: 'A', tree: value, runPath: PATH, run: RUN_SUCCEEDED }),
   decodes(RunPathUnrestored, { _tag: 'RunPathUnrestored', side: 'A', tree: PATH, runPath: value, run: RUN_SUCCEEDED }),
+  decodes(RunPathUnlisted, { _tag: 'RunPathUnlisted', side: 'A', runnerTemp: value }),
+  decodes(RunPathMoveInFailed, { _tag: 'RunPathMoveInFailed', side: 'A', tree: value, runPath: PATH }),
+  decodes(RunPathMoveInFailed, { _tag: 'RunPathMoveInFailed', side: 'A', tree: PATH, runPath: value }),
 ]
+
+const ABORT_VARIANTS = [
+  ['RunPathOccupiedAbort', 'run-path-occupied'],
+  ['RunPathMoveFailedAbort', 'run-path-move-failed'],
+  ['RunPathUnrestoredAbort', 'run-path-unrestored'],
+] as const
+
+const abortCodeVerdicts = (code: string): ReadonlyArray<boolean> =>
+  ABORT_VARIANTS.map(([tag]) => Result.isSuccess(S.decodeUnknownResult(RunPathAbort)({ _tag: tag, code, reason: '' })))
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
@@ -110,6 +183,17 @@ if (import.meta.vitest !== void 0) {
       Arr.every(
         Arr.append(boundaryValues, drawn),
         (value) => Arr.every(subject(value), (accepted) => accepted === isPath(value)),
+      ),
+  )
+
+  it.prop(
+    '∀s_RunPathAbortCodeRefusal_≡EachVariantAcceptsOnlyItsOwnCode',
+    { of: [S.String], subject: abortCodeVerdicts },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'run-path', 'run-path-occupied ', 'defect', ...ABORT_VARIANTS.map(([, code]) => code)], drawn),
+        (code) =>
+          Arr.every(Arr.zip(subject(code), ABORT_VARIANTS), ([accepted, [, own]]) => accepted === (code === own)),
       ),
   )
 }
