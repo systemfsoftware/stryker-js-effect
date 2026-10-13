@@ -380,13 +380,13 @@ const gateOptions = {
   baseline: Flag.String('baseline')
     .pipe(
       Flag.withDescription(
-        'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds. Optional when a budget baseline is given.',
+        'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds. After the baseline and budget checks the gate fails, in the same exit 1, when any project scores below its own `thresholds.break`. Optional when a budget baseline is given.',
       ),
       optional,
     ),
   updateBaseline: Flag.map(optional(Flag.Boolean('update-baseline')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Rewrite the baseline file with exactly the survivors of the finished report and exit 0, instead of gating against it.',
+      'Rewrite the baseline file with exactly the survivors of the finished report, clearing the survivor verdict. The budget and break checks still run afterwards, so an updated baseline does not accept a below-break score.',
     ),
   ),
   budgetBaseline: Flag.String('budget-baseline')
@@ -406,7 +406,7 @@ const gateOptions = {
   ),
   updateBudgetBaseline: Flag.map(optional(Flag.Boolean('update-budget-baseline')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Rewrite the budget baseline file with the finished run duration and exit 0, instead of gating against it.',
+      'Rewrite the budget baseline file with the finished run duration, clearing the budget verdict. The break check still runs afterwards, so an updated baseline does not accept a below-break score.',
     ),
   ),
 }
