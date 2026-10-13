@@ -1,5 +1,6 @@
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
@@ -12,35 +13,12 @@ import * as S from 'effect/Schema'
 import type { GitCommandFailed } from '../git-diff.schema.js'
 import { GitDiff } from '../git-diff.service.js'
 import { admitPlanHead, AdmitPlanHeadCommand, type AdmitPlanHeadError } from './admit-plan-head.workflow.js'
-import { ShardPlanInvalid } from './shard-plan.schema.js'
+import { ShardPlanInvalid, ShardPlanMutantsMissing } from './shard-plan.schema.js'
 
 export interface LoadedShardPlan {
   readonly plan: ShardPlan
   readonly file: string
   readonly directory: string
-}
-
-const MISSING_IDS_NAMED = 5
-
-const missingIdsTextOf = (missingIds: ReadonlyArray<string>): string =>
-  `${missingIds.slice(0, MISSING_IDS_NAMED).join(', ')}${
-    Option.match(Option.liftPredicate(missingIds.length - MISSING_IDS_NAMED, (rest) => rest > 0), {
-      onNone: () => '',
-      onSome: (rest) => `, +${rest} more`,
-    })
-  }`
-
-export class ShardPlanMutantsMissing extends S.TaggedError<ShardPlanMutantsMissing>()('ShardPlanMutantsMissing', {
-  planFile: S.String,
-  missingIds: S.Array(S.String),
-}) {
-  readonly exitClass = 'ConfigError' as const
-
-  override get message(): string {
-    return `the shard plan at ${this.planFile} schedules ${this.missingIds.length} mutant(s) this run does not discover: ${
-      missingIdsTextOf(this.missingIds)
-    }; re-run stryker plan`
-  }
 }
 
 export const missingPlannedMutants: (input: {
@@ -123,20 +101,50 @@ export const admitLoadedPlan: {
     Match.exhaustive,
   ))
 
-export const loadAdmittedPlan = (
-  basePath: string,
-  file: string,
-): Effect.Effect<
-  LoadedShardPlan,
-  ShardPlanInvalid | AdmitPlanHeadError | GitCommandFailed,
-  FileSystem.FileSystem | Path.Path | GitDiff
-> => loadShardPlan(basePath, file).pipe(Effect.flatMap((loaded) => admitLoadedPlan(basePath, loaded)))
+export const loadAdmittedPlan: {
+  (
+    basePath: string,
+    file: string,
+  ): Effect.Effect<
+    LoadedShardPlan,
+    ShardPlanInvalid | AdmitPlanHeadError | GitCommandFailed,
+    FileSystem.FileSystem | Path.Path | GitDiff
+  >
+  (
+    file: string,
+  ): (
+    basePath: string,
+  ) => Effect.Effect<
+    LoadedShardPlan,
+    ShardPlanInvalid | AdmitPlanHeadError | GitCommandFailed,
+    FileSystem.FileSystem | Path.Path | GitDiff
+  >
+} = dual(
+  2,
+  (basePath: string, file: string): Effect.Effect<
+    LoadedShardPlan,
+    ShardPlanInvalid | AdmitPlanHeadError | GitCommandFailed,
+    FileSystem.FileSystem | Path.Path | GitDiff
+  > => loadShardPlan(basePath, file).pipe(Effect.flatMap((loaded) => admitLoadedPlan(basePath, loaded))),
+)
 
-export const planVerifiedAt = (
-  basePath: string,
-  loaded: LoadedShardPlan,
-): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff> =>
-  admitLoadedPlan(basePath, loaded).pipe(
-    Effect.as(true),
-    Effect.catchTag('GitCommandFailed', () => Effect.succeed(false)),
-  )
+export const planVerifiedAt: {
+  (basePath: string, loaded: LoadedShardPlan): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff>
+  (loaded: LoadedShardPlan): (basePath: string) => Effect.Effect<boolean, AdmitPlanHeadError, GitDiff>
+} = dual(
+  2,
+  (basePath: string, loaded: LoadedShardPlan): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff> =>
+    admitLoadedPlan(basePath, loaded).pipe(
+      Effect.as(true),
+      Effect.catchTag('GitCommandFailed', () => Effect.succeed(false)),
+    ),
+)
+
+export const plannedRunMarkerOf = ({ verified, file }: {
+  readonly verified: boolean
+  readonly file: string
+}): { readonly plannedMutantsFile?: string } =>
+  Boolean.match(verified, {
+    onTrue: () => ({ plannedMutantsFile: file }),
+    onFalse: () => ({}),
+  })

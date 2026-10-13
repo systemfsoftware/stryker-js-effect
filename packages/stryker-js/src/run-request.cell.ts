@@ -73,7 +73,7 @@ import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
-import { loadAdmittedPlan, loadShardPlan, planVerifiedAt } from './shard/shard-plan.js'
+import { loadAdmittedPlan, loadShardPlan, plannedRunMarkerOf, planVerifiedAt } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
@@ -690,7 +690,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
         const options = {
           ...channel.options,
           mutantIds: [...project.mutants],
-          ...(verified ? { plannedMutantsFile: loaded.file } : {}),
+          ...plannedRunMarkerOf({ verified, file: loaded.file }),
         }
         return yield* runStage({ ...channel, options }, WholeProject.make({}))
       }),
