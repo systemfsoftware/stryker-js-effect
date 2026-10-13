@@ -667,25 +667,34 @@ jobs:
           path: .checker-parity-cache
           merge-multiple: true
       - name: Artifact downloads finished
-        if: failure() && (steps.legs.outcome == 'failure' || steps.verdicts.outcome == 'failure')
+        if: always() && (contains(fromJSON('["failure", "cancelled"]'), steps.legs.outcome) || contains(fromJSON('["failure", "cancelled"]'), steps.verdicts.outcome))
         env:
           LEGS: ${{ steps.legs.outcome }}
           VERDICTS: ${{ steps.verdicts.outcome }}
           RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
         run: |
+          # $1 step name, $2 its outcome, $3 reason-code stem, $4 artifact-name regex.
           report() {
-            echo "::error title=checker-parity download failed::Step \"$1\" did not download artifacts $2 (code artifact-download-failed). download-artifact v8 fails on a digest mismatch, where v7 only warned. Reproduce from the workspace root: gh run download $RUN_ID --pattern '$2' --dir $3"
+            if [ "$2" = cancelled ]; then
+              code="$3-timed-out"
+              cause="was cancelled or hit the job's 60-minute limit"
+            else
+              code="$3-failed"
+              cause="failed; its log above has the action's error (under download-artifact v8 a digest mismatch also fails the step, where v7 only warned)"
+            fi
+            check="gh api 'repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100' --jq '.artifacts[] | select(.name | test(\"$4\")) | \"\\(.id) \\(.name) \\(.digest)\"' | while read -r id name want; do got=sha256:\$(gh api repos/$REPO/actions/artifacts/\$id/zip | sha256sum | cut -d' ' -f1); [ \"\$got\" = \"\$want\" ] && echo \"ok \$name\" || echo \"MISMATCH \$name want=\$want got=\$got\"; done"
+            echo "::error title=checker-parity $code::Step \"$1\" $cause (code $code). The command in this job's summary refetches every matching artifact and compares its sha256 with the digest recorded at upload."
             {
-              echo "### checker-parity: \`$1\` failed"
-              echo "Reason code \`artifact-download-failed\`. Reproduce: \`gh run download $RUN_ID --pattern '$2' --dir $3\`"
+              echo "### checker-parity: \`$1\` ended \`$2\`"
+              echo "Reason code \`$code\`. Reproduce from the workspace root:"
+              echo '```sh'
+              echo "$check"
+              echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           }
-          if [ "$LEGS" = failure ]; then
-            report "Download every leg" "checker-parity-$RUN_ID-*" checker-parity-shards
-          fi
-          if [ "$VERDICTS" = failure ]; then
-            report "Collect the verdict caches" "checker-parity-verdicts-$RUN_ID-*" .checker-parity-cache
-          fi
+          case "$LEGS" in failure | cancelled) report "Download every leg" "$LEGS" legs-download "^checker-parity-$RUN_ID-[0-9]+\$" ;; esac
+          case "$VERDICTS" in failure | cancelled) report "Collect the verdict caches" "$VERDICTS" verdicts-download "^checker-parity-verdicts-$RUN_ID-[0-9]+\$" ;; esac
           exit 1
       - name: Save the merged verdict cache
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
