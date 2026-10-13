@@ -677,8 +677,8 @@ jobs:
           # $1 step name, $2 its outcome, $3 reason-code stem, $4 artifact-name regex.
           report() {
             if [ "$2" = cancelled ]; then
-              code="$3-timed-out"
-              cause="was cancelled or hit the job's 60-minute limit"
+              code="$3-cancelled"
+              cause="was cancelled: the job's 60-minute limit, a newer push superseding this run (concurrency cancel-in-progress), or a manual cancel"
             else
               code="$3-failed"
               cause="failed; its log above has the action's error (under download-artifact v8 a digest mismatch also fails the step, where v7 only warned)"
