@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -12,7 +12,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
-import { MutationReport, type ReportRow } from './__fixtures__/uncovered-block-report.schema.js'
+type ReportRow = Report.MutantResult
 
 const Feature = makeFeature({ it })
 
@@ -104,6 +104,7 @@ interface RunOptions {
   readonly checkers?: ReadonlyArray<{ readonly plugin: string }>
   readonly coverageAnalysis?: 'perTest' | 'all'
   readonly mutantSetPolicy?: 'full'
+  readonly excludedMutations?: ReadonlyArray<string>
 }
 
 const configSourceOf = (options: RunOptions): string =>
@@ -119,14 +120,21 @@ const configSourceOf = (options: RunOptions): string =>
         concurrency: 1,
         reporters: ['json'],
         cleanTempDir: 'always',
-        ...(options.mutantSetPolicy === undefined ? {} : { mutator: { mutantSetPolicy: options.mutantSetPolicy } }),
+        ...(options.mutantSetPolicy === undefined && options.excludedMutations === undefined
+          ? {}
+          : {
+            mutator: {
+              ...(options.mutantSetPolicy === undefined ? {} : { mutantSetPolicy: options.mutantSetPolicy }),
+              ...(options.excludedMutations === undefined ? {} : { excludedMutations: [...options.excludedMutations] }),
+            },
+          }),
       },
       null,
       2,
     )
   }\n`
 
-const decodeReport = S.decodeUnknownOption(S.fromJsonString(MutationReport))
+const decodeReport = S.decodeUnknownOption(S.fromJsonString(Report.MutationTestResult))
 
 interface Project {
   readonly root: string
@@ -361,6 +369,28 @@ Feature('Holding a condition mutant whose guarded block no test runs', { timeout
     )
 
     scenario(
+      'An excluded BlockStatement whose else block a test runs keeps the condition mutants out of the arid ruling',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose only test calls the function with the flag false, so its else block runs, under an excluded BlockStatement mutator',
+        )(
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, { excludedMutations: ['BlockStatement'] }, ELSE_WORK_SOURCE),
+        ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
+        Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
+          expect(refusalShapeOf(s.ran, s.rows)).toEqual({
+            exitCode: 0,
+            aridReasons: 0,
+            conditionCount: 2,
+            everyConditionRan: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A subsumed condition mutant whose dominators are held arid is readmitted and settles exactly once',
       Gherkin.Do.pipe(
         Given('a project whose guarded if tests a relational condition no test makes true')(
@@ -375,7 +405,7 @@ Feature('Holding a condition mutant whose guarded block no test runs', { timeout
             exitCode: s.ran.exitCode,
             resultCount: ids.length,
             readmittedConditionRan: s.rows.filter(onConditionLine).some((row) =>
-              S.is(Mutant.Readmitted)(row.subsumption) && ranStatus(row.status)
+              S.is(Mutant.Readmitted)(row['subsumption']) && ranStatus(row.status)
             ),
           }).toEqual({
             exitCode: 0,

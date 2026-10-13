@@ -227,6 +227,8 @@ const guardCommandArb = Arbitrary.all([
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
 ]).pipe(
   Arbitrary.map(
     ([
@@ -239,11 +241,13 @@ const guardCommandArb = Arbitrary.all([
       conditionClosed,
       blockCovered,
       blockStatic,
+      blockClosed,
       staticPresent,
       insidePresent,
       alternatePresent,
       alternateCovered,
       alternateStatic,
+      alternateClosed,
     ]) => {
       const guard = Mutant.Guard.make({
         block: GUARD_BLOCK_ID,
@@ -264,7 +268,7 @@ const guardCommandArb = Arbitrary.all([
           Mutant.Mutant.make({
             ...baseMutant,
             id: GUARD_BLOCK_ID,
-            status: undefined,
+            status: blockClosed ? 'Ignored' : undefined,
             statusReason: undefined,
             subsumption: undefined,
             guard: undefined,
@@ -272,7 +276,7 @@ const guardCommandArb = Arbitrary.all([
           Mutant.Mutant.make({
             ...baseMutant,
             id: GUARD_ALTERNATE_ID,
-            status: undefined,
+            status: alternateClosed ? 'Ignored' : undefined,
             statusReason: undefined,
             subsumption: undefined,
             guard: undefined,
@@ -283,16 +287,16 @@ const guardCommandArb = Arbitrary.all([
         hitsByMutantId: { [GUARD_CONDITION_ID]: 1, [GUARD_BLOCK_ID]: 1, [GUARD_ALTERNATE_ID]: 1 },
         testsByMutantId: {
           [GUARD_CONDITION_ID]: conditionCovered ? [GUARD_COVERING_TEST_ID] : [],
-          [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [],
-          [GUARD_ALTERNATE_ID]: alternateCovered ? [GUARD_COVERING_TEST_ID] : [],
+          ...(blockClosed ? {} : { [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [] }),
+          ...(alternateClosed ? {} : { [GUARD_ALTERNATE_ID]: alternateCovered ? [GUARD_COVERING_TEST_ID] : [] }),
         },
         testTimeById: { [GUARD_COVERING_TEST_ID]: 1 },
         ...(staticPresent
           ? {
             staticCoverage: {
               [GUARD_CONDITION_ID]: conditionStatic ? 1 : 0,
-              [GUARD_BLOCK_ID]: blockStatic ? 1 : 0,
-              [GUARD_ALTERNATE_ID]: alternateStatic ? 1 : 0,
+              ...(blockClosed ? {} : { [GUARD_BLOCK_ID]: blockStatic ? 1 : 0 }),
+              ...(alternateClosed ? {} : { [GUARD_ALTERNATE_ID]: alternateStatic ? 1 : 0 }),
             },
           }
           : {}),
@@ -312,14 +316,26 @@ const blockIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId
 const alternateIsCovered = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   guard.alternate !== undefined && blockIsCovered(command, guard.alternate)
 
+const mutantIsOpenById = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  Option.match(Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId), {
+    onNone: () => false,
+    onSome: (mutant) => mutant.status === undefined,
+  })
+
+const witnessIsUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  mutantIsOpenById(command, mutantId) && !blockIsCovered(command, mutantId)
+
+const alternateIsUnexecuted = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
+  guard.alternate === undefined || witnessIsUncovered(command, guard.alternate)
+
 const expectedHeldByOf = (command: MutantTestPlanCommand, mutant: Mutant.Mutant): boolean =>
   mutant.status === undefined &&
   mutant.guard !== undefined &&
   command.options.coverageAnalysis === 'perTest' &&
   !isPerTestUncoveredNonStatic(command, mutant) &&
   !(command.options.ignoreStatic && isUncoveredStatic(command, mutant)) &&
-  !blockIsCovered(command, mutant.guard.block) &&
-  !alternateIsCovered(command, mutant.guard)
+  witnessIsUncovered(command, mutant.guard.block) &&
+  alternateIsUnexecuted(command, mutant.guard)
 
 const heldByOfDecision = (
   decision: PlannedEarlyResultMutant | PlannedRunMutant,
@@ -694,9 +710,28 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
-    '∀h_RunPlan_≡HeldExactlyWhenItsGuardBlockIsPerTestUncoveredNonStatic',
+    '∀h_RunPlan_≡HeldExactlyWhenItsGuardWitnessesAreOpenAndUncovered',
     { of: [guardCommandArb], subject: planMutantTests },
     (subject, [command]) => heldAsDefined(subject, command),
+  )
+
+  it.prop(
+    '∀q_IgnoredGuardWitness_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, (mutant) =>
+        Option.match(Option.fromUndefinedOr(mutant.guard), {
+          onNone: () => false,
+          onSome: (guard) =>
+            Boolean.or(
+              Boolean.not(mutantIsOpenById(command, guard.block)),
+              Option.match(Option.fromUndefinedOr(guard.alternate), {
+                onNone: () => false,
+                onSome: (alternate) => Boolean.not(mutantIsOpenById(command, alternate)),
+              }),
+            ),
+        })),
   )
 
   it.prop(

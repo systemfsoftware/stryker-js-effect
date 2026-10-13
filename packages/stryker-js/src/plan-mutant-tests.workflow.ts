@@ -360,17 +360,26 @@ const mutantIdIsPerTestUncoveredNonStatic = (command: MutantTestPlanCommand, mut
 
 const mutantIsOpen = (mutant: Mutant.Mutant): boolean => Option.isNone(Option.fromUndefinedOr(mutant.status))
 
+const mutantById = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): Option.Option<Mutant.Mutant> =>
+  Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId)
+
+const mutantWitnessesUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  Option.match(mutantById(command, mutantId), {
+    onNone: () => false,
+    onSome: (mutant) => Boolean.and(mutantIsOpen(mutant), mutantIdIsPerTestUncoveredNonStatic(command, mutantId)),
+  })
+
 const alternateIsUnexecuted = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   Option.match(Option.fromUndefinedOr(guard.alternate), {
     onNone: () => true,
-    onSome: (alternate) => mutantIdIsPerTestUncoveredNonStatic(command, alternate),
+    onSome: (alternate) => mutantWitnessesUncovered(command, alternate),
   })
 
 const heldByHolds = (command: MutantTestPlanCommand, mutant: Mutant.Mutant, guard: Mutant.Guard): boolean =>
   Boolean.every([
     mutantIsOpen(mutant),
     Boolean.not(mutantIdIsPerTestUncoveredNonStatic(command, mutant.id)),
-    mutantIdIsPerTestUncoveredNonStatic(command, guard.block),
+    mutantWitnessesUncovered(command, guard.block),
     alternateIsUnexecuted(command, guard),
   ])
 
