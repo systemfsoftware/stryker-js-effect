@@ -258,6 +258,9 @@ const plannedDiffOf = (path: Path.Path, planDiff: PlanDiff, project: string): Pl
     onSome: (diff): PlannedDiff => ChangedSince.make({ diff: projectDiffOf(path, planDiff.root, project, diff) }),
   })
 
+const resolvedSinceOf = (planDiff: PlanDiff): string | undefined =>
+  Option.getOrUndefined(Option.map(planDiff.diff, (diff) => diff.ref))
+
 const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
   Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
 
@@ -286,7 +289,6 @@ const planProject = (
   labelBase: string,
   planDiff: PlanDiff,
   directory: string,
-  resolvedSince: string | undefined,
 ): Effect.Effect<ProjectPlan, never, EnginePorts | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -296,7 +298,7 @@ const planProject = (
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
     const stageInput = {
-      cliOptions: stageCliOptionsOf(resolvedSince, request.full),
+      cliOptions: stageCliOptionsOf(resolvedSinceOf(planDiff), request.full),
       targetMutatePatterns: undefined,
       plannedDiff: plannedDiffOf(path, planDiff, project),
     }
@@ -583,7 +585,7 @@ export const planRequest = (
     const planDiff = yield* planDiffOf(resolvedSince, channel.environment.basePath)
     const planned = yield* forEachProjectDirectory(
       yield* distinctProjectsOf(channel.environment.basePath, request.projects),
-      (directory) => planProject(request, channel, labelBase, planDiff, directory, resolvedSince),
+      (directory) => planProject(request, channel, labelBase, planDiff, directory),
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))
     const dryRunCosts: Record<string, number> = Object.fromEntries(
