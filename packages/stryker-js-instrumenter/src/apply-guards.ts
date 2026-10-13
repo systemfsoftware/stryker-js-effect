@@ -5,7 +5,7 @@ import * as Option from 'effect/Option'
 
 import { type GuardRelationDecision } from './guard-relation.workflow.js'
 
-export const guardsByMutantId = (
+const guardsByMutantId = (
   decisions: readonly GuardRelationDecision[],
 ): ReadonlyMap<Mutant.MutantId, Mutant.Guard> =>
   new Map(
