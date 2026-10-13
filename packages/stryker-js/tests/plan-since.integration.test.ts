@@ -75,12 +75,16 @@ const JS_SOURCE = [
 
 const CHANGED_JS_SOURCE = JS_SOURCE.replace('value + 1', 'value + 2')
 
+const ADDED_JS_FILE = `${PROJECT_B}/src/added.js`
+const ADDED_JS_SOURCE = JS_SOURCE
+
 const COMMITTER = committerArgs({ email: 'plan@test', name: 'plan' })
 
 const CONFIG_SINCE_TWO = 'HEAD~2'
 const CONFIG_SINCE_ONE = 'HEAD~1'
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/
+const SOURCE_DIGEST_PATTERN = /^[0-9a-f]{64}$/
 
 const configSourceOf = (mutate: ReadonlyArray<string>, since?: string): string =>
   `export default {
@@ -224,6 +228,8 @@ const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boo
 interface ScopeView {
   readonly base: string
   readonly head: string
+  readonly files: ReadonlyArray<string>
+  readonly sources: string
   readonly reason?: string | undefined
 }
 
@@ -237,13 +243,25 @@ const scopeTagOf = (scope: ShardPlanScope): string =>
 
 const diffScopeOf = (scope: ShardPlanScope): ScopeView | undefined =>
   Match.value(scope).pipe(
-    Match.tag('DiffScoped', (scoped): ScopeView => ({ base: scoped.base, head: scoped.head })),
+    Match.tag(
+      'DiffScoped',
+      (scoped): ScopeView => ({ base: scoped.base, head: scoped.head, files: scoped.files, sources: scoped.sources }),
+    ),
     Match.orElse(() => undefined),
   )
 
 const fullScopeOf = (scope: ShardPlanScope): ScopeView | undefined =>
   Match.value(scope).pipe(
-    Match.tag('FullScope', (full): ScopeView => ({ base: full.base, head: full.head, reason: full.reason })),
+    Match.tag(
+      'FullScope',
+      (full): ScopeView => ({
+        base: full.base,
+        head: full.head,
+        files: full.files,
+        sources: full.sources,
+        reason: full.reason,
+      }),
+    ),
     Match.orElse(() => undefined),
   )
 
@@ -287,6 +305,8 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
             scopeTag: scopeTagOf(scope),
             baseIsTheBaseCommit: diff?.base === s.planned.base,
             headIsACommit: diff !== undefined && SHA_PATTERN.test(diff.head),
+            files: diff?.files ?? [],
+            sources: diff?.sources ?? '',
             schedulesFewerThanUnscoped: scopedIds.length < unscopedIds.length,
             everyScheduledIdIsUnscoped: scopedIds.every((id) => unscopedIds.includes(id)),
             schedulesAsManyAsTheLineRestrictedPlan: scopedIds.length === oracleIds.length,
@@ -298,6 +318,8 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
             scopeTag: 'DiffScoped',
             baseIsTheBaseCommit: true,
             headIsACommit: true,
+            files: [TARGET_FILE],
+            sources: expect.stringMatching(SOURCE_DIGEST_PATTERN),
             schedulesFewerThanUnscoped: true,
             everyScheduledIdIsUnscoped: true,
             schedulesAsManyAsTheLineRestrictedPlan: true,
@@ -608,9 +630,9 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
     )
 
     scenario(
-      'A flag ref over two projects scopes only the changed project to the changed line',
+      'A flag ref over two projects scopes the changed project to its line and an untracked file to its project',
       Gherkin.Do.pipe(
-        Given('a repository with two projects where only one project line changed')(
+        Given('a repository with two projects where one project line changed and one file is untracked')(
           'planned',
           () =>
             Effect.gen(function*() {
@@ -618,6 +640,7 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
               const base = yield* headOf(root)
               yield* writeFile(root, `${PROJECT_A}/src/${PROJECT_A}.js`, CHANGED_JS_SOURCE)
               yield* commitAll(root, 'change the first project line')
+              yield* writeFile(root, ADDED_JS_FILE, ADDED_JS_SOURCE)
               const oracleRoot = yield* writeWorkspace(projectFilesOf([PROJECT_A], [`src/${PROJECT_A}.js:2-2`]))
               yield* writeFile(oracleRoot, `${PROJECT_A}/src/${PROJECT_A}.js`, CHANGED_JS_SOURCE)
               return yield* Effect.ensuring(
@@ -632,7 +655,7 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
               )
             }),
         ),
-        Then('the plan scopes the changed project to the changed line and leaves the other project empty')((
+        Then('the plan scopes the changed line and the untracked file to their projects under the repository root')((
           s,
           expect,
         ) => {
@@ -642,22 +665,31 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
           const unscopedA = projectMutants(s.planned.unscoped.plan, PROJECT_A)
           const oracleA = projectMutants(s.planned.oracle.plan, PROJECT_A)
           const scopedB = projectMutants(s.planned.scoped.plan, PROJECT_B)
+          const unscopedB = projectMutants(s.planned.unscoped.plan, PROJECT_B)
           return expect({
             scopedExit: s.planned.scoped.ran.exitCode,
             scopeTag: scopeTagOf(scope),
             baseIsTheBaseCommit: diff?.base === s.planned.base,
+            files: diff?.files ?? [],
+            sources: diff?.sources ?? '',
             changedProjectSchedulesAsManyAsTheLineRestrictedPlan: scopedA.length === oracleA.length,
             changedProjectIsNarrower: scopedA.length > 0 && scopedA.length < unscopedA.length,
             everyScheduledIdIsUnscoped: scopedA.every((id) => unscopedA.includes(id)),
-            unchangedProject: scopedB,
+            untrackedProjectSchedulesMutants: scopedB.length > 0,
+            untrackedProjectIsNarrower: scopedB.length > 0 && scopedB.length < unscopedB.length,
+            untrackedProjectMutantsAreUnscoped: scopedB.every((id) => unscopedB.includes(id)),
           }).toEqual({
             scopedExit: 0,
             scopeTag: 'DiffScoped',
             baseIsTheBaseCommit: true,
+            files: [`${PROJECT_A}/src/${PROJECT_A}.js`, ADDED_JS_FILE],
+            sources: expect.stringMatching(SOURCE_DIGEST_PATTERN),
             changedProjectSchedulesAsManyAsTheLineRestrictedPlan: true,
             changedProjectIsNarrower: true,
             everyScheduledIdIsUnscoped: true,
-            unchangedProject: [],
+            untrackedProjectSchedulesMutants: true,
+            untrackedProjectIsNarrower: true,
+            untrackedProjectMutantsAreUnscoped: true,
           })
         }),
       ),
