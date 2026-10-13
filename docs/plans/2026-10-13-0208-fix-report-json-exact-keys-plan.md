@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
-supersedes: docs/plans/2026-10-13-0135-fix-report-json-exact-keys-plan.md
+supersedes: docs/plans/2026-10-13-0156-fix-report-json-exact-keys-plan.md
 ---
 
 # Read every report key exactly on Node 24, and refuse file keys no file can have - Plan
@@ -57,6 +57,7 @@ The upstream `mutation-testing-report-schema` 3.7.2 declares no `propertyNames` 
 
 ### Scope Boundaries
 
+- The README's Known issues entry stays as on main: it remains true for the report reads this change leaves alone, and three other open PRs edit that README.
 - A separate PR from #306. Both use the same exact-key parse, but #306 fixes `ManifestDocument` in a private package that cannot import this package's source.
 - One PR for R1 and R2. The shrunk counterexample is what put `""` and NUL keys in question, and both changes land on `files` in the same two codecs.
 
@@ -74,7 +75,6 @@ The upstream `mutation-testing-report-schema` 3.7.2 declares no `propertyNames` 
   - `∀k_ReportFilePathRefusal_≡BothReportsKeepExactlyTheNonEmptyKeysWithoutNul`: takes each drawn key, plus `""`, NUL, tab, backslash and plain boundaries, through both JSON codecs in both directions. A valid key reads back exactly and encodes; an invalid one is refused both ways. Its oracle is written independently of `keyedByFilePath`.
   - `∀p_ReportJsonKeys_≡ReadAnEscapedKeyExactlyAfterAParseOfItsBackslashTwin`: AE1.
 - U2. A changeset: patch `@systemfsoftware/stryker-js`.
-- U3. `packages/stryker-js/README.md` Known issues: `stryker audit` reads its reports' keys exactly; other report reads in the same process can still see a substituted key.
 
 ### Test Admission
 
