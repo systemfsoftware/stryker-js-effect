@@ -38,7 +38,7 @@ export default defineConfig({
 
 ## Options
 
-Options go in a `typescriptChecker` block of the Stryker config.
+Options go in a `typescriptChecker` block of the Stryker config. A key the block does not define, or a value it does not accept, fails the check with `invalid-checker-options`.
 
 ### `importerCheck`
 

@@ -11,8 +11,6 @@ import {
   NothingCompared,
   ParityBroken,
   ParityHolds,
-  SlowerThanMain,
-  SpeedGateUnmeasured,
   VerdictMismatch,
   WrongNotAssignable,
   ZeroNotAssignable,
@@ -23,9 +21,7 @@ import {
   CheckCall,
   Counts,
   Deferred,
-  DigestCall,
   Gates,
-  GroupCall,
   ParityLine,
   ProjectBootFailed,
   ProjectSkipped,
@@ -37,6 +33,7 @@ import {
   Verdict,
   VerdictStatus,
 } from '../Parity.schema.js'
+import { SlowerThanMain } from '../speed-gate.workflow.js'
 
 const PROJECT = 'packages/example/tsconfig.app.json'
 const OTHER_PROJECT = 'packages/other/tsconfig.app.json'
@@ -108,18 +105,6 @@ const checkCallOf = (
   ms: number,
   cached = false,
 ): CheckCall => CheckCall.make({ schemaVersion: 1, side, project, fileName: FILE, callIndex, mutantIds, ms, cached })
-
-type PhaseKind = 'fresh-check' | 'group' | 'digest' | 'cached-check'
-
-const phaseLineOf = (side: Side, project: string, kind: PhaseKind, ms: number): ParityLine => {
-  const builders: Record<PhaseKind, () => ParityLine> = {
-    'fresh-check': () => checkCallOf(side, project, 0, [], ms),
-    group: () => GroupCall.make({ schemaVersion: 1, side, project, ms, groups: 1, cached: false }),
-    digest: () => DigestCall.make({ schemaVersion: 1, side, project, ms, digest: 'digest', cached: false }),
-    'cached-check': () => checkCallOf(side, project, 0, [], ms, true),
-  }
-  return builders[kind]()
-}
 
 const bootOf = (side: Side, project: string, reason: string): ProjectBootFailed =>
   ProjectBootFailed.make({ schemaVersion: 1, side, project, reason })
@@ -465,175 +450,6 @@ describe('compareSides', () => {
         decision.summary.branch.phaseMs === branchMs &&
         decision.summary.measuredProjectCount === 1 &&
         decision.summary.excludedCachedProjectCount === 1
-    },
-  )
-
-  it.prop(
-    '∀q_SummaryMeasuredCount_≡ProjectsComparedByTheSpeedGate',
-    {
-      of: [
-        S.NonEmptyString,
-        S.Literals(['fresh-check', 'group', 'digest', 'cached-check', 'none']),
-        S.Literals(['fresh-check', 'group', 'digest', 'cached-check', 'none']),
-        S.Literals(['group', 'digest']),
-        S.Literals(['group', 'digest']),
-        S.Int,
-        S.Int,
-        S.Int,
-        S.Int,
-      ],
-      subject: compareSides,
-    },
-    (
-      subject,
-      [
-        mutantId,
-        mainKind,
-        branchKind,
-        otherMainKind,
-        otherBranchKind,
-        drawnMainMs,
-        drawnBranchMs,
-        drawnOtherMainMs,
-        drawnOtherBranchMs,
-      ],
-    ) => {
-      const mainMs = digitsOf(drawnMainMs)
-      const branchMs = digitsOf(drawnBranchMs)
-      const otherMainMs = digitsOf(drawnOtherMainMs)
-      const otherBranchMs = digitsOf(drawnOtherBranchMs)
-      const phaseLineOrNone = (
-        side: Side,
-        project: string,
-        kind: PhaseKind | 'none',
-        ms: number,
-      ): ReadonlyArray<ParityLine> => kind === 'none' ? [] : [phaseLineOf(side, project, kind, ms)]
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        countsOf(OTHER_PROJECT),
-        ...phaseLineOrNone('main', PROJECT, mainKind, mainMs),
-        ...phaseLineOrNone('branch', PROJECT, branchKind, branchMs),
-        ...phaseLineOrNone('main', OTHER_PROJECT, otherMainKind, otherMainMs),
-        ...phaseLineOrNone('branch', OTHER_PROJECT, otherBranchKind, otherBranchMs),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
-      const compared = (kind: PhaseKind | 'none', other: PhaseKind | 'none'): boolean =>
-        kind === 'fresh-check' && other === 'fresh-check'
-      const projectCompared = compared(mainKind, branchKind)
-      const otherCompared = compared(otherMainKind, otherBranchKind)
-      return decision.summary.measuredProjectCount === (projectCompared ? 1 : 0) + (otherCompared ? 1 : 0) &&
-        decision.summary.main.phaseMs === (projectCompared ? mainMs : 0) + (otherCompared ? otherMainMs : 0) &&
-        decision.summary.branch.phaseMs === (projectCompared ? branchMs : 0) + (otherCompared ? otherBranchMs : 0)
-    },
-  )
-
-  it.prop(
-    '∀t_OneSideWithoutFreshCheck_≡NeverSlowerThanMain',
-    {
-      of: [
-        S.NonEmptyString,
-        S.Int,
-        S.Int,
-        S.Literals(['fresh-check', 'group', 'digest', 'cached-check']),
-        S.Literals(['group', 'digest', 'cached-check']),
-      ],
-      subject: compareSides,
-    },
-    (subject, [mutantId, drawnMainMs, drawnBranchMs, mainKind, branchKind]) => {
-      const mainMs = digitsOf(drawnMainMs)
-      const branchMs = mainMs + digitsOf(drawnBranchMs) + 1
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        phaseLineOf('main', PROJECT, mainKind, mainMs),
-        phaseLineOf('branch', PROJECT, branchKind, branchMs),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
-      return !(S.is(ParityBroken)(decision) &&
-        decision.violations.some((violation) => S.is(SlowerThanMain)(violation)))
-    },
-  )
-
-  it.prop(
-    '∀t_FreshCheckBothSides_≡SlowerOnlyWhenBranchAtLeastMain',
-    { of: [S.NonEmptyString, S.Int, S.Int], subject: compareSides },
-    (subject, [mutantId, drawnMainMs, drawnBranchMs]) => {
-      const mainMs = digitsOf(drawnMainMs)
-      const branchMs = digitsOf(drawnBranchMs)
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        checkCallOf('main', PROJECT, 0, [mutantId], mainMs),
-        checkCallOf('branch', PROJECT, 0, [mutantId], branchMs),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
-      const slower = S.is(ParityBroken)(decision) &&
-        decision.violations.some((violation) => S.is(SlowerThanMain)(violation))
-      return slower === (branchMs >= mainMs)
-    },
-  )
-
-  it.prop(
-    '∀g_SpeedGateOnNothingMeasured_≡WarningAndNoSpeedViolation',
-    { of: [S.NonEmptyString, S.Int, S.Int], subject: compareSides },
-    (subject, [mutantId, drawnMainMs, drawnBranchMs]) => {
-      const mainMs = digitsOf(drawnMainMs)
-      const branchMs = mainMs + digitsOf(drawnBranchMs) + 1
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        phaseLineOf('main', PROJECT, 'group', mainMs),
-        phaseLineOf('branch', PROJECT, 'group', branchMs),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
-      return S.is(ParityHolds)(decision) &&
-        decision.warnings.length === 1 &&
-        decision.warnings.every((warning) => S.is(SpeedGateUnmeasured)(warning) && warning.nextAction.length > 0)
-    },
-  )
-
-  it.prop(
-    '∀g_SpeedGateOff_≡NoUnmeasuredWarning',
-    { of: [S.NonEmptyString, S.Int], subject: compareSides },
-    (subject, [mutantId, drawnMs]) => {
-      const ms = digitsOf(drawnMs)
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        phaseLineOf('main', PROJECT, 'group', ms),
-        phaseLineOf('branch', PROJECT, 'group', ms),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: false }))
-      return decision.warnings.length === 0
-    },
-  )
-
-  it.prop(
-    '∀g_MeasuredProject_≡NoUnmeasuredWarning',
-    { of: [S.NonEmptyString, S.Int], subject: compareSides },
-    (subject, [mutantId, drawnMs]) => {
-      const ms = digitsOf(drawnMs)
-      const lines = [
-        verdictOf('main', { mutantId, status: 'compileError' }),
-        verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer),
-        countsOf(PROJECT),
-        checkCallOf('main', PROJECT, 0, [mutantId], ms),
-        checkCallOf('branch', PROJECT, 0, [mutantId], ms),
-      ]
-      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
-      return decision.warnings.length === 0
     },
   )
 

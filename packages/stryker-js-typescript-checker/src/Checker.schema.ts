@@ -11,10 +11,13 @@ import * as S from 'effect/Schema'
 export const ImporterCheck = S.Literals(['location-rule', 'always'])
 export type ImporterCheck = typeof ImporterCheck.Type
 
-export const TypescriptCheckerOptionsSchema = S.Struct({
-  typescriptChecker: S.optional(S.Struct({ importerCheck: S.optional(ImporterCheck) })),
-})
+export const TypescriptCheckerBlock = S.Struct({ importerCheck: S.optional(ImporterCheck) })
+export type TypescriptCheckerBlock = typeof TypescriptCheckerBlock.Type
+
+export const TypescriptCheckerOptionsSchema = S.Struct({ typescriptChecker: S.optional(TypescriptCheckerBlock) })
 export type TypescriptCheckerOptions = typeof TypescriptCheckerOptionsSchema.Type
+
+export const UndecodedCheckerBlock = S.Struct({ typescriptChecker: S.optional(S.Unknown) })
 
 export const importerCheckOf = (options: TypescriptCheckerOptions): ImporterCheck =>
   Option.getOrElse(

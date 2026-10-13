@@ -226,7 +226,7 @@ interface Checked {
 }
 
 interface CheckerOptionsInput {
-  readonly typescriptChecker?: { readonly importerCheck: string | number }
+  readonly typescriptChecker?: Readonly<Record<string, string | number>>
 }
 
 const checkedWith = (
@@ -315,7 +315,8 @@ type OptionOutcome =
 const refusedWith = (cause: string, tag: string, code: string, nextAction: string): boolean =>
   cause.startsWith(`${tag}: typescript checker (${code}): `) && cause.includes(`. ${nextAction}\n`)
 
-const INVALID_OPTIONS_NEXT_ACTION = "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it"
+const INVALID_OPTIONS_NEXT_ACTION =
+  "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it, and remove every other key from the typescriptChecker block"
 const DUPLICATE_IDS_NEXT_ACTION = 'Send each mutant id once per check call'
 
 const duplicateOutcomeOf = (
@@ -542,25 +543,31 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
     )
 
     scenario(
-      'The importerCheck option refuses a value it does not know and turns the shortcut off only on always',
+      'The importerCheck option refuses a value or key it does not know and turns the shortcut off only on always',
       Gherkin.Do.pipe(
-        When('the annotated body edit is checked under each importerCheck value, valid and invalid')(
+        When(
+          'the annotated body edit is checked under each importerCheck value, valid and invalid, and with unknown keys',
+        )(
           'seen',
           () =>
             Effect.all({
               sometimes: optionOutcomeOf({ typescriptChecker: { importerCheck: 'sometimes' } }),
               number: optionOutcomeOf({ typescriptChecker: { importerCheck: 1 } }),
+              misspelled: optionOutcomeOf({ typescriptChecker: { importercheck: 'always' } }),
+              extraKey: optionOutcomeOf({ typescriptChecker: { importerCheck: 'always', strict: 'yes' } }),
               always: optionOutcomeOf({ typescriptChecker: { importerCheck: 'always' } }),
               locationRule: optionOutcomeOf({ typescriptChecker: { importerCheck: 'location-rule' } }),
               omitted: optionOutcomeOf({}),
             }),
         ),
         Then(
-          'an unknown value fails the check as invalid checker options, always re-checks importers, and the rule is the default',
+          'an unknown value or key fails the check as invalid checker options, always re-checks importers, and the rule is the default',
         )((s, expect) =>
           expect(s.seen).toEqual({
             sometimes: { refused: { mutantIds: [AE1], invalidOptions: true } },
             number: { refused: { mutantIds: [AE1], invalidOptions: true } },
+            misspelled: { refused: { mutantIds: [AE1], invalidOptions: true } },
+            extraKey: { refused: { mutantIds: [AE1], invalidOptions: true } },
             always: { status: 'passed', shortcuts: 0 },
             locationRule: { status: 'passed', shortcuts: 1 },
             omitted: { status: 'passed', shortcuts: 1 },

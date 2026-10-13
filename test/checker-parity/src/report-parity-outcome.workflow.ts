@@ -17,10 +17,10 @@ import {
   type TypeQueryProjectShare,
   type TypeQuerySummary,
   type Violation,
-  type Warning,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
 import { LegScope, type RunScopeName, type ScopeSettings } from './Parity.schema.js'
+import { type Warning } from './speed-gate.workflow.js'
 
 const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
 type ReportTypeId = typeof ReportTypeId

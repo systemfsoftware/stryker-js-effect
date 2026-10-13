@@ -39,7 +39,8 @@ import {
   type ImporterCheck,
   importerCheckOf,
   readsEditSites,
-  TypescriptCheckerOptionsSchema,
+  TypescriptCheckerBlock,
+  UndecodedCheckerBlock,
 } from './Checker.schema.js'
 import {
   CaptureAliasSpecifierCommand,
@@ -1894,15 +1895,19 @@ if (import.meta.vitest !== void 0) {
   )
 }
 
-const decodeCheckerOptions = S.decodeUnknownEffect(TypescriptCheckerOptionsSchema)
+const readCheckerBlock = S.decodeUnknownEffect(UndecodedCheckerBlock)
+const decodeCheckerBlock = S.decodeUnknownEffect(S.UndefinedOr(TypescriptCheckerBlock), { onExcessProperty: 'error' })
 
 const importerCheckOfOptions = (
   options: Options.StrykerOptions,
 ): Effect.Effect<ImporterCheck, InvalidCheckerOptions> =>
-  Effect.mapBoth(decodeCheckerOptions(options), {
-    onFailure: (issue) => InvalidCheckerOptions.make({ detail: issue.message }),
-    onSuccess: importerCheckOf,
-  })
+  readCheckerBlock(options).pipe(
+    Effect.flatMap(({ typescriptChecker }) => decodeCheckerBlock(typescriptChecker)),
+    Effect.mapBoth({
+      onFailure: (issue) => InvalidCheckerOptions.make({ detail: issue.message }),
+      onSuccess: (typescriptChecker) => importerCheckOf(typescriptChecker === undefined ? {} : { typescriptChecker }),
+    }),
+  )
 
 type Mutant = Checker.CheckerMutantWire
 

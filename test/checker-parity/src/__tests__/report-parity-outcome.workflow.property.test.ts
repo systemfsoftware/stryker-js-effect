@@ -3,7 +3,7 @@ import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { ParityBroken, ParityHolds, SpeedGateUnmeasured, Violation } from '../compare-sides.workflow.js'
+import { ParityBroken, ParityHolds, Violation } from '../compare-sides.workflow.js'
 import { DriverFailure } from '../DriverFailure.schema.js'
 import { LegScope, ScopeSettings } from '../Parity.schema.js'
 import {
@@ -16,6 +16,7 @@ import {
   reportParityOutcome,
   ReportParityOutcomeCommand,
 } from '../report-parity-outcome.workflow.js'
+import { SpeedGateUnmeasured } from '../speed-gate.workflow.js'
 
 const VIOLATION_KINDS = Violation.members.length
 

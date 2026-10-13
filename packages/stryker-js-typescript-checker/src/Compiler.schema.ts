@@ -89,7 +89,8 @@ export class InvalidCheckerOptions extends S.TaggedError<InvalidCheckerOptions>(
   detail: S.String,
 }) {
   readonly code = 'invalid-checker-options' as const
-  readonly nextAction = "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it"
+  readonly nextAction =
+    "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it, and remove every other key from the typescriptChecker block"
 
   override get message(): string {
     return `typescript checker (${this.code}): the typescriptChecker options are invalid: ${this.detail}. ${this.nextAction}`
