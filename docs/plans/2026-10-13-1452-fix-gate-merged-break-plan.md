@@ -5,7 +5,7 @@ status: active
 date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-13-0732-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-13-0803-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
@@ -13,6 +13,8 @@ supersedes: docs/plans/2026-10-13-0732-fix-gate-merged-break-plan.md
 This revision corrects R1-R3 and U1 to the shipped gate mechanism, which compares each project's score to its recorded break inline instead of through `classifyExit` (full-path review run 20261013-061137-3bcdcd0e, finding 5).
 
 This third revision also clears the three schema-laws findings the same review run (`20261013-061137-3bcdcd0e`) marked on this branch's head. See "Revision 3" below for A (`thresholds` required), B (`BreakBreach` struct check) and C (`S.Natural`).
+
+This fourth revision corrects the Test layers paragraph to enumerate the ten CLI journeys the branch ships and state the cap position (full-path review run 20261013-113133-02ae7355, finding 2); its companion finding 1 rewords the `stryker gate` `--update-baseline`, `--update-budget-baseline` and `--baseline` help, which now say the baselines are written first and the break check still runs. See "Revision 4" below.
 
 ## Goal Capsule
 
@@ -51,7 +53,7 @@ The merged report never carries the configured break. Merge rebuilds each projec
 - A6 (journey, `gate.integration.test.ts`): a report below break with a new survivor fails on the baseline verdict and emits no `score-below-break`.
 - Existing gate and budget scenarios stay green unchanged.
 
-Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, so it gets codec laws. A1, A2, A5 and A6 spawn the built CLI under the "top-level failure contract" seam: the merge→gate handoff and the ordering of the gate's three verdicts are only observable through the command. That is four journeys, at the 2-4 cap. Everything else is pushed down to A3/A4.
+Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, so it gets codec laws. The branch's remaining coverage ships as CLI journeys that spawn the built binary under the "top-level failure contract" seam: the merge→gate handoff, the order of the gate's three verdicts, a refused input's exit class and the exit code a caller branches on are observable only from the command process. The acceptance list contracts four of them — A1 (a merged report below break fails the gate), A2 (the second project's break, not the first's, fails it), A5 (an updated baseline is written first and the gate still exits 1), A6 (a new survivor fails before the break is judged). Six more ship beside them, and none can be pushed down to A3/A4: the budget-before-break order (R5 — a run over budget and below break must fail on the budget, which the break decision has no knowledge of); the score-equal-break pass and the 50-under-60 fail (R2's `percentage < threshold` boundary); the report with no `thresholds` refused as unusable input (revision 3 A — a decode path whose only observable is the exit class, exit 2); the 32-project merged breach (R3 — the per-project breach list and next action at scale); and the merged report whose shards recorded no verdict (R7 — `merge`'s `Unrecorded` variant reaching the gate's info line). That is ten CLI scenarios (seven in `gate.integration.test.ts`, two in `shard-merge.integration.test.ts`, one in `shard-run-verdict.integration.test.ts`): four contracted journeys plus six added, above the 2–4 seam-only cap. Each extra one is kept at the command layer because A3's `gateScoreBreak` sees one decision and no process, and A4's laws see a schema value and no exit code.
 
 ### Edge review (destructive pass, Edge-First lens)
 
@@ -74,6 +76,11 @@ Clears the three schema-laws violations that review marked on this branch's head
 - A (finding #1). `thresholds` is required in `GateReportDocument` (`packages/stryker-js/src/gate-report.schema.ts`): the decoding default `{ break: null }` made an absent field mean "no verdict", a silent-pass route. Stryker always writes it and the published report schema declares it (`MutationTestResult.thresholds`, non-optional), so a report without it is refused through the gate's existing undecodable-report path (`run-request.cell.ts`, `GateInputUnusable`, exit class `ConfigError` → exit 2), never passed. `projects` keeps its decoding default `[]`, and `GateThresholds.break` stays absent-or-null as the one "no break" state. New CLI journey in `gate.integration.test.ts`: a report on disk without `thresholds` exits 2 with stderr naming the undecodable report. Rule: `schema-laws/tagged-unions-over-state-by-presence`.
 - B (finding #6). `BreakBreach` (`packages/stryker-js/src/gate-score-break.workflow.ts`) now carries `percentage < threshold` as a struct check, and `breachOf` builds one only for a real breach; the consumer comparison `isBelowItsBreak` is deleted. A refusal property draws the unrefined base, appends the percentage boundaries, and compares acceptance against the relation written independently. Behaviour is byte-identical for every gate run. Rule: `schema-laws/cross-field-invariants-as-struct-checks`.
 - C (finding #8). `ScoreBelowBreak.projects` is `S.Natural`, the package idiom for a count (`cap-survivors.workflow.ts:19`), not `S.Int`. Rule: `schema-laws/invariants-as-refinements`.
+
+## Revision 4 (full-path ce-code-review run 20261013-113133-02ae7355)
+
+- Finding 1 (P2, `packages/stryker-js/src/bin/cli-command.ts`). `--update-baseline` and `--update-budget-baseline` promised "exit 0, instead of gating against it", while `runScoreBreakGate` runs after the baselines are written, so a below-break update-flag run exits 1. Both descriptions now say the baselines are written first and the break check still runs, and `--baseline` names the break verdict beside the survivor verdict. No test edits: the strings are help text and no snapshot holds them.
+- Finding 2 (P3, this document). The Test layers paragraph claimed four journeys "at the 2-4 cap" with "everything else pushed down to A3/A4" while ten CLI scenarios ship; it now enumerates them and why each is only observable through the command.
 
 ## Implementation
 
