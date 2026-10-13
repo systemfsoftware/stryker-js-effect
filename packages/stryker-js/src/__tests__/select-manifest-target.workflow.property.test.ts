@@ -394,6 +394,32 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
+    '∀c_StringTargets_≡AnInvalidTargetYieldsNoneAloneAndIsSkippedInsideAnArray',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const later = targetOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const key = exportKeyOf(subpath)
+      const specifier = `#${subpath}`
+      const bare = `${oneSegmentOf(command)}x.js`
+      const escaping = `./${oneSegmentOf(command)}/../x.js`
+      const absolute = `/${oneSegmentOf(command)}x.js`
+      return [
+        exported(subject, command, { [key]: bare }, subpath) === 'missing',
+        exported(subject, command, { [key]: [bare, later] }, subpath) === `path:${later}`,
+        exported(subject, command, { [key]: escaping }, subpath) === 'missing',
+        exported(subject, command, { [key]: [escaping, later] }, subpath) === `path:${later}`,
+        exported(subject, command, { [key]: absolute }, subpath) === 'missing',
+        exported(subject, command, { [key]: [absolute, later] }, subpath) === `path:${later}`,
+        imported(subject, command, { [specifier]: escaping }, specifier) === 'missing',
+        imported(subject, command, { [specifier]: [escaping, later] }, specifier) === `path:${later}`,
+        imported(subject, command, { [specifier]: absolute }, specifier) === 'missing',
+        imported(subject, command, { [specifier]: [absolute, later] }, specifier) === `path:${later}`,
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
     '∀c_RootEntry_≡MainDecidesTheRootOnlyWhenExportsDeclaresNone',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {

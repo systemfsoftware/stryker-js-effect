@@ -19,6 +19,10 @@ const TARGET_FILES: ReadonlyArray<string> = ['a.js', 'b.js', 'c.cjs']
 
 const TARGETS: ReadonlyArray<S.Json> = TARGET_FILES.map((file) => `./${file}`)
 
+const REJECTED_TARGETS: ReadonlyArray<S.Json> = ['/a.js', '../a.js', './x/../a.js', './node_modules/a.js']
+
+const REJECTED_EXPORTS_TARGET: S.Json = 'a.js'
+
 const CONDITION_KEYS: ReadonlyArray<string> = [
   'types',
   'import',
@@ -31,25 +35,31 @@ const CONDITION_KEYS: ReadonlyArray<string> = [
   'development',
 ]
 
-const { entry } = fc.letrec<{ entry: S.Json }>((tie) => ({
-  entry: fc.oneof(
-    { depthSize: 'small', withCrossShrink: true },
-    fc.constantFrom<S.Json>(...TARGETS, null, 0, true),
-    fc.array(tie('entry'), { maxLength: 3 }),
-    fc.uniqueArray(fc.tuple(fc.constantFrom(...CONDITION_KEYS), tie('entry')), {
-      selector: ([key]) => key,
-      minLength: 1,
-      maxLength: 4,
-    }).map((pairs): S.Json => Object.fromEntries(pairs)),
-  ),
-}))
+const entryOver = (leaves: ReadonlyArray<S.Json>): fc.Arbitrary<S.Json> =>
+  fc.letrec<{ entry: S.Json }>((tie) => ({
+    entry: fc.oneof(
+      { depthSize: 'small', withCrossShrink: true },
+      fc.constantFrom<S.Json>(...leaves),
+      fc.array(tie('entry'), { maxLength: 3 }),
+      fc.uniqueArray(fc.tuple(fc.constantFrom(...CONDITION_KEYS), tie('entry')), {
+        selector: ([key]) => key,
+        minLength: 1,
+        maxLength: 4,
+      }).map((pairs): S.Json => Object.fromEntries(pairs)),
+    ),
+  })).entry
+
+const IMPORTS_LEAVES: ReadonlyArray<S.Json> = [...TARGETS, ...REJECTED_TARGETS, null, 0, true]
 
 interface ManifestEntries {
   readonly exportsEntry: S.Json
   readonly importsEntry: S.Json
 }
 
-const manifestEntries: fc.Arbitrary<ManifestEntries> = fc.record({ exportsEntry: entry, importsEntry: entry })
+const manifestEntries: fc.Arbitrary<ManifestEntries> = fc.record({
+  exportsEntry: entryOver([...IMPORTS_LEAVES, REJECTED_EXPORTS_TARGET]),
+  importsEntry: entryOver(IMPORTS_LEAVES),
+})
 
 const IMPORTS_TEST = 'test/imports.test.js'
 

@@ -46,6 +46,30 @@ interface PatternMatch {
 
 type EntryTable = EntryMap['entries']
 
+type TargetValidity = (target: string) => boolean
+
+const isPackageRelative = (target: string): boolean => target.startsWith(PACKAGE_RELATIVE_PREFIX)
+
+const hasInvalidSegment = (target: string): boolean =>
+  target
+    .slice(PACKAGE_RELATIVE_PREFIX.length)
+    .split(TARGET_SEGMENT_SEPARATOR)
+    .some((segment) => INVALID_TARGET_SEGMENTS.includes(segment.toLowerCase()))
+
+const isValidPathTarget: TargetValidity = (target) =>
+  [isPackageRelative(target), !hasInvalidSegment(target)].every((flag) => flag)
+
+const isInvalidImportTarget = (target: string): boolean =>
+  [target.length === 0, ...INVALID_IMPORT_TARGET_PREFIXES.map((prefix) => target.startsWith(prefix))].some((flag) =>
+    flag
+  )
+
+const isValidImportTarget: TargetValidity = (target) =>
+  Boolean.match(isPackageRelative(target), {
+    onTrue: () => !hasInvalidSegment(target),
+    onFalse: () => !isInvalidImportTarget(target),
+  })
+
 const ownValueOf = (record: EntryTable, key: string): Option.Option<PackageEntry> =>
   Boolean.match(Object.hasOwn(record, key), {
     onTrue: () => Option.fromUndefinedOr(record[key]),
@@ -74,20 +98,22 @@ const fallbacksResolution = (outcomes: ReadonlyArray<Resolution>): Resolution =>
 const matchedEntries = (entries: EntryTable, conditions: ReadonlyArray<string>): ReadonlyArray<PackageEntry> =>
   Arr.getSomes(Object.keys(entries).filter((key) => conditions.includes(key)).map((key) => ownValueOf(entries, key)))
 
-const resolutionIn = (conditions: ReadonlyArray<string>) => (entry: PackageEntry): Resolution =>
-  Match.value(entry).pipe(
-    Match.tagsExhaustive({
-      EntryPath: ({ path }): Resolution => Option.some(Option.some(path)),
-      EntryNull: (): Resolution => blocked,
-      EntryScalar: (): Resolution => blocked,
-      EntryFallbacks: ({ fallbacks }): Resolution => fallbacksResolution(fallbacks.map(resolutionIn(conditions))),
-      EntryMap: ({ entries }): Resolution =>
-        Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
-          onSome: resolutionIn(conditions),
-          onNone: () => firstDecided(matchedEntries(entries, conditions).map(resolutionIn(conditions))),
-        }),
-    }),
-  )
+const resolutionIn =
+  (conditions: ReadonlyArray<string>, isValid: TargetValidity) => (entry: PackageEntry): Resolution =>
+    Match.value(entry).pipe(
+      Match.tagsExhaustive({
+        EntryPath: ({ path }): Resolution => Option.some(Option.liftPredicate(path, isValid)),
+        EntryNull: (): Resolution => blocked,
+        EntryScalar: (): Resolution => blocked,
+        EntryFallbacks: ({ fallbacks }): Resolution =>
+          fallbacksResolution(fallbacks.map(resolutionIn(conditions, isValid))),
+        EntryMap: ({ entries }): Resolution =>
+          Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
+            onSome: resolutionIn(conditions, isValid),
+            onNone: () => firstDecided(matchedEntries(entries, conditions).map(resolutionIn(conditions, isValid))),
+          }),
+      }),
+    )
 
 const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<string>): Option.Option<string> =>
   Option.match(esm, {
@@ -99,17 +125,20 @@ const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<stri
       }),
   })
 
-const entryTargetOfEntry = (entry: PackageEntry): Option.Option<string> =>
+const entryTargetOfEntry = (isValid: TargetValidity) => (entry: PackageEntry): Option.Option<string> =>
   loadedTargetOf(
-    Option.flatten(resolutionIn(ESM_CONDITIONS)(entry)),
-    Option.flatten(resolutionIn(COMMONJS_CONDITIONS)(entry)),
+    Option.flatten(resolutionIn(ESM_CONDITIONS, isValid)(entry)),
+    Option.flatten(resolutionIn(COMMONJS_CONDITIONS, isValid)(entry)),
   )
 
-const exactEntryOption = (entries: EntryTable, key: string): Option.Option<Option.Option<string>> =>
-  Option.map(ownValueOf(entries, key), entryTargetOfEntry)
+const exactEntryOption = (
+  entries: EntryTable,
+  key: string,
+  isValid: TargetValidity,
+): Option.Option<Option.Option<string>> => Option.map(ownValueOf(entries, key), entryTargetOfEntry(isValid))
 
-const entryTargetOption = (entries: EntryTable, key: string): Option.Option<string> =>
-  Option.flatten(exactEntryOption(entries, key))
+const entryTargetOption = (entries: EntryTable, key: string, isValid: TargetValidity): Option.Option<string> =>
+  Option.flatten(exactEntryOption(entries, key, isValid))
 
 const patternMatchOf = (matchKey: string) => (key: string): Option.Option<PatternMatch> => {
   const star = key.indexOf(PATTERN_WILDCARD)
@@ -134,18 +163,26 @@ const PATTERN_PRECEDENCE: Order.Order<PatternMatch> = Order.combine(
   Order.mapInput(Order.flip(Order.Number), (match: PatternMatch) => match.key.length),
 )
 
-const patternEntryOption = (entries: EntryTable, matchKey: string): Option.Option<Option.Option<string>> =>
+const patternEntryOption = (
+  entries: EntryTable,
+  matchKey: string,
+  isValid: TargetValidity,
+): Option.Option<Option.Option<string>> =>
   Option.map(
     Arr.head(Arr.sort(Arr.getSomes(Object.keys(entries).map(patternMatchOf(matchKey))), PATTERN_PRECEDENCE)),
     (match) =>
       Option.map(
-        entryTargetOption(entries, match.key),
+        entryTargetOption(entries, match.key, isValid),
         (target) => target.replaceAll(PATTERN_WILDCARD, () => match.captured),
       ),
   )
 
-const mapEntryOption = (entries: EntryTable, matchKey: string): Option.Option<Option.Option<string>> =>
-  Option.orElse(exactEntryOption(entries, matchKey), () => patternEntryOption(entries, matchKey))
+const mapEntryOption = (
+  entries: EntryTable,
+  matchKey: string,
+  isValid: TargetValidity,
+): Option.Option<Option.Option<string>> =>
+  Option.orElse(exactEntryOption(entries, matchKey, isValid), () => patternEntryOption(entries, matchKey, isValid))
 
 const isRootSubpath = (subpath: string): boolean => subpath.length === 0
 
@@ -157,7 +194,7 @@ const entryKeyOf = (subpath: string): string =>
 
 const rootEntryOption = (root: PackageEntry, subpath: string): Option.Option<Option.Option<string>> =>
   Boolean.match(isRootSubpath(subpath), {
-    onTrue: () => Option.some(entryTargetOfEntry(root)),
+    onTrue: () => Option.some(entryTargetOfEntry(isValidPathTarget)(root)),
     onFalse: () => Option.none(),
   })
 
@@ -165,7 +202,10 @@ const isSubpathKey = (key: string): boolean => key.startsWith(DEFAULT_ENTRY_KEY)
 
 const objectExportsOption = (map: EntryMap, subpath: string): Option.Option<Option.Option<string>> =>
   Match.value(Object.keys(map.entries)).pipe(
-    Match.when((keys) => keys.every(isSubpathKey), () => mapEntryOption(map.entries, entryKeyOf(subpath))),
+    Match.when(
+      (keys) => keys.every(isSubpathKey),
+      () => mapEntryOption(map.entries, entryKeyOf(subpath), isValidPathTarget),
+    ),
     Match.when((keys) => !keys.some(isSubpathKey), () => rootEntryOption(map, subpath)),
     Match.orElse(() => Option.some(Option.none<string>())),
   )
@@ -181,12 +221,6 @@ const exportsEntryOption = (exports: PackageEntryField, subpath: string): Option
       EntryUndeclared: (): Option.Option<Option.Option<string>> => Option.none(),
     }),
   )
-
-const hasInvalidSegment = (target: string): boolean =>
-  target
-    .slice(PACKAGE_RELATIVE_PREFIX.length)
-    .split(TARGET_SEGMENT_SEPARATOR)
-    .some((segment) => INVALID_TARGET_SEGMENTS.includes(segment.toLowerCase()))
 
 const pathTargetOf = (target: string): ManifestTarget => ManifestPathTarget.make({ target })
 
@@ -241,11 +275,9 @@ const importEntriesOption = (imports: PackageEntryField): Option.Option<EntryTab
   )
 
 const importTargetOption = (manifest: PackageManifest, specifier: string): Option.Option<string> =>
-  Option.flatMap(importEntriesOption(manifest.imports), (imports) => Option.flatten(mapEntryOption(imports, specifier)))
-
-const isInvalidImportTarget = (target: string): boolean =>
-  [target.length === 0, ...INVALID_IMPORT_TARGET_PREFIXES.map((prefix) => target.startsWith(prefix))].some((flag) =>
-    flag
+  Option.flatMap(
+    importEntriesOption(manifest.imports),
+    (imports) => Option.flatten(mapEntryOption(imports, specifier, isValidImportTarget)),
   )
 
 const importTargetOf = (target: string): ManifestTarget =>
