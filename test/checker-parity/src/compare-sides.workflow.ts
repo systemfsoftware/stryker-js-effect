@@ -27,9 +27,19 @@ import {
   Verdict,
   VerdictStatus,
 } from './Parity.schema.js'
+import {
+  SlowerThanMain,
+  speedGate,
+  SpeedGateCommand,
+  type SpeedGateDecision,
+  SpeedGateUnmeasured,
+} from './speed-gate.workflow.js'
 
 const SCHEMA_VERSION = S.Literal(1)
 const DISPLAY_LIMIT = 50
+
+const speedGateWorkflow = speedGate
+const speedGateCommand = SpeedGateCommand
 
 export const ObservedVerdict = S.Struct({
   status: VerdictStatus,
@@ -82,14 +92,6 @@ export class ZeroShortcuts extends S.TaggedClass<ZeroShortcuts>()('ZeroShortcuts
   code: S.Literal('zero-shortcuts'),
   nextAction: S.String,
   scope: S.Literals(['overall', 'isolatedDeclarations']),
-}) {}
-
-export class SlowerThanMain extends S.TaggedClass<SlowerThanMain>()('SlowerThanMain', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('slower-than-main'),
-  nextAction: S.String,
-  branchMs: S.Finite,
-  mainMs: S.Finite,
 }) {}
 
 export class NothingCompared extends S.TaggedClass<NothingCompared>()('NothingCompared', {
@@ -224,6 +226,7 @@ type ComparisonTypeId = typeof ComparisonTypeId
 export class ParityHolds extends S.TaggedClass<ParityHolds>()('ParityHolds', {
   schemaVersion: SCHEMA_VERSION,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
@@ -234,6 +237,7 @@ export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', 
   displayed: S.Array(Violation),
   omittedCount: S.Int,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
@@ -303,22 +307,6 @@ const verdictsOf = (
   side: Side,
 ): ReadonlyArray<Verdict> =>
   verdictsIn(lines).filter((verdict) => Boolean.every([verdict.project === project, verdict.side === side]))
-
-const phaseLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<PhaseLine> =>
-  lines.filter((line): line is PhaseLine => isPhaseLine(line))
-
-const phaseLinesOf = (
-  lines: ReadonlyArray<ParityLine>,
-  project: string,
-  side: Side,
-): ReadonlyArray<PhaseLine> =>
-  phaseLinesIn(lines).filter((line) => Boolean.every([line.project === project, line.side === side, !line.cached]))
-
-const phaseMsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
-  phaseLinesOf(lines, project, side).reduce((total, line) => total + line.ms, 0)
-
-const measured = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): boolean =>
-  phaseLinesOf(lines, project, side).length > 0
 
 const bootFailuresOf = (
   lines: ReadonlyArray<ParityLine>,
@@ -506,7 +494,7 @@ const shortcutNextAction = (scope: 'overall' | 'isolatedDeclarations'): string =
     Match.when('overall', () =>
       `Read the branch Counts in the shard NDJSON: no mutant was decided by the importer shortcut; confirm the shortcut is enabled and typescript.importer_shortcut.count is exported.`),
     Match.when('isolatedDeclarations', () =>
-      `Read the isolatedDeclarations fixture's branch Counts in the shard NDJSON: its importerShortcuts is 0; the fixture must exercise an importer re-check path.`),
+      `Read the isolatedDeclarations fixture's branch Counts in the shard NDJSON: its importerShortcuts is 0, yet the fixture's body-edit mutants should take the importer shortcut. Confirm the shortcut is enabled and the fixture is still in scope on the leg.`),
     Match.exhaustive,
   )
 
@@ -536,32 +524,6 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
       }),
     ),
   ]
-}
-
-const measuredOnBoth = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): ReadonlyArray<string> =>
-  projects.filter((project) => Boolean.every([measured(lines, project, 'main'), measured(lines, project, 'branch')]))
-
-const speedSum = (
-  lines: ReadonlyArray<ParityLine>,
-  projects: ReadonlyArray<string>,
-  side: Side,
-): number => projects.reduce((total, project) => total + phaseMsOf(lines, project, side), 0)
-
-const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerThanMain> => {
-  const compared = measuredOnBoth(command.lines, projectsOf(command.lines))
-  const mainMs = speedSum(command.lines, compared, 'main')
-  const branchMs = speedSum(command.lines, compared, 'branch')
-  return when(
-    Boolean.every([command.gates.speed, compared.length > 0, branchMs >= mainMs]),
-    SlowerThanMain.make({
-      schemaVersion: 1,
-      code: 'slower-than-main',
-      nextAction:
-        `Compare the phase lines for projects measured on both sides in the shard NDJSON: branch ${branchMs} ms is not strictly below main ${mainMs} ms. Profile the branch checker's check phase.`,
-      branchMs,
-      mainMs,
-    }),
-  )
 }
 
 const nonCachedCheckCalls = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
@@ -621,7 +583,7 @@ const perMutant = (value: number, mutants: number): number =>
 const sideTotals = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
-  measuredProjects: ReadonlyArray<string>,
+  phaseMs: number,
   side: Side,
 ): SideTotals => {
   const mutants = mutatedCount(lines, side)
@@ -639,7 +601,7 @@ const sideTotals = (
     side,
     mutants,
     checkCalls: checkCallCount(lines, side),
-    phaseMs: speedSum(lines, measuredProjects, side),
+    phaseMs,
     snapshotUpdates,
     emitBuilds,
     snapshotUpdatesPerMutant: perMutant(snapshotUpdates, mutants),
@@ -685,17 +647,56 @@ const skippedProjects = (
 const excludedCachedProjectCount = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): number =>
   projects.filter((project) => linesOf(lines, project).some(isCachedLine)).length
 
-const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
+const speedGateOf = (command: CompareSidesCommand): SpeedGateDecision =>
+  Result.getOrElse(
+    speedGateWorkflow(
+      speedGateCommand.make({
+        lines: command.lines,
+        projects: projectsOf(command.lines),
+        speedGateEnabled: command.gates.speed,
+      }),
+    ),
+    (neverError) => neverError,
+  )
+
+interface SpeedGateReadout {
+  readonly measuredProjects: ReadonlyArray<string>
+  readonly mainMs: number
+  readonly branchMs: number
+  readonly slowerThanMain: ReadonlyArray<SlowerThanMain>
+  readonly unmeasured: ReadonlyArray<SpeedGateUnmeasured>
+}
+
+const speedGateReadoutOf = (command: CompareSidesCommand): SpeedGateReadout =>
+  Match.value(speedGateOf(command)).pipe(
+    Match.withReturnType<SpeedGateReadout>(),
+    Match.tag('SpeedGateEvaluated', (evaluated) => ({
+      measuredProjects: evaluated.measuredProjects,
+      mainMs: evaluated.mainMs,
+      branchMs: evaluated.branchMs,
+      slowerThanMain: evaluated.slowerThanMain,
+      unmeasured: [],
+    })),
+    Match.tag('SpeedGateUnmeasured', (unmeasured) => ({
+      measuredProjects: [],
+      mainMs: 0,
+      branchMs: 0,
+      slowerThanMain: [],
+      unmeasured: [unmeasured],
+    })),
+    Match.exhaustive,
+  )
+
+const summaryOf = (command: CompareSidesCommand, speed: SpeedGateReadout): ComparisonSummary => {
   const projects = projectsOf(command.lines)
-  const measuredProjects = measuredOnBoth(command.lines, projects)
   return {
     schemaVersion: 1,
     projectCount: projects.length,
-    measuredProjectCount: measuredProjects.length,
+    measuredProjectCount: speed.measuredProjects.length,
     excludedCachedProjectCount: excludedCachedProjectCount(command.lines, projects),
     skipped: skippedProjects(command.lines, projects),
-    main: sideTotals(command.lines, projects, measuredProjects, 'main'),
-    branch: sideTotals(command.lines, projects, measuredProjects, 'branch'),
+    main: sideTotals(command.lines, projects, speed.mainMs, 'main'),
+    branch: sideTotals(command.lines, projects, speed.branchMs, 'branch'),
     shortcutCount: {
       overall: sumCounts(command.lines, (counts) => counts.importerShortcuts),
       isolatedDeclarations: sumCounts(
@@ -897,7 +898,7 @@ const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyA
   )
 }
 
-const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
+const violationsOf = (command: CompareSidesCommand, speed: SpeedGateReadout): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
   return [
     ...projects.flatMap((project) =>
@@ -908,7 +909,7 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
     ...telemetryViolations(command.lines),
     ...overBudgetViolations(command.lines),
     ...shortcutViolationsFor(command),
-    ...speedViolationsFor(command),
+    ...speed.slowerThanMain,
     ...nothingComparedViolations(command.lines, projects),
     ...wrongNotAssignableViolations(command.lines),
     ...zeroNotAssignableViolation(command.lines),
@@ -916,13 +917,18 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
 }
 
 const comparisonOf = (command: CompareSidesCommand): ComparisonDecision => {
-  const summary = summaryOf(command)
-  const violations = violationsOf(command)
+  const speed = speedGateReadoutOf(command)
+  const summary = summaryOf(command, speed)
+  const violations = violationsOf(command, speed)
+  const warnings = speed.unmeasured
   const displayed = violations.slice(0, DISPLAY_LIMIT)
   const omittedCount = violations.length - displayed.length
   return Match.value(violations.length === 0).pipe(
-    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary })),
-    Match.when(false, () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary })),
+    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary, warnings })),
+    Match.when(
+      false,
+      () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary, warnings }),
+    ),
     Match.exhaustive,
   )
 }
