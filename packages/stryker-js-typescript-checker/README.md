@@ -36,6 +36,34 @@ export default defineConfig({
 })
 ```
 
+## Options
+
+Options go in a `typescriptChecker` block of the Stryker config. A key the block does not define, or a value it does not accept, fails the check with `invalid-checker-options`.
+
+### `importerCheck`
+
+`'location-rule'` (default) or `'always'`.
+
+When a mutant compiles in its own file, the checker normally re-checks every file that imports that file, and every file of the program when the mutated file is a script or declares `declare global`. Under `'location-rule'` it skips that re-check when the edit cannot change any type another file sees:
+
+- the edit sits inside the body of one function, method, constructor, accessor or arrow function;
+- that function has an explicit return type annotation, or is a `set` accessor (a constructor never qualifies: an unannotated class property takes its type from the constructor's assignments, so a constructor body edit can change what importers see);
+- the file is a TypeScript module with no `declare global`;
+- the edit holds no `import()`, `require()` or `import("…")` type;
+- no other project compiles the file: a project that includes or imports it without reaching its owner through `references` checks it under its own compiler options, so its errors in that file are read too.
+
+All five must hold before and after the edit, and the function's header (everything before its body) must be unchanged. Mutants that meet the rule and sit in different files are checked together in one snapshot update. Under `isolatedDeclarations`, every exported function has an annotation, so the rule applies to most of its body edits.
+
+`'always'` re-checks importers for every mutant that compiles in its own file and checks one mutant per snapshot update. Use it if you suspect a verdict is wrong. Changing the option changes the program digest, so incremental runs never mix verdicts from the two modes.
+
+```ts
+export default defineConfig({
+  checkers: ['typescript'],
+  plugins: ['@systemfsoftware/stryker-js-typescript-checker'],
+  typescriptChecker: { importerCheck: 'always' },
+})
+```
+
 ## In-process runtime (`./runtime`)
 
 The default entry is the worker plugin Stryker loads from `plugins`, and that is all a normal setup needs. Tooling that drives the compiler itself — for example an oracle that instruments a project and hands the mutants to the real checker — can import the in-process runtime from the `./runtime` subpath instead:
