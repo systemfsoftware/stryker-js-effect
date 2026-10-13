@@ -21,7 +21,12 @@ const BreakThresholdFromOption = S.NullOr(Report.Percentage).pipe(
         onSome: (present) => BreakAt.make({ threshold: present }),
       })
     ),
-    encode: SchemaGetter.forbidden(() => 'a break threshold is read from options, never written back'),
+    encode: SchemaGetter.transform((breakThreshold: typeof NoBreakThreshold.Type | typeof BreakAt.Type) =>
+      Match.valueTags(breakThreshold, {
+        NoBreakThreshold: (): number | null => null,
+        BreakAt: ({ threshold }): number | null => threshold,
+      })
+    ),
   }),
 )
 
