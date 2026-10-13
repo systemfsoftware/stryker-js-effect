@@ -7,6 +7,7 @@ import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/t
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -273,6 +274,27 @@ const signalPid = (pid: number, signal: 'SIGSTOP' | 'SIGKILL'): Effect.Effect<vo
     globalThis.process.kill(pid, signal)
   })
 
+const freezeNewServers = (
+  baseline: HashSet.HashSet<number>,
+  attemptsLeft = 2000,
+): Effect.Effect<ReadonlyArray<number>, never, HostPorts> =>
+  Effect.gen(function*() {
+    const fresh = (yield* tsgoServerPids).filter((pid) => !HashSet.has(baseline, pid))
+    if (fresh.length > 0) {
+      yield* Effect.forEach(fresh, (pid) => signalPid(pid, 'SIGSTOP'), { discard: true })
+      return fresh
+    }
+    if (attemptsLeft <= 0) return yield* Effect.die(new Error('no tsgo server was spawned to freeze'))
+    yield* Effect.sleep('5 millis')
+    return yield* freezeNewServers(baseline, attemptsLeft - 1)
+  })
+
+const killNewServers = (baseline: HashSet.HashSet<number>): Effect.Effect<void, never, HostPorts> =>
+  Effect.gen(function*() {
+    const fresh = (yield* tsgoServerPids).filter((pid) => !HashSet.has(baseline, pid))
+    yield* Effect.forEach(fresh, (pid) => signalPid(pid, 'SIGKILL'), { discard: true })
+  })
+
 const frozenServer: Effect.Effect<
   {
     readonly answers: ReadonlyArray<Readonly<Record<string, string>>>
@@ -319,6 +341,43 @@ const frozenServer: Effect.Effect<
       )
     ),
   }
+}).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
+
+const wedgedOpen: Effect.Effect<
+  {
+    readonly warm: ReadonlyArray<Readonly<Record<string, string>>>
+    readonly opened: { readonly reason: string; readonly version: number }
+  },
+  never,
+  HostPorts
+> = Effect.gen(function*() {
+  const warmFixture = yield* fixtureOf('type-query')
+  const coldFixture = yield* fixtureOf('type-query-reasons')
+  const typeQuery = yield* TypeQuery.TypeQuery
+  const warmFile = yield* readQueryFile(warmFixture, 'sites.ts', [
+    { siteId: 'union', line: 1, text: `'a'`, candidates: ['""'] },
+  ])
+  yield* Effect.orDie(typeQuery.query(requestOf(warmFixture, [warmFile])))
+  const baseline = HashSet.fromIterable(yield* tsgoServerPids)
+  const coldFile = yield* readQueryFile(coldFixture, 'second.ts', [
+    { siteId: 'letter', line: 1, text: `'a'`, candidates: ['""'] },
+  ])
+  return yield* Effect.ensuring(
+    Effect.map(
+      Effect.all([
+        Effect.flatMap(
+          freezeNewServers(baseline),
+          () => Effect.orDie(typeQuery.query(requestOf(warmFixture, [warmFile]))),
+        ),
+        typeQuery.query(requestOf(coldFixture, [coldFile])).pipe(Effect.flip, Effect.orDie),
+      ], { concurrency: 'unbounded' }),
+      ([warm, opened]) => ({
+        warm: warm.files.map(outcomeText),
+        opened: { reason: opened.reason, version: opened.version },
+      }),
+    ),
+    killNewServers(baseline),
+  )
 }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
 
 const refusals = Effect.gen(function*() {
@@ -470,7 +529,22 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
         Then('the wedged file is refused naming the timeout and the next file is answered')((s, expect) =>
           expect(s.seen).toEqual({
             answers: [{}, { 'unannotated ""': 'Unknown no-contextual-type' }],
-            refusals: [{ reason: 'server-crashed', namesTheTimeout: true }],
+            refusals: [{ reason: 'query-timed-out', namesTheTimeout: true }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A project whose TypeScript server stalls as it loads is refused and does not block another project',
+      Gherkin.Do.pipe(
+        When(
+          "one project is answered, a second project's server is stopped as it opens, and both projects are queried",
+        )('seen', () => wedgedOpen),
+        Then('the stalled project is refused and the first project is still answered')((s, expect) =>
+          expect(s.seen).toEqual({
+            warm: [{ 'union ""': 'NotAssignable "" to "a" | "b"' }],
+            opened: { reason: 'project-open-failed', version: 1 },
           })
         ),
       ),

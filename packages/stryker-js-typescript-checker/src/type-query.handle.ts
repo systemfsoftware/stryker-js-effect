@@ -190,6 +190,12 @@ const openServer = (tsconfigFile: string, version: number): Effect.Effect<Server
       try: () => api.updateSnapshot({ openProjects: [tsconfigFile] }),
       catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail, version),
     }).pipe(
+      // A project load that never answers must not hold the servers ref: bound it like a query.
+      Effect.timeoutOrElse({
+        duration: QUERY_GRACE,
+        orElse: () =>
+          Effect.fail(projectOpenFailed(tsconfigFile, `tsgo gave no answer within ${QUERY_GRACE}`, version)),
+      }),
       Effect.filterOrFail(
         (opened) => opened.getProject(tsconfigFile) !== undefined,
         () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig', version),
@@ -832,7 +838,7 @@ const serverCrashed = (fileName: string): TypeQuery.FileOutcome => ({
 const queryTimedOut = (fileName: string): TypeQuery.FileOutcome => ({
   _tag: 'FileRefused',
   fileName,
-  reason: 'server-crashed',
+  reason: 'query-timed-out',
   nextAction: QUERY_TIMED_OUT_NEXT_ACTION,
 })
 

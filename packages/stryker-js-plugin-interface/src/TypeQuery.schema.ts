@@ -99,7 +99,7 @@ export const FileAnswered = S.TaggedStruct('FileAnswered', {
 })
 export type FileAnswered = typeof FileAnswered.Type
 
-export const FileRefusedReason = S.Literals(['not-in-project', 'server-crashed'])
+export const FileRefusedReason = S.Literals(['not-in-project', 'server-crashed', 'query-timed-out'])
 export type FileRefusedReason = typeof FileRefusedReason.Type
 
 export const FileRefused = S.TaggedStruct('FileRefused', {
