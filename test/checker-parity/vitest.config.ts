@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [inSourceSchemaLaws()],
   test: {
     ...sharedConfig.test,
-    include: ['src/**/__tests__/*.test.ts', 'src/**/*.test.ts'],
+    include: ['src/**/__tests__/*.test.ts', 'src/**/*.test.ts', 'tests/**/*.test.ts'],
     includeSource: ['src/**/*.ts'],
     testTimeout: LAW_TIMEOUT_MS,
   },

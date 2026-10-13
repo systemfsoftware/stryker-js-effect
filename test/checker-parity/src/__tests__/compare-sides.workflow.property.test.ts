@@ -11,7 +11,6 @@ import {
   NothingCompared,
   ParityBroken,
   ParityHolds,
-  SlowerThanMain,
   VerdictMismatch,
   WrongNotAssignable,
   ZeroNotAssignable,
@@ -34,6 +33,7 @@ import {
   Verdict,
   VerdictStatus,
 } from '../Parity.schema.js'
+import { SlowerThanMain } from '../speed-gate.workflow.js'
 
 const PROJECT = 'packages/example/tsconfig.app.json'
 const OTHER_PROJECT = 'packages/other/tsconfig.app.json'
