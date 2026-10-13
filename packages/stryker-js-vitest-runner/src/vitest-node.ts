@@ -6,7 +6,7 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import type { Vitest } from 'vitest/node'
 
-import type { VitestTestRecord } from '../vitest-run-command.schema.js'
+import type { VitestTestRecord } from './vitest-run-command.schema.js'
 
 export type VitestValue = S.Schema.Type<typeof S.Unknown>
 

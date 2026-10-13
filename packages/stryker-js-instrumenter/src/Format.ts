@@ -18,8 +18,8 @@ import {
 } from './Format.schema.js'
 import { FileSchema, type InstrumenterOptions, InstrumentError, InstrumentFileSkip } from './Instrument.schema.js'
 import { toApiMutant } from './Mutator.service.js'
+import { createParser, parseJS, parseTS, parseTsx } from './Parser.js'
 import type { ParseFailed } from './Parser.schema.js'
-import { createParser, parseJS, parseTS, parseTsx } from './Parser.service.js'
 import { jsPrint, type PrinterContext, tsPrint } from './Printer.js'
 import {
   FormatAssigned,
