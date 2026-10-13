@@ -131,7 +131,6 @@ const ALLOW_LIST: ReadonlyMap<SyntaxKind, Partial<Record<ContextSlot, LinkRule>>
   [SyntaxKind.ArrayLiteralExpression, { element: climb }],
   [SyntaxKind.ObjectLiteralExpression, { member: climb }],
   [SyntaxKind.PropertyAssignment, { value: climb }],
-  [SyntaxKind.ShorthandPropertyAssignment, { value: climb }],
   [SyntaxKind.ConditionalExpression, { branch: climb }],
   [SyntaxKind.BinaryExpression, { right: rightOperandOf }],
   [SyntaxKind.AsExpression, { operand: assertedOf }],
