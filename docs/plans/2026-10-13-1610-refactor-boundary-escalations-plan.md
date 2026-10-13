@@ -6,13 +6,16 @@ topic: boundary-escalations
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
+supersedes: docs/plans/2026-10-13-0941-refactor-boundary-escalations-plan.md
 ---
 
 # Boundary Escalations - Plan
 
+Supersedes plan 0941 after U1, U2, U5 and U7 were implemented. The contract is the same; it adds root's fourth escalation (`vitest-test-runner.ts:20`, already fixed by #322), restates line numbers on `main` at `b4db6d8e`, and records the in-process run that settles KTD3.
+
 ## Goal Capsule
 
-- **Objective:** a reviewer grading this repository against the enrolled `cell-architecture` pack finds no violation at the four boundary escalations root named: #322's F8 and F10, and #321's two escalation rows (`Mcp/mcp-server.cell.ts:146` and `plan-request.cell.ts:259-260`). `stryker mcp`, `stryker plan`, `Engine.planRequest` and the e2e lane behave exactly as before.
+- **Objective:** a reviewer grading this repository against the enrolled `cell-architecture` pack finds no violation at the four boundary escalations root named: the pipeline composition at `plan-request.cell.ts:259-260` (`:250-251` on `b4db6d8e`, after #313), the `vitest-test-runner.ts:20` boundary (#321's ledger), the `Mcp/mcp-server.cell.ts:146` boundary, and the `MicroVM`/`TestTelemetry` service-module boundaries (#322's F8 and F10). `stryker mcp`, `stryker plan`, `Engine.planRequest`, the vitest runner and the e2e lane behave exactly as before.
 - **Means:** one pull request on a new stack off `main` (KTD1). The MCP rerun acquires its stage through a blueprint and handle at the scope position it uses today (KTD2, KTD3). `stryker plan` runs its two stage cells as one composed cell (KTD4). The e2e `GuestJobs` contract gets harness-owned types (KTD5), and the Service-less telemetry module loses its `.service` suffix (KTD6).
 - **Product authority:** root's 2026-10-13 next-unit intent, as narrowed by the sub-conductor ruling of the same day: exactly these four escalations, no fix to the other Service-less `*.service.ts` files and no new F14-F16 fixes; no new in-process CLI entry; real public-surface integration tests where behaviour is involved; no new code in `test/e2e-core`; no conflict with Stream D. Rule text: the packs `.compound-engineering/config.yaml` pins at systemfsoftware `a578c704` (#336). `cell-architecture`, `schema-laws`, `boundary-testing` and `package-topology` are byte-identical there to `763fd66`, the revision #321 and #322 were graded against (`diff -rq` of both clones).
 - **Authority order:** `CONSTITUTION.md` > `AGENTS.md` > `packages/AGENTS.md` > ADR-0003 > this plan.
@@ -31,12 +34,12 @@ execution: code
 
 ### Summary
 
-Four boundary findings were escalated, not fixed, in #321 and #322. Each is still on `main` at `3797debd`:
+Four boundary findings were escalated, not fixed, in #321 and #322. Three are still on `main` at `b4db6d8e`; the fourth was fixed by #322:
 
 - The MCP `rerun_mutant` path provides the run-stage layer inside its own body (`Mcp/mcp-server.cell.ts:146`).
-- `stryker plan` runs two stage cells one after another by hand (`plan-request.cell.ts:259-260`).
-- The e2e harness's `GuestJobs` contract names the microsandbox driver's types (`test/e2e/src/Harness/guest-job.service.ts:1,12-16`).
-- A harness module named `*.service.ts` holds no Service (`test/e2e/src/Harness/harness-telemetry.service.ts`).
+- `stryker plan` runs two stage cells one after another by hand (`plan-request.cell.ts:259-260` in #321's ledger; `:250-251` on `b4db6d8e`).
+- The e2e harness's `GuestJobs` contract names the microsandbox driver's types (`test/e2e/src/Harness/guest-job.service.ts:1,12-16`), and a harness module named `*.service.ts` holds no Service (`test/e2e/src/Harness/harness-telemetry.service.ts`).
+- `packages/stryker-js-vitest-runner/src/vitest-test-runner.ts:20` imported `./drivers/vitest-node.js` when #321 merged (`117bff02`). #322 (`e3101563`) moved it to the flat sibling: on `b4db6d8e` the import is `./vitest-node.js` (`:22`) and no `src/drivers/` file remains under `packages/`. This PR changes no vitest-runner file; the receipt rules the row with that evidence.
 
 This work fixes those four and changes no observable behaviour and no public signature.
 
@@ -55,7 +58,7 @@ The rules:
 
 State on `main` differs from the ruling's evidence lines, which describe the files before #322. `guest-job.service.ts:1` is now `import type { MicroVM }`, and the Shape still names `MicroVM.Mount` and `MicroVM.JobBlueprint` (`:12-16`). The layer that calls `MicroVM.job` already moved to `microsandbox-guest-job.ts` in #322. `harness-telemetry.service.ts` now imports only `effect` (`:1`); `TestTelemetry` and the harness layer moved to the composition root `harness-layers.ts:6,13` in #322. What remains is a driver type in the contract (F8) and a `.service` suffix on a module with no Service (F10).
 
-What makes the MCP fix more than a move: the stage layer provides its own `Scope`, and that scope closes with the exit of whatever scope the layer is built in (`run/RunEnvironment.service.ts:116-122`). The sandbox finalizer lives in that stage scope and reads its exit to keep or remove `.stryker-tmp/sandbox-*` (`Sandbox.service.ts:74-81`; `docs/solutions/runtime-errors/stage-scope-closed-with-exit-void-hides-run-outcome.md`, Mechanism 2). Today `Effect.provide` builds the stage in its own scope, which closes with the rerun's exit (effect `internal/layer.ts:15-21`).
+What makes the MCP fix more than a move: the stage layer provides its own `Scope`, and that scope closes with the exit of whatever scope the layer is built in (`run/RunEnvironment.service.ts:116-122`). The sandbox finalizer lives in that stage scope and reads its exit to keep or remove `.stryker-tmp/sandbox-*` (`Sandbox.service.ts:77-81` on `b4db6d8e`; `docs/solutions/runtime-errors/stage-scope-closed-with-exit-void-hides-run-outcome.md`, Mechanism 2). Today `Effect.provide` builds the stage in its own scope, which closes with the rerun's exit (effect `internal/layer.ts:15-21`).
 
 ### Requirements
 
@@ -103,7 +106,7 @@ What makes the MCP fix more than a move: the stage layer provides its own `Scope
 ### Scope Boundaries
 
 - Not here, per the ruling: the 16 other Service-less `*.service.ts` files on `main` (Appendix B), and the three binding sites research found that no receipt escalated (`run/prepare.cell.ts:62`, `Serve/Serve.cell.ts:569`, `Reporter/reporter.service.ts:44,67`). They are observed, not fixed, and the PR body lists them as follow-ups.
-- Not here: the other stage bindings plan 0326 grouped under F13 (`Serve/Serve.cell.ts:166`, `run-request.cell.ts:159`, `audit-request.cell.ts:200`, `plan-request.cell.ts:257`) and `programDigestAtPlanTime`'s `Effect.provide(context)` (`plan-request.cell.ts:219`). #321's ledger does not escalate them, so they stay as plan 0326 gap F13, recorded as follow-ups.
+- Not here: the other stage bindings plan 0326 grouped under F13 (`Serve/Serve.cell.ts:166`, `run-request.cell.ts:159`, `audit-request.cell.ts:200`, `plan-request.cell.ts:248` on `b4db6d8e`) and `programDigestAtPlanTime`'s `Effect.provide(context)` (`plan-request.cell.ts:219`). #321's ledger does not escalate them, so they stay as plan 0326 gap F13, recorded as follow-ups.
 - Not here: F7 (`harness-failure.schema.ts` importing microsandbox error classes), F6 and F9.
 - Not here: `run/run-stages.ts:45-48` (`Engine.strykerCell`), the programmatic composition root.
 - Considered, not built:
@@ -131,11 +134,11 @@ What makes the MCP fix more than a move: the stage layer provides its own `Scope
 
 ### Key Technical Decisions
 
-- KTD1. **One stack, one layer, cut from `main` at `3797debd`.** Branch `stream-a/boundary-escalations`. Open PRs from other streams that touch the changed files:
+- KTD1. **One stack, one layer, cut from `main` at `3797debd` and merged up to `main` at `b4db6d8e`.** Branch `stream-a/boundary-escalations`. Open PRs from other streams that touch the changed files:
   - `plan-request.cell.ts` `planProject` (`:245-335`): #271, #287, #289, #296 and #313 each edit it.
   - `Mcp/mcp-server.cell.ts`: #298 edits `:154-198`, outside `runRestricted` (`:126-147`).
   - Harness files: #271 and #289 edit `fixture-cache.service.ts` `14-15, 68, 104-113, 272-319, 589-641` and `warm-sandbox.handle.ts` `170-288`; this plan edits `51-54, 701-706` and `1-11, 60, 70-74`. No overlap.
-  - Whichever lands second merges `main`. If one of the `planProject` PRs lands first, the merge re-reads `:259-260` before composing. This PR does not stack on them (OP13b's overlap rule is scoped to one author's stack).
+  - Whichever lands second merges `main`. #313 landed first (`b4db6d8e`); the merge re-read `planProject`, and the sequential runs sit at `:250-251` there. This PR does not stack on the others (OP13b's overlap rule is scoped to one author's stack).
 - KTD2. **The MCP rerun stage is a blueprint-acquired value handle.** New `Mcp/rerun-stage.blueprint.ts` and `Mcp/rerun-stage.handle.ts`, beside the MCP server.
   - The blueprint takes the run environment and the event queue. Its scoped acquisition builds today's exact layer, `RunEnvironment.layerStage(environment, queue)` merged with `MachineConsole.layerCapture.pipe(Layer.provide(MachineConsole.layer))` (`mcp-server.cell.ts:140-143`), into the caller's current scope, and mints a handle.
   - The handle keeps the built context in a private slot and exposes one dual operation that runs a stage cell with an input (pack: cell-architecture, handle-state-privacy.md; pack: cell-architecture, resource-vs-handle-duality.md, section 2).
@@ -144,9 +147,9 @@ What makes the MCP fix more than a move: the stage layer provides its own `Scope
   - Rejected: a `Context.Service` for the stage bound at the root. A per-call runtime instance is a handle, not an ambient tag (pack: cell-architecture, resource-vs-handle-duality.md, section 2), and no test needs to substitute it.
   - Rejected: edge wrapping in `handlers` (Scope Boundaries).
 - KTD3. **The stage keeps closing with the rerun's exit.** Today `Effect.provide` builds the stage in its own scope, closed with `mutationTestCell`'s exit (effect `internal/layer.ts:15-21`), and `Effect.orDie` sits outside `Effect.scoped` (`mcp-server.cell.ts:146`). After: `Effect.scoped` wraps exactly the acquisition and the run, and `Effect.orDie` stays outside it. The building scope closes with the run's exit, so the stage's own `Scope` (`RunEnvironment.service.ts:116-122`) and the sandbox finalizer in it see the same exit as today. The blueprint opens no scope of its own (pack: cell-architecture, scoped-lifecycle-boundaries.md, section 2).
-  - This is an inference from reading the code, not a run. The repo's own learning records that a code reading of exactly this kind of claim was wrong once, and says to settle it with a run (`docs/solutions/runtime-errors/stage-scope-closed-with-exit-void-hides-run-outcome.md`, Prevention). No run in this PR can observe it (KTD7), so the PR body records it as an unverified gap, not as a preserved outcome.
-- KTD4. **`stryker plan` composes its stage cells.** A module-private, module-level cell joins `prepareStageCell` to `planInstrumentCell` through `Cell.andThen`'s function form. `Cell.andThen` returns only the second cell's output, and `PlanInstrumentDone` has no `loadedPlugins`, so the function maps the second cell's output to a pair: `(prepared) => Cell.map(planInstrumentCell, (done) => ({ prepared, done }))`. `planProject` provides the stage context to that one cell, runs it once, and reads `prepared.loadedPlugins` (`plan-request.cell.ts:270`) and `done` from the pair.
-  - The `Layer.build` at `:257` and the `Cell.provideContext` on the composed cell stay. They are F13 bindings outside this scope (Scope Boundaries), and the pipeline-composition rule judges the sequential runs, not the binding.
+  - The repo's learning says to settle a scoped-finalizer claim with a run (`docs/solutions/runtime-errors/stage-scope-closed-with-exit-void-hides-run-outcome.md`, Prevention). A throwaway in-process probe did: it ran a cell that registers an exit finalizer on the stage `Scope`, once passing and once failing, through today's `Effect.provide` route and through the blueprint and handle. Both routes closed the stage scope with `success` after the passing run and `failure` after the failing one. The probe was deleted (OP12); it was in-process, so the built `stryker mcp` path is still unobserved for exit-sensitive cleanup (KTD7).
+- KTD4. **`stryker plan` composes its stage cells.** A module-private, module-level cell joins `prepareStageCell` to `planInstrumentCell` through `Cell.andThen`'s function form. `Cell.andThen` returns only the second cell's output, and `PlanInstrumentDone` has no `loadedPlugins`, so the function maps the second cell's output to a pair: `(prepared) => Cell.map(planInstrumentCell, (done) => ({ prepared, done }))`. `planProject` provides the stage context to that one cell, runs it once, and reads `prepared.loadedPlugins` (`plan-request.cell.ts:266` on the head) and `done` from the pair.
+  - The `Layer.build` (`:253` on the head) and the `Cell.provideContext` on the composed cell stay. They are F13 bindings outside this scope (Scope Boundaries), and the pipeline-composition rule judges the sequential runs, not the binding.
   - Patterns: `Serve/Serve.cell.ts` `discoverStageCell` (an `andThen` chain run once); `audit-request.cell.ts:73` and `run/run-stages.cell.ts:18` (the same `prepareStageCell` chain built from `Cell.andThen`).
   - The trace keeps its shape. Spans come from each named cell's own run (`effect-cell-types` 12.0.0 `dist/index.mjs:381,435`), and `Cell.andThen` adds none, so the composed run emits the same cell spans under `planProject` as the two runs did. A failure in the prepare stage still stops before plan-instrument runs.
 - KTD5. **`GuestJobs` owns its types; driver construction stays in driver modules.**
@@ -156,7 +159,7 @@ What makes the MCP fix more than a move: the stage layer provides its own `Scope
   - Rejected: a harness Schema for mounts. Nothing decodes them, and harness schemas stay in the file that uses them (pack: schema-laws, tests-own-no-schemas.md).
 - KTD6. **F10 is a rename to `harness-telemetry.ts`.** The module holds constants and span helpers, no state and no Service. Its importers update their specifiers: `fixture-cache.service.ts:54`, `harness-layers.ts:9`, `microsandbox-guest-job.ts:6`, `microsandbox-stryker-cli-runner.ts:3` (grep on `e3101563`; `3797debd` changes none of them). Rejected: wrapping it in a `Context.Service` to fit the suffix.
 - KTD7. **Tests: the existing public-surface suites; no new test, no new entry point.**
-  - MCP: `mcp-server.integration.test.ts` spawns the built `stryker mcp` and drives list, show, `rerun_mutant` and feedback over JSON-RPC, asserting the tool outcomes (`:261`, `:294-352`). It does not pin two properties on this path. First, it runs with `cleanTempDir: 'always'` (`:44`), so exit-sensitive cleanup is unobserved. Second, its reader skips every stdout line that does not decode as a JSON-RPC response (`:215-220`), so a console leak would pass. Both gaps are recorded in the PR body (ruling Q1). KTD3 rests on reading the code (see KTD3).
+  - MCP: `mcp-server.integration.test.ts` spawns the built `stryker mcp` and drives list, show, `rerun_mutant` and feedback over JSON-RPC, asserting the tool outcomes (`:261`, `:294-352`). It does not pin two properties on this path. First, it runs with `cleanTempDir: 'always'` (`:44`), so exit-sensitive cleanup is unobserved through the binary. Second, its reader skips every stdout line that does not decode as a JSON-RPC response (`:215-220`), so a console leak would pass. Both gaps are recorded in the PR body (ruling Q1). KTD3's scope claim is settled in process by the throwaway probe (see KTD3).
   - Plan: `plan.integration.test.ts` (byte-identical plan bytes, dedupe by path and symlink), `compile-error-reuse.integration.test.ts` (`Engine.planRequest` in-process), `plan-costs`, `plan-recorded-costs`, `plan-shard-reuse`, `plan-stream-location` and `plan-without-sandbox`.
   - Harness: the e2e lane runs only on `main` pushes; every journey bakes fixtures and boots warm sandboxes, so the first `main` e2e run after merge exercises F8 and F10. Locally, `@systemfsoftware/stryker-e2e` typecheck and lint resolve every changed type and specifier.
   - Mutation on `main` selects `src/**/*.workflow.ts` and `src/**/*.schema.ts` (`packages/stryker-js/stryker.config.ts:15-17`). No touched file is either kind, so no surviving-mutant ids apply.
@@ -245,7 +248,7 @@ Units U3, U4 and U6 of the earlier revision of this plan were withdrawn by the r
 - **Requirements:** R2, R5.
 - **Dependencies:** none.
 - **Files:** `packages/stryker-js/src/plan-request.cell.ts`.
-- **Approach:** add the module-level composed cell (KTD4) and replace `:259-260` with one run of it. Later uses of `prepared.loadedPlugins` and `done` read from its output.
+- **Approach:** add the module-level composed cell (KTD4) and replace the two sequential runs (`:250-251` on `b4db6d8e`) with one run of it. Later uses of `prepared.loadedPlugins` and `done` read from its output.
 - **Test scenarios:**
   - Covers AE5. `plan.integration.test.ts`: plan bytes stay identical across invocations; dedupe by path and symlink holds.
   - `compile-error-reuse.integration.test.ts` (`Engine.planRequest`, exported signature unchanged), `plan-costs`, `plan-recorded-costs`, `plan-shard-reuse`, `plan-stream-location` and `plan-without-sandbox` keep their verdicts.
