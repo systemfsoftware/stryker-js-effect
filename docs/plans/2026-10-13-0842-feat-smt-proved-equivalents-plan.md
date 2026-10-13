@@ -17,11 +17,11 @@ execution: code
 - **Product authority:** the root's T12 intent of 2026-10-13, which pre-approves `z3-solver` and supersedes the root's 2026-10-09 rejection of SMT (recorded in `docs/plans/2026-10-09-2024-feat-mutant-subsumption-plan.md`, Key Decisions), then `CONSTITUTION.md`. Stream C owns `constant-collection-size` (#304). Stream H owns the checker's type queries (#328). Stream K and the root own `.github/workflows/`. Stream F owns native mutant generation later.
 - **Execution profile:** three stacked PRs on `main` (Sequencing). Local verification is the touched package's typecheck, tests and API report, one build at a time. No mutation run, no e2e and no microVM run locally.
 - **Stop conditions:**
-  - The root's answer to Q1 comes first: this plan stops at its plan gate.
-  - U4 does not start until `async-mutex` is approved (Q2). If it is refused, U1-U3 still ship inert, and the run stops before U4.
+  - **Stopped by Q1, 2026-10-13.** The root required a material yield on the frozen bench corpus before any code: at least 1% of corpus survivors proved equivalent, or a measurable execution saving. The fragment proves 0 of the bench corpus's 13 Survived and NoCoverage mutants and saves 0 executions (Problem Frame, "Measured on the bench corpus"). No unit starts. The root decides whether the goal is amended (Q1).
+  - If the root resumes the unit, U4 may start: the root approved `async-mutex` 0.3.2 as part of `z3-solver`'s pinned closure (Q2).
   - R13's corpus verdict comes from Stream K's `needs: [kill-matrix]` audit job in `mutation.yml` (root ruling, 2026-10-13). U6 ships the audit predicate and replay; PR-3's no-signal-loss evidence waits until K's job is on `main`.
-- **Who finishes:** `ce-work` builds U1-U7. The root decides Q1, the supervisor decides Q2, Stream K adds the audit job, and the supervisor merges each layer.
-- **Open blockers:** Q1 (root), Q2 (supervisor). The root's scorecard and SOTA-bar documents (`~/.kiro/crew/workspace/plans/2026-10-13-0000-stryker-sota-*.md`) are not readable from this workspace, so this plan works from the gap the root quoted: "no z3/SMT solver; static subsumption already exists".
+- **Who finishes:** nobody while Q1 stands. On resumption, `ce-work` builds U1-U7, Stream K adds the audit job, and the supervisor merges each layer.
+- **Open blockers:** Q1's goal amendment (root) and the proof's shape (Q6, root).
 - **Applicable packs** (`.compound-engineering/config.yaml`): `cell-architecture`, `boundary-testing`, `schema-laws`. The rules that shaped decisions are cited where they apply.
 
 ---
@@ -55,6 +55,24 @@ A mutant whose JS differs but whose behaviour does not is never removed. It is r
 - `87ac4fce39ccfec2` is also the S1 dominator of `00d226d153f913c3` (`<` → `>=`). In kill matrix `kill-matrix-463` the dominator is Survived after 17 tests and the subsumed mutant is Killed by 1 of 17. Proving the dominator equivalent re-admits the subsumed mutant (R8). So on the corpus the change removes one equivalent survivor from the score and leaves the executed-mutant count unchanged.
 
 The corpus is Effect-style decision code with few numeric helpers. Projects with more arithmetic would see more proofs, but no number for them can be measured without a mutation run on an outside corpus.
+
+**Measured on the bench corpus (root's Q1 bar, 2026-10-13).** The frozen corpus is `test/bench/corpus.json` at `main` `b4db6d8ed`: three pinned repo slices (`packages/stryker-js-vitest-runner`, `packages/stryker-js-typescript-checker`, `test/e2e-core`) and four files of the enterprise fixture. The statuses are side A, `main` `b4db6d8ed` itself, of bench run 38418305726 (`bench-runs-*` artifacts; the four side-A repetitions of each project agree mutant for mutant). The fixture runs under `mutantSetPolicy: 'full'`, the repo slices under `'default'`.
+
+| Count                                                | Bench corpus | Dogfood corpus (run 38363576433)               |
+| ---------------------------------------------------- | ------------ | ---------------------------------------------- |
+| Mutants                                              | 269          | 12,239                                         |
+| Survived / NoCoverage                                | 11 / 2       | 1,307 / 497                                    |
+| Eligible functions (this fragment, R1-R3)            | 0            | 12                                             |
+| Survived or NoCoverage mutants in eligible functions | 0            | 14                                             |
+| Proved equivalent by this fragment                   | 0            | 1 (`87ac4fce39ccfec2`)                         |
+| Executions saved                                     | 0            | 0 (the proof re-admits its S1 subsumed mutant) |
+
+- Admitting any parameter type adds 2 mutants in 2 bench functions, both Killed.
+- A scratch `z3-solver` 5.2.0 pass (Node 24.21.0) encoded all 13 bench survivors by hand, beyond the fragment, comparing by `SameValue`. Twelve are `sat`. The six message mutants differ by output; the analytics, pricing and cap mutants differ at `count = +0`, `quantity = +0` and `amount = ceiling = 2^-6`. Two of them (`e184e09c95356065`, `6a502221194a184b`) were `unknown` at `rlimit` 200,000,000 over the open domain and `sat` with that parameter fixed at `+0`. The enterprise survivors are seeded weak-test fixtures (`@stryker-expect … Survived`).
+- The one `unsat` lies outside every fragment above: `e57b0bafada1663f` (`classify-tce.workflow.ts:59`, `onNone: () => false` → `true`) is equivalent only because its one caller, `indexedOf`, passes indices from `Arr.map` over the same array. It is NoCoverage, so dropping it saves no execution.
+- The calling-context candidate `bed85e7411fe8802` (`parse-annotations.workflow.ts:417`) is `unsat` with `indexOf`'s result as an integer `>= -1`. It is Survived after 15 tests in `kill-matrix-463`; `test/e2e-core` left the Mutation corpus in #337, so it is in neither corpus today.
+
+Against the root's bar this fragment is presence, not effect: 0% of bench survivors and 1 of 1,307 dogfood survivors (0.08%), with no execution saved on either corpus. Both proofs found outside it need calling-context reasoning through Effect's `Option` and `Array` combinators, which this plan does not model.
 
 ### Key Decisions
 
@@ -173,11 +191,11 @@ This plan covers proved equivalence only. The rest is the current understanding,
 
 ### Outstanding Questions
 
-- Q1. **Build at this yield?** On the corpus the unit disposes one equivalent survivor and saves no executed mutant (Problem Frame). The 2026-10-09 rejection rested on the same count; T12's intent orders the outcome anyway. For the root at the plan gate.
-- Q2. **Approve `async-mutex`.** `z3-solver` 5.2.0 depends on `async-mutex ^0.3.2` (MIT, single maintainer `dirtyhairy`; 0.3.2 is what the range resolves to under the pin). It blocks U4 (supervisor).
-- Q3. **Package boundary.** `z3-solver` puts 35.8 MB into every install of `@systemfsoftware/stryker-js`. A separate plugin package would keep it optional, but Stream A is splitting packages. The plan keeps it in the engine with a lazy load (KTD3); the root may redirect.
+- Q1. **Build at this yield? Answered by measurement: no.** The root's bar (at least 1% of bench-corpus survivors proved, or a measurable execution saving) is not met (Problem Frame, "Measured on the bench corpus"). The unit stops, and the root decides the goal amendment: drop SMT from the T12 goal, or re-scope it to calling-context equivalence through Effect combinators, where both found equivalents live.
+- Q2. **`async-mutex`. Answered: approved** (root, 2026-10-13) as part of `z3-solver`'s pinned closure, applying only if the unit resumes.
+- Q3. **Package boundary. Answered: keep `z3-solver` in `@systemfsoftware/stryker-js`, lazy-loaded (KTD3).** The PR body reports the install-size growth (the 5.2.0 tarball unpacks to 35.8 MB); the solver moves with Stream A's package split.
 - Q5. **CI home for R13. Resolved by the root, 2026-10-13.** The audit is a `needs: [kill-matrix]` job in the Mutation lane, owned by Stream K: under CONST-E7 the gate grades Stream I's drops, so Stream I does not own the job. It audits the `--full` matrix the same run produced, so drops in code a commit adds join as well. A red audit makes Mutation red, and the triage cron owns it. Mutation runs nightly plus manual dispatch, so the day's merged drops are judged that night; until then a default drop has R7, R17 and replay behind it.
-- Q6. **Proof field shape against `schema-laws`.** U1 adds an optional `equivalence` field to `Mutant` whose presence follows the reason code. That is the trigger of (pack: schema-laws, tagged-unions-over-state-by-presence.md), which (pack: schema-laws, cross-field-invariants-as-struct-checks.md) rule 2 hands such fields to. `main` already models `statusReason` and `subsumption` this way with struct checks (`Mutant.schema.ts:137-148`), and a status-tagged `Mutant` is a cross-package wire change beyond T12. KTD11 follows the precedent and records the violation. The root may order the union instead, which moves U1 and U5 onto a reshaped `Mutant`.
+- Q6. **Proof field shape. Ruled by the root: no field whose presence depends on the reason code.** `main`'s `statusReason` and `subsumption` checks (`Mutant.schema.ts:132-146`) are existing violations, not precedent. The proof travels in a tagged variant local to `Ignored`. Open: `Mutant` has no `Ignored` arm to hold it. `status` is an optional literal (`Mutant.schema.ts:132`) on a flat struct (`:126`), so "local to `Ignored`" needs either a status-tagged `Mutant`, a wire change across the plugin interface, the NDJSON stream and the incremental record, or another optional field, which repeats the violation. The shape is derived through CE and schema-laws if the unit resumes.
 
 ### Product Contract preservation
 
