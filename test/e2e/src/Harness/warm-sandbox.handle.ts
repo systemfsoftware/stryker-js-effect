@@ -9,6 +9,7 @@ import type { ExecHandle } from 'microsandbox'
 import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, GuestJobFailure, SandboxForkFailure } from './harness-failure.schema.js'
+import { guestJobOf } from './microsandbox-job.js'
 
 export interface WarmSandboxSnapshot {
   readonly reference: string
@@ -67,9 +68,8 @@ const uniqueName = (label: string) =>
 
 const bootAndCapture = (bakedFixtureDir: string, fixtureId: string, snapshotName: string) =>
   Effect.scoped(Effect.gen(function*() {
-    const jobs = yield* GuestJobs
     const step = `boot the warm ${fixtureId} microVM`
-    const vm = yield* jobs.job(IDLE_WORKLOAD, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
+    const vm = yield* guestJobOf(IDLE_WORKLOAD, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
       .scoped
       .pipe(Effect.mapError((cause) => new GuestJobFailure({ step, cause })))
     const populated = yield* MicroVM.exec(vm, 'sh', ['-c', populateScript]).pipe(

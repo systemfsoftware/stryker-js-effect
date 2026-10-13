@@ -26,12 +26,7 @@ const FIXTURES = new URL('./__fixtures__/lockfile-closure/', import.meta.url)
 
 const LIVE_LOCKFILE = new URL('../../../pnpm-lock.yaml', import.meta.url)
 
-const MUTATED_PROJECTS = [
-  'packages/stryker-js',
-  'packages/stryker-js-typescript-checker',
-  'packages/stryker-js-vitest-runner',
-  'test/e2e-core',
-] as const
+const MUTATION_WORKFLOW = new URL('../../../.github/workflows/mutation.yml', import.meta.url)
 
 const ORACLE_PROJECTS = ['a', 'b'] as const
 
@@ -111,16 +106,24 @@ const liveLockfileText: Effect.Effect<string, never, FilePorts> = Effect.gen(fun
   return yield* fs.readFileString(yield* pathService.fromFileUrl(LIVE_LOCKFILE))
 }).pipe(Effect.orDie)
 
+const mutatedProjects: Effect.Effect<ReadonlyArray<string>, never, FilePorts> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  const workflow = parseDocument(yield* fs.readFileString(yield* pathService.fromFileUrl(MUTATION_WORKFLOW)))
+  const projects = workflow.getIn(['env', 'PROJECTS'])
+  return typeof projects === 'string'
+    ? projects.split(',')
+    : yield* Effect.die(new Error(`${MUTATION_WORKFLOW.pathname} declares no env.PROJECTS string`))
+}).pipe(Effect.orDie)
+
 const projectManifestOf = (project: string): string =>
   `{ "name": "${project.replaceAll('/', '-')}", "private": true }\n`
 
-const repositoryWorkspaceOf = (lockfile: string): Workspace =>
+const repositoryWorkspaceOf = (lockfile: string, projects: ReadonlyArray<string>): Workspace =>
   Object.fromEntries<string>([
     ['pnpm-lock.yaml', lockfile],
     ['package.json', ROOT_MANIFEST],
-    ...MUTATED_PROJECTS.map((
-      project,
-    ): readonly [string, string] => [`${project}/package.json`, projectManifestOf(project)]),
+    ...projects.map((project): readonly [string, string] => [`${project}/package.json`, projectManifestOf(project)]),
   ])
 
 const singleProjectWorkspaceOf = (lockfileName: string, lockfile: string): Workspace => ({
@@ -280,24 +283,30 @@ Feature('Keeping saved verdicts across lockfile edits outside a project dependen
     scenario(
       'A lockfile edit that adds a package no mutated project depends on keeps every mutated project verdicts',
       Gherkin.Do.pipe(
-        Given('the repository lockfile before and after a new test package was added')('locks', () =>
-          Effect.all({
-            before: fixtureTextOf('real/pnpm-lock.56426ca94.yaml'),
-            after: fixtureTextOf('real/pnpm-lock.ec9dcf63c.yaml'),
-          })),
+        Given(
+          'the repository lockfile before and after a new test package was added, and the projects the mutation workflow grades',
+        )(
+          'locks',
+          () =>
+            Effect.all({
+              before: fixtureTextOf('real/pnpm-lock.56426ca94.yaml'),
+              after: fixtureTextOf('real/pnpm-lock.ec9dcf63c.yaml'),
+              projects: mutatedProjects,
+            }),
+        ),
         When('each mutated project runs once on the older lockfile and again on the newer one')(
           'outcomes',
           (s) =>
             secondRunOutcomesOf(
-              repositoryWorkspaceOf(s.locks.before),
-              repositoryWorkspaceOf(s.locks.after),
-              MUTATED_PROJECTS,
+              repositoryWorkspaceOf(s.locks.before, s.locks.projects),
+              repositoryWorkspaceOf(s.locks.after, s.locks.projects),
+              s.locks.projects,
             ),
         ),
         Then('every mutated project reuses its saved verdicts and no run falls back to the whole lockfile')((
           s,
           expect,
-        ) => expect(s.outcomes).toEqual(everyProject(MUTATED_PROJECTS, outcomeOf('keptVerdicts')))),
+        ) => expect(s.outcomes).toEqual(everyProject(s.locks.projects, outcomeOf('keptVerdicts')))),
       ),
     )
 
@@ -510,14 +519,20 @@ Feature('Keeping saved verdicts across lockfile edits outside a project dependen
     scenario(
       'The repository lockfile is digested by closure for every mutated project',
       Gherkin.Do.pipe(
-        Given('the repository pnpm-lock.yaml as it stands in this checkout')('lockfile', () => liveLockfileText),
+        Given('the repository lockfile and the projects the mutation workflow grades, as they stand in this checkout')(
+          'repository',
+          () => Effect.all({ lockfile: liveLockfileText, projects: mutatedProjects }),
+        ),
         When('each mutated project runs once against it')(
           'runs',
-          (s) => firstRunsOf(repositoryWorkspaceOf(s.lockfile), MUTATED_PROJECTS),
+          (s) =>
+            firstRunsOf(repositoryWorkspaceOf(s.repository.lockfile, s.repository.projects), s.repository.projects),
         ),
         Then(
           'every run completes and no project falls back to the whole lockfile; a listed reason code means pnpm wrote a ref form the grammar misses: regenerate the oracle with `pnpm --filter @systemfsoftware/stryker-js fixtures:lockfile-oracle`, then fix the grammar its pins expose',
-        )((s, expect) => expect(s.runs).toEqual(everyProject(MUTATED_PROJECTS, { completed: true, fallbacks: [] }))),
+        )((s, expect) =>
+          expect(s.runs).toEqual(everyProject(s.repository.projects, { completed: true, fallbacks: [] }))
+        ),
       ),
     )
   })

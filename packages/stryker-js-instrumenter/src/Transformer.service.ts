@@ -94,7 +94,7 @@ import {
   type MutatorOptions,
   relationalOperatorOf,
 } from './Mutator.service.js'
-import { type ParseFailed } from './Parser.service.js'
+import { type ParseFailed } from './Parser.schema.js'
 import {
   type EditSite,
   type PlacedMutant,

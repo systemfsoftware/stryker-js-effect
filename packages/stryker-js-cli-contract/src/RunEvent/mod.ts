@@ -1,5 +1,5 @@
 export { PluginLoadFailureReason } from '../plugin-load-failure-reason.schema.js'
-export { RunEventWireLine } from '../run-event-wire.schema.js'
+export { RunEventWireLine, RunEventWireText } from '../run-event-wire.schema.js'
 export {
   Budget,
   CheckDuration,

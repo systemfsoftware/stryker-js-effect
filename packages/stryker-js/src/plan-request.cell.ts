@@ -22,7 +22,7 @@ import * as Scope from 'effect/Scope'
 import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
-import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
+import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema, PlanShardsRefused } from './plan-request.schema.js'
@@ -37,7 +37,7 @@ import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextsOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
-import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
+import { planInstrumentCell } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
@@ -68,6 +68,11 @@ const DEFAULT_MUTANT_COST_MS = 1_000
 
 const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
 
+const planStageCell = Cell.andThen(
+  prepareStageCell,
+  (prepared) => Cell.map(planInstrumentCell, (done) => ({ prepared, done })),
+)
+
 const namedCostsOf = (
   costs: NonNullable<typeof CostsFieldSchema.Type['costs']>,
 ): Record<string, number> =>
@@ -95,15 +100,6 @@ const reportCostsOf = (texts: readonly string[]): Record<string, number> =>
       }),
     {},
   )
-
-const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
-  Option.flatMap(
-    S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
-    (report) => Option.fromNullishOr(report.dryRunCoverage),
-  )
-
-const firstCoverageOf = (texts: readonly string[]): Option.Option<DryRunCoverage> =>
-  Option.firstSomeOf(texts.map(decodeCoverage))
 
 const testsTimeOf = (tests: ReadonlyArray<{ readonly timeSpentMs: number }>): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
@@ -238,10 +234,10 @@ const planProject = (
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
     const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
-    const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
-    const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
+    const { prepared, done } = yield* Cell.provideContext(planStageCell, context).run(stageInput)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
-    const coverage = firstCoverageOf(texts)
+    const dryRunChoice = yield* dryRunChoiceOf(done, project, texts)
+    const coverage = dryRunChoice.prior
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const reportCosts = reportCostsOf(texts)
     const label = labelOf(path, labelBase, project)
@@ -272,12 +268,12 @@ const planProject = (
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
           texts,
+          kept: dryRunChoice.kept,
         }),
       ),
       (neverError) => neverError,
     )
     const dependentIds = HashSet.fromIterable(dependentMutantIdsOf(dryRunDecision))
-    const dryRunChoice = yield* dryRunChoiceOf(done, project)
     const dryRunCostMs = Boolean.match(S.is(DryRunCoverageReused)(dryRunChoice.decision), {
       onTrue: () => 0,
       onFalse: () =>
