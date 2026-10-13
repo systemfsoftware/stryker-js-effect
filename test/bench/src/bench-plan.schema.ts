@@ -38,7 +38,7 @@ export class NoBenchBase extends S.TaggedError<NoBenchBase>()('NoBenchBase', {
 
 const GreenRunListing = S.Struct({ sha: S.NonEmptyString, createdAtSeconds: S.Int })
 
-export const GreenRunsJson = GreenRunListing.pipe(S.Array, S.fromJsonString)
+export const GreenRunsJson = S.Array(GreenRunListing).pipe(S.fromJsonString)
 
 export const GreenRun = S.Struct({ ...GreenRunListing.fields, ancestor: S.Boolean })
 export type GreenRun = typeof GreenRun.Type
