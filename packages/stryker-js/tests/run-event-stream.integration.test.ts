@@ -114,6 +114,7 @@ const runResultOf = (fixture: MutantFixture): Mutant.RunMutantResult => ({
   mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
   replacement: '+',
   location: MUTANT_LOCATION,
+  probeEligibility: Mutant.Unprobed.make({ reason: 'mutator-not-probed' }),
   status: fixture.status,
   static: fixture.static,
   ...(fixture.bodyMs === null

@@ -226,6 +226,7 @@ const reportMutant = (
       mutatorName: mutant.mutatorName,
       replacement: mutant.replacement,
       location: mutant.location,
+      probeEligibility: mutant.probeEligibility,
       status,
       coveredBy: mutant.coveredBy,
       static: mutant.static,
@@ -1059,6 +1060,7 @@ if (import.meta.vitest !== void 0) {
     static: mutant.static,
     testsCompleted: mutant.testsCompleted,
     description: mutant.description,
+    probeEligibility: mutant.probeEligibility,
   })
 
   const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)

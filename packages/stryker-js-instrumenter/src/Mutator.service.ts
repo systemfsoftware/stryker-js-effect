@@ -7,6 +7,12 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import {
+  assessProbeEligibility,
+  AssessProbeEligibilityCommand,
+  type ProbeDecision,
+  type ProbeSite,
+} from './assess-probe-eligibility.workflow.js'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -144,6 +150,59 @@ const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
     () => Option.map(Option.fromUndefinedOr(mutant.subsumption), ApiMutant.subsumedStatusReason),
   )
 
+const isPrimitiveLiteral = (node: Node): boolean => node.type === 'Literal' && !Predicate.hasProperty(node, 'regex')
+
+const operandKindOf = (node: Node): 'literal' | 'other' => isPrimitiveLiteral(node) ? 'literal' : 'other'
+
+const constantReplacementOf = (original: Node): ProbeSite =>
+  isBinaryExpression(original)
+    ? {
+      _tag: 'ConstantReplacement',
+      comparedOperator: original.operator,
+      left: operandKindOf(original.left),
+      right: operandKindOf(original.right),
+    }
+    : { _tag: 'ConstantReplacement', comparedOperator: null, left: 'other', right: 'other' }
+
+const unarySwapOf = (original: UnaryExpression, replacement: Node): ProbeSite => ({
+  _tag: 'UnarySwap',
+  originalOperator: original.operator,
+  replacementOperator: isPrefixUnaryExpression(replacement) ? replacement.operator : null,
+})
+
+const probeSiteOf = (original: Node, replacement: Node): ProbeSite =>
+  Match.value({ original, replacement }).pipe(
+    Match.when({ replacement: isBooleanLiteral }, () => constantReplacementOf(original)),
+    Match.when(
+      { original: isBinaryExpression, replacement: isBinaryExpression },
+      (pair): ProbeSite => ({
+        _tag: 'BinarySwap',
+        originalOperator: pair.original.operator,
+        replacementOperator: pair.replacement.operator,
+      }),
+    ),
+    Match.when({ original: isPrefixUnaryExpression }, (pair) => unarySwapOf(pair.original, pair.replacement)),
+    Match.orElse((): ProbeSite => ({ _tag: 'UnrecognizedShape' })),
+  )
+
+const probeEligibilityOf = (mutant: Mutant): ApiMutant.ProbeEligibility =>
+  Result.match(
+    assessProbeEligibility(AssessProbeEligibilityCommand.make({
+      mutatorName: mutant.mutatorName,
+      site: probeSiteOf(mutant.original, mutant.replacement),
+    })),
+    {
+      onFailure: (never) => never,
+      onSuccess: (decision: ProbeDecision) =>
+        Match.value(decision).pipe(
+          Match.tagsExhaustive({
+            MutantProbed: (decided) => ApiMutant.Probed.make({ kind: decided.kind }),
+            MutantUnprobed: (decided) => ApiMutant.Unprobed.make({ reason: decided.reason }),
+          }),
+        ),
+    },
+  )
+
 export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
@@ -152,6 +211,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     location: mutant.location,
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
+    probeEligibility: probeEligibilityOf(mutant),
   }
   return S.decodeResult(ApiMutant.Mutant)(
     Option.match(statusReasonOf(mutant), {
