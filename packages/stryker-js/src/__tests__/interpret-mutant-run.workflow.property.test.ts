@@ -5,11 +5,12 @@ import * as S from 'effect/Schema'
 
 import {
   interpretMutantRun,
+  MutantRunConfirm,
   MutantRunObservation,
-  MutantRunPoolInvalidated,
   MutantRunRetry,
   MutantRunRetryExhausted,
   MutantRunSettled,
+  MutantRunTimeoutConfirmed,
 } from '../interpret-mutant-run.workflow.js'
 
 const intersects = (covering: readonly string[], executed: readonly string[]): boolean =>
@@ -20,25 +21,42 @@ const coveringTestMissing = (command: MutantRunObservation): boolean =>
   command.executedTests !== undefined &&
   !intersects(command.coveringTests, command.executedTests)
 
+const twiceOrLargest = (timeoutMs: number): number => Number.isFinite(timeoutMs * 2) ? timeoutMs * 2 : Number.MAX_VALUE
+
 it.prop(
-  '∀c_Observation_≡OnlyAWallClockClipRecyclesTheRunner',
+  '∀c_Observation_≡AFirstWallClockExpiryConfirmsUnderTwiceTheDeadline',
   { of: [MutantRunObservation], subject: interpretMutantRun },
   (subject, [command]) =>
     Result.match(subject(command), {
       onFailure: () => false,
-      onSuccess: (decision) => S.is(MutantRunPoolInvalidated)(decision) === command.wallClockTimeout,
+      onSuccess: (decision) =>
+        Boolean.match(command.wallClockTimeout && !command.confirming, {
+          onTrue: () => S.is(MutantRunConfirm)(decision) && decision.timeoutMs === twiceOrLargest(command.timeoutMs),
+          onFalse: () => !S.is(MutantRunConfirm)(decision),
+        }),
     }),
 )
 
 it.prop(
-  '∀c_Observation_≡MissingCoveringTestRetriesOnceThenExhausts',
+  '∀c_Observation_≡OnlyAnExpiredConfirmationSettlesAsATimeout',
+  { of: [MutantRunObservation], subject: interpretMutantRun },
+  (subject, [command]) =>
+    Result.match(subject(command), {
+      onFailure: () => false,
+      onSuccess: (decision) =>
+        S.is(MutantRunTimeoutConfirmed)(decision) === (command.wallClockTimeout && command.confirming),
+    }),
+)
+
+it.prop(
+  '∀c_Observation_≡WithoutAnExpiryMissingCoveringTestRetriesOnceThenExhausts',
   { of: [MutantRunObservation], subject: interpretMutantRun },
   (subject, [command]) =>
     Result.match(subject(command), {
       onFailure: () => false,
       onSuccess: (decision) =>
         Boolean.match(command.wallClockTimeout, {
-          onTrue: () => S.is(MutantRunPoolInvalidated)(decision),
+          onTrue: () => !S.is(MutantRunSettled)(decision) && !S.is(MutantRunRetry)(decision),
           onFalse: () =>
             Boolean.match(coveringTestMissing(command), {
               onTrue: () =>

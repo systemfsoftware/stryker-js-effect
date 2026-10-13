@@ -9,12 +9,22 @@ type MutantRunOutcomeTypeId = typeof MutantRunOutcomeTypeId
 
 export const NoCoveringTestExecutedReason = S.Literal('no covering test executed')
 
+const CONFIRMATION_DEADLINE_FACTOR = 2
+
+const Deadline = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+
 export class MutantRunSettled extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunPoolInvalidated
-  extends S.TaggedClass<MutantRunPoolInvalidated>()('MutantRunPoolInvalidated', {})
+export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm>()('MutantRunConfirm', {
+  timeoutMs: Deadline,
+}) {
+  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
+}
+
+export class MutantRunTimeoutConfirmed
+  extends S.TaggedClass<MutantRunTimeoutConfirmed>()('MutantRunTimeoutConfirmed', {})
 {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
@@ -29,12 +39,15 @@ export class MutantRunRetryExhausted extends S.TaggedClass<MutantRunRetryExhaust
 
 export type MutantRunOutcome =
   | MutantRunSettled
-  | MutantRunPoolInvalidated
+  | MutantRunConfirm
+  | MutantRunTimeoutConfirmed
   | MutantRunRetry
   | MutantRunRetryExhausted
 
 export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
   wallClockTimeout: S.Boolean,
+  confirming: S.Boolean,
+  timeoutMs: Deadline,
   coveringTests: S.String.pipe(S.Array),
   executedTests: S.String.pipe(S.Array, S.optionalKey),
   attempt: S.Natural,
@@ -67,15 +80,33 @@ const decideGuard = (command: MutantRunObservation): Result.Result<MutantRunOutc
     onFalse: () => Result.succeed(MutantRunSettled.make({})),
   })
 
+const confirmationDeadlineOf = (timeoutMs: number): number =>
+  Boolean.match(Number.isFinite(timeoutMs * CONFIRMATION_DEADLINE_FACTOR), {
+    onTrue: () => timeoutMs * CONFIRMATION_DEADLINE_FACTOR,
+    onFalse: () => Number.MAX_VALUE,
+  })
+
+const decideExpiry = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
+  Boolean.match(command.confirming, {
+    onTrue: () => Result.succeed(MutantRunTimeoutConfirmed.make({})),
+    onFalse: () => Result.succeed(MutantRunConfirm.make({ timeoutMs: confirmationDeadlineOf(command.timeoutMs) })),
+  })
+
 const decide = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
   Boolean.match(command.wallClockTimeout, {
-    onTrue: () => Result.succeed(MutantRunPoolInvalidated.make({})),
+    onTrue: () => decideExpiry(command),
     onFalse: () => decideGuard(command),
   })
 
 export const interpretMutantRun = Workflow.make({
   command: MutantRunObservation,
-  decision: S.Union([MutantRunSettled, MutantRunPoolInvalidated, MutantRunRetry, MutantRunRetryExhausted]),
+  decision: S.Union([
+    MutantRunSettled,
+    MutantRunConfirm,
+    MutantRunTimeoutConfirmed,
+    MutantRunRetry,
+    MutantRunRetryExhausted,
+  ]),
   error: S.Never,
   decide,
 })

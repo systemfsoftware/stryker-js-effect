@@ -14,7 +14,7 @@ import { cicdAttributesOf, spanRunStatusOf, testSuiteNameOf } from '../mutant-ru
 import { invalidatesRunnerPool } from '../pooled-test-runner.handle.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
-import { recycleAndSettleMutantRun, type RunOnePlanArgs, settleMutantRun } from './mutant-run.js'
+import { recycleAndSettleConfirmedTimeout, type RunOnePlanArgs, settleMutantRun } from './mutant-run.js'
 
 const reasonOf = (result: { readonly status: string; readonly reason?: string }): string | undefined =>
   Match.value(result).pipe(
@@ -49,7 +49,14 @@ const executedTestsFieldOf = (
 
 interface MutantRunAttemptArgs extends RunOnePlanArgs {
   readonly attempt: number
+  readonly confirming: boolean
+  readonly expiredMs: number
 }
+
+const withDeadline = (plan: Mutant.MutantRunPlan, timeoutMs: number): Mutant.MutantRunPlan => ({
+  ...plan,
+  runOptions: { ...plan.runOptions, timeout: timeoutMs },
+})
 
 const CI_PIPELINE_RUN_ID_VARIABLES: ReadonlyArray<string> = ['GITHUB_RUN_ID', 'CI_PIPELINE_ID', 'BUILD_ID']
 const CI_PIPELINE_NAME_VARIABLES: ReadonlyArray<string> = ['GITHUB_WORKFLOW', 'CI_PIPELINE_NAME', 'BUILD_NAME']
@@ -97,9 +104,11 @@ const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttempt
   )
   return {
     wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
+    confirming: input.confirming,
+    timeoutMs: plan.runOptions.timeout,
     coveringTests: coveringTestsOf(plan),
     ...executedTestsFieldOf(result),
-    elapsedMs: Duration.toMillis(elapsed),
+    elapsedMs: input.expiredMs + Duration.toMillis(elapsed),
     attempt: input.attempt,
     args: input,
     runner,
@@ -117,7 +126,18 @@ const attemptCell: Cell.Cell<
     .decide(interpretMutantRun)
     .write({
       MutantRunSettled: (_decision, raw) => settleMutantRun(raw),
-      MutantRunPoolInvalidated: (_decision, raw) => recycleAndSettleMutantRun(raw),
+      MutantRunConfirm: ({ timeoutMs }, raw) =>
+        Effect.flatMap(
+          Pool.invalidate(raw.args.testRunnerPool, raw.runner),
+          () =>
+            attemptCell.run({
+              ...raw.args,
+              plan: withDeadline(raw.args.plan, timeoutMs),
+              confirming: true,
+              expiredMs: raw.elapsedMs,
+            }),
+        ),
+      MutantRunTimeoutConfirmed: (_decision, raw) => recycleAndSettleConfirmedTimeout(raw),
       MutantRunRetry: (_decision, raw) =>
         Effect.flatMap(
           Pool.invalidate(raw.args.testRunnerPool, raw.runner),
@@ -142,4 +162,7 @@ export const mutantRunCell: Cell.Cell<
   Mutant.RunMutantResult,
   StageError | PooledTestRunnerError,
   Scope.Scope
-> = Cell.mapInput(attemptCell, (args: RunOnePlanArgs): MutantRunAttemptArgs => ({ ...args, attempt: 0 }))
+> = Cell.mapInput(
+  attemptCell,
+  (args: RunOnePlanArgs): MutantRunAttemptArgs => ({ ...args, attempt: 0, confirming: false, expiredMs: 0 }),
+)

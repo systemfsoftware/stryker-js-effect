@@ -12,6 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
+import type { TimeoutEvidence } from '../IncrementalDiff.schema.js'
 import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
 import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
@@ -39,6 +40,7 @@ export interface RunContext {
   readonly plannedMutants: readonly Mutant.Mutant[]
   readonly rememberedMutantIds: ReadonlyArray<string>
   readonly pathService: Path.Path
+  readonly confirmedTimeouts: Ref.Ref<Readonly<Record<string, TimeoutEvidence>>>
 }
 
 export interface ReportingInputArgs {
@@ -185,15 +187,21 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
 })
 
 const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
-  context.reporting.checkpoint(
-    reportingInputOf({
-      prev: context.prev,
-      env: context.env,
-      results,
-      rememberedMutantIds: context.rememberedMutantIds,
-    }),
-    context.plannedMutants,
-  ).pipe(
+  Ref.get(context.confirmedTimeouts).pipe(
+    Effect.flatMap((confirmed) =>
+      context.reporting.checkpoint(
+        {
+          ...reportingInputOf({
+            prev: context.prev,
+            env: context.env,
+            results,
+            rememberedMutantIds: context.rememberedMutantIds,
+          }),
+          timeoutEvidenceByMutantId: confirmed,
+        },
+        context.plannedMutants,
+      )
+    ),
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
     Effect.ignoreCause,
   )
@@ -275,7 +283,13 @@ export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
   return costed
 })
 
-export const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+const FIRST_EXPIRY: TimeoutEvidence = { timeoutKind: 'wallClock', reproductions: 0 }
+
+export const recycleAndSettleConfirmedTimeout = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  yield* Ref.update(raw.args.context.confirmedTimeouts, (confirmed) => ({
+    ...confirmed,
+    [raw.args.plan.mutant.id]: FIRST_EXPIRY,
+  }))
   yield* Pool.invalidate(raw.args.testRunnerPool, raw.runner)
   return yield* settleMutantRun(raw)
 })
