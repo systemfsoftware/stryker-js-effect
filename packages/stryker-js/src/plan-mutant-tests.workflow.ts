@@ -363,11 +363,14 @@ const mutantIsOpen = (mutant: Mutant.Mutant): boolean => Option.isNone(Option.fr
 const mutantById = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): Option.Option<Mutant.Mutant> =>
   Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId)
 
-const mutantWitnessesUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+const mutantCanWitnessCoverage = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
   Option.match(mutantById(command, mutantId), {
-    onNone: () => false,
-    onSome: (mutant) => Boolean.and(mutantIsOpen(mutant), mutantIdIsPerTestUncoveredNonStatic(command, mutantId)),
+    onNone: () => true,
+    onSome: mutantIsOpen,
   })
+
+const mutantWitnessesUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  Boolean.and(mutantCanWitnessCoverage(command, mutantId), mutantIdIsPerTestUncoveredNonStatic(command, mutantId))
 
 const alternateIsUnexecuted = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   Option.match(Option.fromUndefinedOr(guard.alternate), {

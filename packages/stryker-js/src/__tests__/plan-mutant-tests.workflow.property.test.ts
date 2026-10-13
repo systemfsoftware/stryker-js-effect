@@ -323,7 +323,10 @@ const mutantIsOpenById = (command: MutantTestPlanCommand, mutantId: Mutant.Mutan
   })
 
 const witnessIsUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
-  mutantIsOpenById(command, mutantId) && !blockIsCovered(command, mutantId)
+  Option.match(Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId), {
+    onNone: () => !blockIsCovered(command, mutantId),
+    onSome: (mutant) => mutant.status === undefined && !blockIsCovered(command, mutantId),
+  })
 
 const alternateIsUnexecuted = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   guard.alternate === undefined || witnessIsUncovered(command, guard.alternate)
