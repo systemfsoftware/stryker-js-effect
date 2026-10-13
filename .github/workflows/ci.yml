@@ -699,3 +699,122 @@ jobs:
             checker-parity-costs.json
           retention-days: 14
           if-no-files-found: warn
+
+  drop-audit:
+    needs: lane
+    if: needs.lane.outputs.docs-only != 'true' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      MATRIX_DIR: kill-matrix
+      AUDIT_OUT: reports/audit.json
+    steps:
+      - id: start
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+      - id: build-key
+        name: Key of the Mutation lane's build cache, hashed before install as that lane hashes it
+        env:
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+      # Looked up through main's runs of the workflows that publish it: the repository-wide artifact
+      # list grows by over a thousand entries a day, so a newest-first scan of it misses the matrix.
+      - id: matrix
+        name: Download main's newest kill matrix
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          next='Run the kill-matrix lane on main (gh workflow run mutation.yml --ref main -f lane=kill-matrix), wait for its collect job to publish kill-matrix-<n>, then re-run this job.'
+          missing() {
+            echo "::error title=Drop audit has no kill matrix (matrix-missing)::$1 $next"
+            printf '## Drop audit\n\n**Failed: `matrix-missing`.** %s %s\n' "$1" "$next" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          runs=$(for workflow in mutation.yml kill-matrix.yml; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=100" \
+              --jq '.workflow_runs[] | select(.head_repository.id == .repository.id) | "\(.created_at) \(.id) \(.head_sha)"'
+          done | sort -r)
+          found=''
+          while read -r _ run sha; do
+            [ -n "$run" ] || continue
+            name=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select((.name | test("^kill-matrix-[0-9]+$")) and (.expired | not))][0].name // empty')
+            if [ -n "$name" ]; then
+              found="$name $run $sha"
+              break
+            fi
+          done <<< "$runs"
+          [ -n "$found" ] || missing 'No unexpired kill-matrix-<n> artifact is on the newest 100 completed main runs of mutation.yml or kill-matrix.yml.'
+          read -r name run sha <<< "$found"
+          gh run download "$run" --name "$name" --dir "$MATRIX_DIR"
+          projects=$(awk '/^env:/ { inEnv = 1; next } inEnv && /^[^ ]/ { exit } inEnv && $1 == "PROJECTS:" { print $2; exit }' .github/workflows/mutation.yml)
+          if [ -z "$projects" ]; then
+            echo "::error title=Drop audit cannot read the corpus (corpus-unreadable)::.github/workflows/mutation.yml has no top-level env PROJECTS, so the job cannot tell which projects the kill matrix must cover."
+            exit 1
+          fi
+          absent=$(tr ',' '\n' <<< "$projects" | while read -r project; do [ -f "$MATRIX_DIR/$project/stryker-incremental.json" ] || echo "$project"; done | paste -sd, -)
+          [ -z "$absent" ] || missing "Artifact $name of run $run has no kill matrix for $absent, so it does not cover the Mutation corpus ($projects)."
+          {
+            echo "name=$name"
+            echo "sha=$sha"
+            echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+            echo "projects=$projects"
+          } >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/released-tarballs
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Restore the build the Mutation lane cached
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.build-key.outputs.key }}
+          restore-keys: |
+            mutation-build-${{ runner.os }}-
+      - name: Build the CLI and the audited projects
+        env:
+          PROJECTS: ${{ steps.matrix.outputs.projects }}
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+      - name: stryker audit
+        shell: bash
+        env:
+          PROJECTS: ${{ steps.matrix.outputs.projects }}
+          NO_COLOR: "1"
+        run: node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" | tee audit.txt
+      - name: Copy the audit's output to the summary
+        if: ${{ !cancelled() && steps.matrix.outcome == 'success' && hashFiles('audit.txt') != '' }}
+        env:
+          MATRIX_NAME: ${{ steps.matrix.outputs.name }}
+          MATRIX_SHA: ${{ steps.matrix.outputs.sha }}
+          MATRIX_URL: ${{ steps.matrix.outputs.url }}
+        run: |
+          {
+            echo '## Drop audit'
+            echo
+            echo "Against [\`$MATRIX_NAME\`]($MATRIX_URL), recorded at main \`${MATRIX_SHA:0:9}\`."
+            echo
+            echo '```text'
+            cat audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles(env.AUDIT_OUT) != '' }}
+        with:
+          name: drop-audit-${{ github.run_id }}
+          path: ${{ env.AUDIT_OUT }}
+          retention-days: 14
+          overwrite: true
+      - if: always()
+        env:
+          STARTED: ${{ steps.start.outputs.at }}
+        run: |
+          echo "wall time: $(( $(date +%s) - STARTED )) s" >> "$GITHUB_STEP_SUMMARY"
