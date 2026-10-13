@@ -4,7 +4,9 @@ import { defineConfig } from 'tsdown'
 const documents = ['./contract/report.schema.json']
 
 export default defineConfig({
-  entry: { index: './src/mod.ts' },
+  entry: {
+    index: './src/mod.ts',
+  },
   format: 'esm',
   dts: true,
   tsconfig: './tsconfig.build.json',

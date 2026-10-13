@@ -25,7 +25,6 @@
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "effect": "catalog:",
     "typescript": "catalog:"
   },
