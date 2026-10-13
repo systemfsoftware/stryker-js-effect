@@ -3,7 +3,7 @@ import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChild
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -107,7 +107,7 @@ const query = (
   Effect.gen(function*() {
     const typeQuery = yield* TypeQuery.TypeQuery
     return yield* typeQuery.query(request)
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
 
 const requestOf = (fixture: Fixture, files: TypeQuery.TypeQueryRequest['files']): TypeQuery.TypeQueryRequest => ({
   version: 1,
@@ -319,7 +319,7 @@ const frozenServer: Effect.Effect<
       )
     ),
   }
-}).pipe(Effect.provide(TypeQueryLive), Effect.scoped)
+}).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
 
 const refusals = Effect.gen(function*() {
   const fixture = yield* fixtureOf('type-query')

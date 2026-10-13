@@ -3,7 +3,7 @@ import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChild
 import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -141,7 +141,7 @@ const answersOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<stri
     const typeQuery = yield* TypeQuery.TypeQuery
     const response = yield* typeQuery.query(requestOf(content, sitesOf(content, rows)))
     return Object.fromEntries(answerEntriesOf(rows, response))
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const HOST_BOUND = {
   timeout: 120_000,
@@ -176,7 +176,7 @@ const perSiteAnswersOf = ({ rows, concurrency }: PerSiteQueries) =>
       { concurrency },
     )
     return Object.fromEntries(responses.flatMap((response) => answerEntriesOf(rows, response)))
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const SITE_ROWS: ReadonlyArray<ReadonlyArray<Row>> = Object.values(Arr.groupBy(ROWS, (row) => row.site.siteId))
 
@@ -549,7 +549,7 @@ const bodyAnswersOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<Re
         })
       ),
     )
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const expectedOf = (id: string): string => BODY_CASES.find((row) => row.id === id)?.expected ?? 'no-case'
 

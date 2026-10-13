@@ -1,7 +1,7 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, Worker } from '@systemfsoftware/stryker-js'
 import { Checker, Options, Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -116,7 +116,7 @@ const inProcessQuery = (
       const typeQuery = yield* TypeQuery.TypeQuery
       return yield* typeQuery.query(request)
     }),
-    TypeQueryLive,
+    TypeQueryTsgo.layer,
   )
 
 const answerFacts = (answer: TypeQuery.TypeAnswer): { readonly tag: string; readonly candidateType: string } =>

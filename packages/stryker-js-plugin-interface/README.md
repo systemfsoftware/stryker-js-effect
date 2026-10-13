@@ -85,7 +85,7 @@ and 2 (`TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`,
 `CheckerCapabilities` a checker declares, `typeQueryServingOf`, and the
 `TypeQuery` service tag, and no implementation. The checker RPC group serves it
 as `capabilities` and `typeQuery`; the TypeScript checker ships an in-process
-implementation as `TypeQueryLive` from its own `./type-query` entry.
+implementation as `layer` from its own `./type-query` entry.
 
 ```ts
 import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'

@@ -933,7 +933,7 @@ const makeShape = (servers: Servers): TypeQuery.TypeQueryShape => ({
     }),
 })
 
-export const TypeQueryLive: Layer.Layer<TypeQuery.TypeQuery> = Layer.effect(
+export const layer: Layer.Layer<TypeQuery.TypeQuery> = Layer.effect(
   TypeQuery.TypeQuery,
   Effect.map(
     Effect.acquireRelease(

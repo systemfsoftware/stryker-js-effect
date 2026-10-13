@@ -22,7 +22,7 @@ import { type CompilerError, DryRunCompileErrors } from './Compiler.schema.js'
 import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
 import { describeDiagnostics, groups, init, programDigest, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
-import { TypeQueryLive } from './type-query.handle.js'
+import * as TypeQueryTsgo from './type-query.handle.js'
 
 type CheckEvent = CheckMutantsAnswer[number]
 
@@ -124,7 +124,7 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
         )
         const scope = yield* Effect.scope
         const typeQuery = yield* Effect.cached(
-          Layer.buildWithScope(TypeQueryLive, scope).pipe(Effect.map(Context.get(TypeQuery.TypeQuery))),
+          Layer.buildWithScope(TypeQueryTsgo.layer, scope).pipe(Effect.map(Context.get(TypeQuery.TypeQuery))),
         )
         return CheckerRuntime.of({
           checker,
