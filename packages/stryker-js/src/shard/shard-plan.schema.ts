@@ -31,8 +31,6 @@ export class ShardPlanMutantsMissing extends S.TaggedError<ShardPlanMutantsMissi
   planFile: S.String,
   missingIds: S.Array(S.String),
 }) {
-  readonly exitClass = 'ConfigError' as const
-
   override get message(): string {
     return `the shard plan at ${this.planFile} schedules ${this.missingIds.length} mutant(s) this run does not discover: ${
       missingIdsTextOf(this.missingIds)
