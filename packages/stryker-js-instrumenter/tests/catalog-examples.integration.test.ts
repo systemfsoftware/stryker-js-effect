@@ -18,11 +18,9 @@ const STOCK_CATALOG: readonly CatalogEntry[] = StockCatalog.StockCatalog.entries
 
 const STOCK_NAMES: readonly string[] = Object.keys(Mutator.stockRegistry.defaults).sort()
 
-const IMPLEMENTATIONS: Readonly<Record<string, Mutator.Mutator>> = Mutator.stockRegistry.defaults
-
 const onlyThese = (names: readonly string[]): Mutator.MutatorSelection => ({
   active: names.map((name) => {
-    const implementation = IMPLEMENTATIONS[name]
+    const implementation = Mutator.stockRegistry.defaults[name]
     if (implementation === undefined) {
       throw new Error(`the stock registry implements no mutator named "${name}"`)
     }
@@ -42,7 +40,6 @@ interface EntryRun {
 
 const runEntries = (
   entries: readonly CatalogEntry[],
-  namesOf: (entry: CatalogEntry) => readonly string[],
 ): Effect.Effect<readonly EntryRun[], Instrument.InstrumentError> =>
   Effect.forEach(entries, (entry) =>
     Effect.map(
@@ -52,7 +49,7 @@ const runEntries = (
           content: example.before,
           mutate: true,
         })),
-        { ignorers: [], excludedMutations: [], mutantSetPolicy: 'full', mutators: onlyThese(namesOf(entry)) },
+        { ignorers: [], excludedMutations: [], mutantSetPolicy: 'full', mutators: onlyThese([entry.name]) },
       ),
       (result: Instrument.InstrumentResult): EntryRun => ({ entry, mutants: result.mutants }),
     ))
@@ -93,7 +90,7 @@ Feature('The stock mutations this instrumenter promises')
         ),
         When('every entry is instrumented over its own examples and nothing else')(
           'runs',
-          ({ entries }: { entries: readonly CatalogEntry[] }) => runEntries(entries, (entry) => [entry.name]),
+          ({ entries }: { entries: readonly CatalogEntry[] }) => runEntries(entries),
         ),
         Then('the proposals match the authored replacements, entry for entry')((
           { runs }: { runs: readonly EntryRun[] },
@@ -128,7 +125,7 @@ Feature('The stock mutations this instrumenter promises')
         ),
         When('each one is instrumented with only its own entry selected')(
           'runs',
-          ({ entries }: { entries: readonly CatalogEntry[] }) => runEntries(entries, (entry) => [entry.name]),
+          ({ entries }: { entries: readonly CatalogEntry[] }) => runEntries(entries),
         ),
         Then('no entry proposes anything at all')((
           { runs }: { runs: readonly EntryRun[] },
