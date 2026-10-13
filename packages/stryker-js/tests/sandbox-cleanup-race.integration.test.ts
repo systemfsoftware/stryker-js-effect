@@ -22,8 +22,6 @@ const RUNS_PER_SCENARIO = 4
 
 const SENTINEL_RUNS_PER_SCENARIO = 5
 
-const ENTRIES_RACED = 300
-
 const RUN_OPTIONS: Options.PartialStrykerOptions = {
   testRunner: 'vm',
   testFiles: ['test/**/*.mjs'],
@@ -230,29 +228,6 @@ const rivalHoldsEntriesInSharedDirectory = (parent: string, churn: Ref.Ref<Entry
     return yield* rivalHoldsEntriesInSharedDirectory(parent, churn)
   })
 
-const removeIfEmptyUntilRaced = (
-  parent: string,
-  churn: Ref.Ref<EntryChurn>,
-): Effect.Effect<void, never, Engine.EmptyDirectory> =>
-  Effect.gen(function*() {
-    const emptyDirectory = yield* Engine.EmptyDirectory
-    yield* Effect.ignore(emptyDirectory.removeIfEmpty(parent))
-    yield* Effect.yieldNow
-    const { held } = yield* Ref.get(churn)
-    return yield* held < ENTRIES_RACED ? removeIfEmptyUntilRaced(parent, churn) : Effect.void
-  })
-
-const raceRemovalsAgainstChurn = (
-  parent: string,
-): Effect.Effect<EntryChurn, never, Engine.EmptyDirectory> =>
-  Effect.gen(function*() {
-    const churn = yield* Ref.make<EntryChurn>({ held: 0, lost: 0 })
-    const churnFiber = yield* Effect.forkChild(rivalHoldsEntriesInSharedDirectory(parent, churn))
-    yield* removeIfEmptyUntilRaced(parent, churn)
-    yield* Fiber.interrupt(churnFiber)
-    return yield* Ref.get(churn)
-  })
-
 interface SentinelledRuns {
   readonly ended: ReadonlyArray<Ended>
   readonly held: number
@@ -279,85 +254,30 @@ const runsWhileRivalHoldsSentinels: Effect.Effect<SentinelledRuns, never, Path.P
   return { ended, held, lost }
 })
 
-type Removal = 'succeeded' | 'failed'
-
-const removalOf = (parent: string): Effect.Effect<Removal, never, Engine.EmptyDirectory> =>
-  Effect.flatMap(Engine.EmptyDirectory, (emptyDirectory) =>
-    emptyDirectory.removeIfEmpty(parent).pipe(
-      Effect.as<Removal>('succeeded'),
-      Effect.orElseSucceed((): Removal => 'failed'),
-    ))
-
-interface RemovalTargets {
-  readonly empty: string
-  readonly holding: string
-  readonly absent: string
-  readonly file: string
-  readonly linked: string
-  readonly symlink: string
+interface SharedDirectoryAfterRun {
+  readonly ended: Ended
+  readonly entries: ReadonlyArray<string> | null
+  readonly otherRunsFile: string | null
 }
 
-interface RemovalOutcomes {
-  readonly empty: { readonly removal: Removal; readonly left: boolean }
-  readonly holding: { readonly removal: Removal; readonly left: boolean; readonly entry: string }
-  readonly absent: { readonly removal: Removal }
-  readonly file: { readonly removal: Removal; readonly left: boolean }
-  readonly symlink: { readonly removal: Removal; readonly left: boolean; readonly targetLeft: boolean }
-}
+const OTHER_RUNS_FILE = 'other-run.txt'
 
-const scratchDirectory: Effect.Effect<string, PlatformError, FileSystem.FileSystem | Scope.Scope> = Effect.flatMap(
-  FileSystem.FileSystem,
-  (fs) => Effect.acquireRelease(fs.makeTempDirectory(), (root) => Effect.ignore(fs.remove(root, { recursive: true }))),
-)
-
-const removalTargets: Effect.Effect<RemovalTargets, PlatformError, FileSystem.FileSystem | Scope.Scope> = Effect.gen(
-  function*() {
-    const fs = yield* FileSystem.FileSystem
-    const root = yield* scratchDirectory
-    const targets = {
-      empty: `${root}/empty`,
-      holding: `${root}/holding`,
-      absent: `${root}/absent`,
-      file: `${root}/file`,
-      linked: `${root}/linked`,
-      symlink: `${root}/symlink`,
-    }
-    yield* fs.makeDirectory(targets.empty)
-    yield* fs.makeDirectory(targets.holding)
-    yield* fs.writeFileString(`${targets.holding}/sandbox-entry.txt`, 'held\n')
-    yield* fs.writeFileString(targets.file, 'not a directory\n')
-    yield* fs.makeDirectory(targets.linked)
-    yield* Effect.promise(() => nodeFs.symlink(targets.linked, targets.symlink))
-    return targets
-  },
-)
-
-const removalOutcomes = (
-  targets: RemovalTargets,
-): Effect.Effect<RemovalOutcomes, PlatformError, Engine.EmptyDirectory | FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const emptyRemoval = yield* removalOf(targets.empty)
-    const holdingRemoval = yield* removalOf(targets.holding)
-    const absentRemoval = yield* removalOf(targets.absent)
-    const fileRemoval = yield* removalOf(targets.file)
-    const symlinkRemoval = yield* removalOf(targets.symlink)
-    return {
-      empty: { removal: emptyRemoval, left: yield* fs.exists(targets.empty) },
-      holding: {
-        removal: holdingRemoval,
-        left: yield* fs.exists(targets.holding),
-        entry: yield* fs.readFileString(`${targets.holding}/sandbox-entry.txt`),
-      },
-      absent: { removal: absentRemoval },
-      file: { removal: fileRemoval, left: yield* fs.exists(targets.file) },
-      symlink: {
-        removal: symlinkRemoval,
-        left: yield* fs.exists(targets.symlink),
-        targetLeft: yield* fs.exists(targets.linked),
-      },
-    }
-  })
+const runOverOtherRunsFile: Effect.Effect<SharedDirectoryAfterRun, PlatformError, FileSystem.FileSystem | Path.Path> =
+  inProject((parent) =>
+    Effect.gen(function*() {
+      yield* Effect.promise(() =>
+        nodeFs.mkdir(parent, { recursive: true }).then(() => nodeFs.writeFile(`${parent}/${OTHER_RUNS_FILE}`, 'held\n'))
+      )
+      const exit = yield* Engine.strykerCell(RUN_OPTIONS).pipe(Effect.provide(RUN_PORTS), Effect.exit)
+      return {
+        ended: Exit.isSuccess(exit) ? 'succeeded' : 'failed',
+        entries: yield* Effect.promise(() => nodeFs.readdir(parent).then((names) => names.toSorted(), () => null)),
+        otherRunsFile: yield* Effect.promise(() =>
+          nodeFs.readFile(`${parent}/${OTHER_RUNS_FILE}`, 'utf8').then((text) => text, () => null)
+        ),
+      }
+    })
+  )
 
 const RIVALS = [
   {
@@ -404,23 +324,6 @@ Feature('Running several Stryker dry runs that share one temporary directory', {
     )
 
     scenario(
-      'Removing the shared directory when it is empty never takes a file another run keeps in it',
-      Gherkin.Do.pipe(
-        Given('a shared temporary directory that another run keeps adding a file to and checking it is still there')(
-          'shared',
-          () => Effect.map(scratchDirectory, (root) => `${root}/${TEMP_DIR_NAME}`),
-        ),
-        When('the shared directory is removed-if-empty over and over until the other run has kept three hundred files')(
-          'churn',
-          (s) => raceRemovalsAgainstChurn(s.shared),
-        ),
-        Then('the other run kept files throughout and never lost one')((s, expect) =>
-          expect({ held: s.churn.held >= ENTRIES_RACED, lost: s.churn.lost }).toEqual({ held: true, lost: 0 })
-        ),
-      ),
-    )
-
-    scenario(
       'Real runs sharing a temporary directory never take a file another run keeps in it',
       Gherkin.Do.pipe(
         Given('a real project whose runs share one temporary directory')('project', () => projectAsWorkingDirectory),
@@ -438,23 +341,16 @@ Feature('Running several Stryker dry runs that share one temporary directory', {
     )
 
     scenario(
-      'Removing a directory only when it is empty leaves anything else in place',
+      "A run whose shared temporary directory already holds another run's file leaves the file and the directory in place",
       Gherkin.Do.pipe(
-        Given(
-          'an empty directory, a directory holding a file, a path with nothing at it, a plain file, and a symlink to a directory',
-        )('targets', () => removalTargets),
-        When('each is removed-if-empty once')('outcomes', (s) => removalOutcomes(s.targets)),
-        Then(
-          'the empty directory is gone, the other directory stays with its file, the missing path is fine, and the plain file and the symlink are left in place',
-        )((s, expect) =>
-          expect(s.outcomes).toEqual({
-            empty: { removal: 'succeeded', left: false },
-            holding: { removal: 'succeeded', left: true, entry: 'held\n' },
-            absent: { removal: 'succeeded' },
-            file: { removal: 'succeeded', left: true },
-            symlink: { removal: 'succeeded', left: true, targetLeft: true },
-          })
+        When("one run starts and finishes on a real project whose shared temporary directory holds another run's file")(
+          'after',
+          () => runOverOtherRunsFile,
         ),
+        Then("the run succeeds, removes its own sandbox, and the directory stays holding only the other run's file")((
+          s,
+          expect,
+        ) => expect(s.after).toEqual({ ended: 'succeeded', entries: [OTHER_RUNS_FILE], otherRunsFile: 'held\n' })),
       ),
     )
   })

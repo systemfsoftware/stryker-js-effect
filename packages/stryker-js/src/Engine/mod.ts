@@ -1,7 +1,5 @@
-export type { EmptyDirectoryShape } from '../empty-directory.service.js'
-export { EmptyDirectory } from '../empty-directory.service.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
-export { nodeEmptyDirectoryLayer, nodePlatformLayer } from '../node-platform.js'
+export { nodePlatformLayer } from '../node-platform.js'
 export { planRequest } from '../plan-request.cell.js'
 export type { PlanChannel, PlanRequestInput, PlanShardsRequest } from '../plan-request.cell.js'
 export { PlanShardsRefused } from '../plan-request.schema.js'
