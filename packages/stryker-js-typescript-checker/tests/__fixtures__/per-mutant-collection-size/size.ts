@@ -10,3 +10,8 @@ export const getterSized = (box: { get items(): string[] }): boolean => box.item
 export const mirroredAtMost = (s: string): boolean => 0 < s.length
 export const pairSized = (pair: [string, ...string[]]): boolean => pair.length > 0
 export class Box { items: string[] = []; get any(): boolean { return this.items.length > 0 } }
+export const leftGreater = (xs: string[]): boolean => xs.length >= 0
+export const rightLess = (s: string): boolean => 0 <= s.length
+export const rightAtLeast = (s: string): boolean => 0 < s.length
+export const duplicateSize = (xs: string[]): boolean => xs.length > 0
+export const duplicatedBacking = (xs: string[]): boolean => xs.length > 0

@@ -415,6 +415,36 @@ const TUPLE_MUTANTS: ReadonlyArray<SizeMutant> = [
   sizeMutant('0000000000000081', TUPLE_SITE, 'ConditionalExpression', 'true'),
 ]
 
+const LEFT_GREATER_SITE = [13, 55, 69] as const
+const RIGHT_LESS_SITE = [14, 50, 63] as const
+const RIGHT_AT_LEAST_SITE = [15, 53, 65] as const
+const DUPLICATE_SIZE_SITE = [16, 57, 70] as const
+const DUPLICATED_BACKING_SITE = [17, 61, 74] as const
+
+const UNKNOWN_OPERATOR_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000090', LEFT_GREATER_SITE, 'EqualityOperator', 'xs.length > 0'),
+  sizeMutant('0000000000000091', LEFT_GREATER_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000092', LEFT_GREATER_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000093', RIGHT_LESS_SITE, 'EqualityOperator', '0 < s.length'),
+  sizeMutant('0000000000000094', RIGHT_LESS_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000095', RIGHT_LESS_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000096', RIGHT_AT_LEAST_SITE, 'EqualityOperator', '0 >= s.length'),
+  sizeMutant('0000000000000097', RIGHT_AT_LEAST_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000098', RIGHT_AT_LEAST_SITE, 'ConditionalExpression', 'false'),
+]
+
+const DUPLICATE_SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000099', DUPLICATE_SIZE_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000100', DUPLICATE_SIZE_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000101', DUPLICATE_SIZE_SITE, 'ConditionalExpression', 'true'),
+]
+
+const DUPLICATED_BACKING_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000102', DUPLICATED_BACKING_SITE, 'ConditionalExpression', 'true as boolean'),
+  sizeMutant('0000000000000103', DUPLICATED_BACKING_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000104', DUPLICATED_BACKING_SITE, 'EqualityOperator', 'xs.length >= 0'),
+]
+
 const sizeCaseOf = (fixture: string, mutants: ReadonlyArray<SizeMutant>): Case => ({
   fixture,
   brokenId: '',
@@ -445,6 +475,12 @@ const accessorReceiverCase = sizeCaseOf('per-mutant-collection-size', ACCESSOR_M
 const mirroredReceiverCase = sizeCaseOf('per-mutant-collection-size', MIRRORED_MUTANTS)
 
 const tupleReceiverCase = sizeCaseOf('per-mutant-collection-size', TUPLE_MUTANTS)
+
+const unknownOperatorCase = sizeCaseOf('per-mutant-collection-size', UNKNOWN_OPERATOR_MUTANTS)
+
+const duplicateSizeCase = sizeCaseOf('per-mutant-collection-size', DUPLICATE_SIZE_MUTANTS)
+
+const duplicatedBackingCase = sizeCaseOf('per-mutant-collection-size', DUPLICATED_BACKING_MUTANTS)
 
 const sizeProjectOf = (strictNullChecks: boolean, source: string): Readonly<Record<string, string>> => ({
   'tsconfig.json': JSON.stringify({
@@ -703,6 +739,77 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               '0000000000000034': 'constant-collection-size: xs.length >= 0 is always true',
               '0000000000000038': 'constant-collection-size: this.items.length >= 0 is always true',
             },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison keeps its own duplicate reason when a twin already carries the site',
+      Gherkin.Do.pipe(
+        When('two identical length comparisons and a true sibling at one site are handed to the checker')(
+          'seen',
+          () => checkFixture(duplicateSizeCase),
+        ),
+        Then('only the first twin is culled as constant and the duplicate keeps the TCE duplicate reason')((
+          s,
+          expect,
+        ) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000099': 'ignored',
+              '0000000000000100': 'ignored',
+              '0000000000000101': 'passed',
+            },
+            culled: {
+              '0000000000000099': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000100': 'duplicate-at-site: tce',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison passes when the only true sibling is itself a duplicate',
+      Gherkin.Do.pipe(
+        When('a type-asserted true, an identical true and a length comparison at one site are handed to the checker')(
+          'seen',
+          () => checkFixture(duplicatedBackingCase),
+        ),
+        Then('the duplicate true is ignored while the comparison passes with no kept sibling to back it')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000102': 'passed',
+              '0000000000000103': 'ignored',
+              '0000000000000104': 'passed',
+            },
+            culled: { '0000000000000103': 'duplicate-at-site: tce' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Size comparisons whose operator the rule does not know are kept beside either literal sibling',
+      Gherkin.Do.pipe(
+        When(
+          'left greater-than, right less-than and right greater-or-equal comparisons each beside a true and a false sibling are handed to the checker',
+        )('seen', () => checkFixture(unknownOperatorCase)),
+        Then('all nine mutants pass and none is culled')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000090': 'passed',
+              '0000000000000091': 'passed',
+              '0000000000000092': 'passed',
+              '0000000000000093': 'passed',
+              '0000000000000094': 'passed',
+              '0000000000000095': 'passed',
+              '0000000000000096': 'passed',
+              '0000000000000097': 'passed',
+              '0000000000000098': 'passed',
+            },
+            culled: {},
           })
         ),
       ),
