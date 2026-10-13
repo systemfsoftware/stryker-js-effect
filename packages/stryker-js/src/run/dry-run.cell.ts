@@ -587,42 +587,40 @@ const logDroppedCandidates = (decision: DryRunCandidatesDecision): Effect.Effect
     ),
   )
 
-type StaleLogInput = DryRunChoice & { readonly reason: DryRunRunReason }
-
 const refusalHeadOf = (reason: DryRunRunReason): string =>
   `Running the initial test run: dry-run coverage reuse refused (${reason})`
 
-const staleLinesOf = (input: StaleLogInput): readonly string[] =>
-  Match.value(input.reason).pipe(
-    Match.when('rootChanged', (reason) => [
+const staleLinesOf = (choice: DryRunChoice, reason: DryRunRunReason): readonly string[] =>
+  Match.value(reason).pipe(
+    Match.when('rootChanged', () => [
       refusalHeadOf(reason),
-      `  current project root:   ${input.currentRoot}`,
-      `  recorded project roots: ${recordedRootsOf(input.candidatesDecision).join(', ')}`,
-      `  This run performs its own dry run and records its coverage under ${input.currentRoot}.`,
+      `  current project root:   ${choice.currentRoot}`,
+      `  recorded project roots: ${recordedRootsOf(choice.candidatesDecision).join(', ')}`,
+      `  This run performs its own dry run and records its coverage under ${choice.currentRoot}.`,
       '  Coverage is shared across machines only when they run from the same absolute workspace path.',
     ]),
-    Match.when('rootUnrecorded', (reason) => [
+    Match.when('rootUnrecorded', () => [
       refusalHeadOf(reason),
       '  The saved coverage came from an older version that recorded no project root.',
-      `  This full dry run records its coverage under ${input.currentRoot}.`,
+      `  This full dry run records its coverage under ${choice.currentRoot}.`,
     ]),
-    Match.orElse((reason) => [
+    Match.orElse(() => [
       refusalHeadOf(reason),
       `  prior closure digest:     ${
         Option.getOrElse(
-          Option.map(input.prior, (coverage) => coverage.testClosureDigest),
+          Option.map(choice.prior, (coverage) => coverage.testClosureDigest),
           () => '(no prior coverage)',
         )
       }`,
-      `  current closure digest:   ${Option.getOrElse(input.currentTestClosureDigest, () => '(unavailable)')}`,
+      `  current closure digest:   ${Option.getOrElse(choice.currentTestClosureDigest, () => '(unavailable)')}`,
       `  prior run-inputs digest:  ${
         Option.getOrElse(
-          Option.map(input.prior, (coverage) => coverage.runInputsDigest),
+          Option.map(choice.prior, (coverage) => coverage.runInputsDigest),
           () => '(no prior coverage)',
         )
       }`,
-      `  prior coverage records:   ${input.candidates.length}`,
-      `  current run-inputs digest: ${input.runInputsDigest}`,
+      `  prior coverage records:   ${choice.candidates.length}`,
+      `  current run-inputs digest: ${choice.runInputsDigest}`,
     ]),
   )
 
@@ -653,7 +651,7 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
       'DryRunCoverageReused',
       () => Effect.logInfo('Reusing the persisted dry-run coverage; skipping the initial test run'),
     ),
-    Match.tag('DryRunCoverageStale', ({ reason }) => Effect.logInfo(staleLinesOf({ ...choice, reason }).join('\n'))),
+    Match.tag('DryRunCoverageStale', ({ reason }) => Effect.logInfo(staleLinesOf(choice, reason).join('\n'))),
     Match.exhaustive,
   )
   yield* logDroppedCandidates(choice.candidatesDecision)

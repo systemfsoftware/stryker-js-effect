@@ -11,6 +11,7 @@ import {
   REPORT_FILE,
   runCliKilledAtFirstMutant,
   runCounted,
+  statusesOf,
   writeFiles,
   writeProject,
 } from './__fixtures__/cli-project.fixture.js'
@@ -56,12 +57,14 @@ Feature('Re-running mutation testing on a project after an unfinished run')
               killedMidRun: s.observed.killedAtMutant && !s.observed.finishedBeforeKill,
               exits: [exitOf(s.observed.reference), exitOf(s.observed.dryRun), exitOf(s.observed.next)],
               dryRunExecuted: s.observed.dryRun.executions > 0,
+              referenceStatuses: statusesOf(s.observed.reference.scored),
               nextExecutions: s.observed.next.executions,
               nextScored: s.observed.next.scored,
             }).toEqual({
               killedMidRun: true,
               exits: [0, 0, 0],
               dryRunExecuted: true,
+              referenceStatuses: ['Killed', 'NoCoverage'],
               nextExecutions: s.observed.reference.executions - s.observed.dryRun.executions,
               nextScored: s.observed.reference.scored,
             }),
@@ -89,11 +92,13 @@ Feature('Re-running mutation testing on a project after an unfinished run')
             expect({
               exits: [exitOf(s.observed.reference), exitOf(s.observed.dryRunOnly), exitOf(s.observed.next)],
               dryRunExecuted: s.observed.dryRunOnly.executions > 0,
+              referenceStatuses: statusesOf(s.observed.reference.scored),
               nextExecutions: s.observed.next.executions,
               nextScored: s.observed.next.scored,
             }).toEqual({
               exits: [0, 0, 0],
               dryRunExecuted: true,
+              referenceStatuses: ['Killed', 'NoCoverage'],
               nextExecutions: s.observed.reference.executions - s.observed.dryRunOnly.executions,
               nextScored: s.observed.reference.scored,
             }),
