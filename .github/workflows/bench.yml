@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bench-${{ github.sha }}
+  group: bench-${{ github.event_name == 'push' && github.sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
