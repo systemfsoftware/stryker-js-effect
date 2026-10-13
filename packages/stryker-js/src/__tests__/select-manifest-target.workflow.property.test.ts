@@ -490,10 +490,10 @@ describe('selectManifestTarget', () => {
       const target = targetOf(command)
       const other = `./o${oneSegmentOf(command)}.js`
       const unreadable = textOf(command).length
+      const nonStringMains: ReadonlyArray<S.Json> = [unreadable, true, null, [target], { default: target }]
       const root = (fields: Readonly<Record<string, S.Json>>) => selected(subject, { ...rest, ...fields }, ROOT_REQUEST)
       return [
-        root({ main: unreadable, module: other }) === 'missing',
-        root({ main: [target], module: other }) === 'missing',
+        ...nonStringMains.map((main) => root({ main, module: other }) === 'missing'),
         root({ module: target }) === `path:${target}`,
         root({ main: target, module: other }) === `path:${target}`,
         root({ module: unreadable }) === 'missing',
