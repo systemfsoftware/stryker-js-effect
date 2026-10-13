@@ -60,6 +60,8 @@ const PROJECT_NOTES = 'notes.txt'
 
 const NOTES = 'a project file the run must not overwrite\n'
 
+const UTF8 = new TextEncoder()
+
 const CASED_DEFAULT_STREAM = 'Reports/Mutation-Stream.jsonl'
 
 const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `test -f ${CASED_DEFAULT_STREAM}`)}\n`
@@ -411,8 +413,9 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
     scenarioOutline(
       'A config naming an existing project file <starting> leaves that file intact, and the run still streams on stdout',
       [
-        { starting: 'with text', notes: NOTES },
-        { starting: 'with a blank line', notes: `\n${NOTES}` },
+        { starting: 'with text', bytes: Array.from(UTF8.encode(NOTES)) },
+        { starting: 'with a blank line', bytes: Array.from(UTF8.encode(`\n${NOTES}`)) },
+        { starting: 'with an incomplete UTF-8 character', bytes: [0xc3] },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -423,24 +426,28 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
                 const fs = yield* FileSystem.FileSystem
                 const path = yield* Path.Path
                 const root = yield* prepareProject(configNaming(PROJECT_NOTES))
-                yield* fs.writeFileString(path.join(root, PROJECT_NOTES), row.notes).pipe(Effect.orDie)
+                yield* fs.writeFile(path.join(root, PROJECT_NOTES), Uint8Array.from(row.bytes)).pipe(Effect.orDie)
                 return root
               }),
           ),
           When('the project is run')('run', (s) => invoke(s.project, RUN)),
           When('the named file is read')(
             'notes',
-            (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, PROJECT_NOTES))),
+            (s) =>
+              Effect.flatMap(Path.Path, (path) =>
+                Effect.flatMap(FileSystem.FileSystem, (fs) =>
+                  fs.readFile(path.join(s.project, PROJECT_NOTES)).pipe(Effect.option))),
           ),
           Then('the file keeps its content, stdout carries the verdict, and stderr names the file failure once')(
             (s, expect) => {
               const events = eventsOf(s.run.stdout)
               return expect({
                 exitCode: s.run.exitCode,
-                notes: Option.getOrUndefined(s.notes),
+                notes: Option.getOrUndefined(Option.map(s.notes, (bytes) =>
+                  Array.from(bytes))),
                 endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
                 fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
-              }).toEqual({ exitCode: 0, notes: row.notes, endsWithVerdict: true, fileFailuresLogged: 1 })
+              }).toEqual({ exitCode: 0, notes: row.bytes, endsWithVerdict: true, fileFailuresLogged: 1 })
             },
           ),
         ),

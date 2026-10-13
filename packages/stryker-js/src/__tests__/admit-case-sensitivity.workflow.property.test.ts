@@ -9,19 +9,67 @@ const commandArb = Arbitrary.schema(CaseSensitivityCommand)
 
 type Probe = CaseSensitivityCommand['probes'][number]
 
-const reachesAnotherFile = (probe: Probe) => {
-  if (Option.isNone(probe.swapped)) return true
-  const swapped = probe.swapped.value
-  if (swapped.dev !== probe.own.dev) return true
-  return Option.isSome(probe.own.ino) && Option.isSome(swapped.ino) && probe.own.ino.value !== swapped.ino.value
-}
+const tagOf = (subject: typeof admitCaseSensitivity, probes: ReadonlyArray<Probe>) =>
+  Result.getOrUndefined(subject(CaseSensitivityCommand.make({ probes })))?._tag
+
+const another = (value: number) => value === 1 ? 2 : 1
+
+const reachingItself = (probe: Probe): Probe => ({ own: probe.own, swapped: Option.some(probe.own) })
+
+const withIdentityUnknown = (probe: Probe): Probe => ({
+  own: { dev: probe.own.dev, ino: Option.none() },
+  swapped: Option.some({ dev: probe.own.dev, ino: probe.own.ino }),
+})
+
+const foldedPlus = (
+  subject: typeof admitCaseSensitivity,
+  command: CaseSensitivityCommand,
+  extra: (first: Probe) => Probe,
+) =>
+  Option.match(Option.fromUndefinedOr(command.probes[0]), {
+    onNone: () => tagOf(subject, []) === 'CaseFolded',
+    onSome: (first) => tagOf(subject, [...command.probes.map(reachingItself), extra(first)]) === 'CaseToldApart',
+  })
 
 describe('admitCaseSensitivity', () => {
   it.prop(
-    '∀c_Probes_≡ToldApartExactlyWhenOneSwappedNameReachesAnotherFile',
+    '∀c_ProbesWhoseSwappedNamesReachTheirOwnFile_≡CaseFolded',
+    { of: [commandArb], subject: admitCaseSensitivity },
+    (subject, [command]) => tagOf(subject, command.probes.map(reachingItself)) === 'CaseFolded',
+  )
+
+  it.prop(
+    '∀c_ProbesWhoseFileIdentityIsUnknown_≡CaseFolded',
+    { of: [commandArb], subject: admitCaseSensitivity },
+    (subject, [command]) => tagOf(subject, command.probes.map(withIdentityUnknown)) === 'CaseFolded',
+  )
+
+  it.prop(
+    '∀c_FoldedProbesPlusOneWhoseSwappedNameIsMissing_≡CaseToldApart',
+    { of: [commandArb], subject: admitCaseSensitivity },
+    (subject, [command]) => foldedPlus(subject, command, (first) => ({ own: first.own, swapped: Option.none() })),
+  )
+
+  it.prop(
+    '∀c_FoldedProbesPlusOneReachingAnotherDevice_≡CaseToldApart',
     { of: [commandArb], subject: admitCaseSensitivity },
     (subject, [command]) =>
-      Result.getOrUndefined(subject(command))?._tag ===
-        (command.probes.some(reachesAnotherFile) ? 'CaseToldApart' : 'CaseFolded'),
+      foldedPlus(subject, command, (first) => ({
+        own: first.own,
+        swapped: Option.some({ dev: another(first.own.dev), ino: first.own.ino }),
+      })),
+  )
+
+  it.prop(
+    '∀c_FoldedProbesPlusOneReachingAnotherInode_≡CaseToldApart',
+    { of: [commandArb], subject: admitCaseSensitivity },
+    (subject, [command]) =>
+      foldedPlus(subject, command, (first) => {
+        const ino = Option.getOrElse(first.own.ino, () => 0)
+        return {
+          own: { dev: first.own.dev, ino: Option.some(ino) },
+          swapped: Option.some({ dev: first.own.dev, ino: Option.some(another(ino)) }),
+        }
+      }),
   )
 })

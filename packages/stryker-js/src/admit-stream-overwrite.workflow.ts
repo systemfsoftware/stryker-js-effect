@@ -14,11 +14,10 @@ const startsWithRunEvent = (text: string) =>
 export class StreamOverwriteCommand extends S.TaggedClass<StreamOverwriteCommand>()('StreamOverwriteCommand', {
   file: S.String,
   regularFile: S.Boolean,
+  empty: S.Boolean,
   leadingText: S.String,
 }) {
-  static readonly [Workflow.InstrumentationBrand] = {
-    regularFile: 'stryker.stream_overwrite.regular_file',
-  } as const
+  static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export class OverwriteAllowed extends S.TaggedClass<OverwriteAllowed>()('OverwriteAllowed', {
@@ -40,7 +39,7 @@ export type StreamOverwriteDecision = typeof StreamOverwriteDecision.Type
 const REFUSAL = 'the file exists and does not start with a Stryker run event record, so the run will not overwrite it'
 
 const overwritable = (command: StreamOverwriteCommand) =>
-  [!command.regularFile, command.leadingText.length === 0, startsWithRunEvent(command.leadingText)].some(
+  [!command.regularFile, command.empty, startsWithRunEvent(command.leadingText)].some(
     (allowed) => allowed,
   )
 

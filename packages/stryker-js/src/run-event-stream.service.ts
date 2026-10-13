@@ -177,15 +177,21 @@ const leadingTextOf = (fs: FileSystem.FileSystem, fileName: string) =>
 const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
   fs.stat(fileName).pipe(
     Effect.option,
-    Effect.map(Option.exists((info) => info.type === 'File')),
-    Effect.flatMap((regularFile) =>
-      Boolean.match(regularFile, {
-        onTrue: () => leadingTextOf(fs, fileName),
-        onFalse: () => Effect.succeed(''),
-      }).pipe(
-        Effect.map((leadingText) => StreamOverwriteCommand.make({ file: fileName, regularFile, leadingText })),
-      )
-    ),
+    Effect.map(Option.filter((info) => info.type === 'File')),
+    Effect.flatMap(Option.match({
+      onNone: () =>
+        Effect.succeed(
+          StreamOverwriteCommand.make({ file: fileName, regularFile: false, empty: true, leadingText: '' }),
+        ),
+      onSome: (info) =>
+        Effect.map(leadingTextOf(fs, fileName), (leadingText) =>
+          StreamOverwriteCommand.make({
+            file: fileName,
+            regularFile: true,
+            empty: ByteSize.isZero(info.size),
+            leadingText,
+          })),
+    })),
   )
 
 const admitOverwrite = (fs: FileSystem.FileSystem, fileName: string) =>

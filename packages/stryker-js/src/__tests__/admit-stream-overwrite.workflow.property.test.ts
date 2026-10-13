@@ -42,6 +42,7 @@ describe('admitStreamOverwrite', () => {
             StreamOverwriteCommand.make({
               file: draw.command.file,
               regularFile: true,
+              empty: false,
               leadingText: `${line}\n${draw.command.leadingText}`,
             }),
           ),
@@ -57,6 +58,7 @@ describe('admitStreamOverwrite', () => {
         StreamOverwriteCommand.make({
           file: command.file,
           regularFile: true,
+          empty: false,
           leadingText: `${
             JSON.stringify({ _tag: 'stream', schemaVersion: command.leadingText })
           }\n${command.leadingText}`,
@@ -70,7 +72,12 @@ describe('admitStreamOverwrite', () => {
     (subject, [command]) =>
       refused(
         subject,
-        StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: `x${command.leadingText}` }),
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: false,
+          leadingText: `x${command.leadingText}`,
+        }),
       ),
   )
 
@@ -83,16 +90,35 @@ describe('admitStreamOverwrite', () => {
         StreamOverwriteCommand.make({
           file: command.file,
           regularFile: true,
+          empty: false,
           leadingText: `${JSON.stringify({ _tag: `note:${command.leadingText}` })}\n${command.leadingText}`,
         }),
       ),
   )
 
   it.prop(
-    '∀c_EmptyRegularFile_≡Allowed',
+    '∀c_EmptyRegularFile_≡AllowedWhateverItsText',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
-      allowed(subject, StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: '' })),
+      allowed(
+        subject,
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: true,
+          leadingText: command.leadingText,
+        }),
+      ),
+  )
+
+  it.prop(
+    '∀c_NonEmptyRegularFileWithNoDecodableText_≡Refused',
+    { of: [commandArb], subject: admitStreamOverwrite },
+    (subject, [command]) =>
+      refused(
+        subject,
+        StreamOverwriteCommand.make({ file: command.file, regularFile: true, empty: false, leadingText: '' }),
+      ),
   )
 
   it.prop(
@@ -101,7 +127,12 @@ describe('admitStreamOverwrite', () => {
     (subject, [command]) =>
       refused(
         subject,
-        StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: `\n${command.leadingText}` }),
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: false,
+          leadingText: `\n${command.leadingText}`,
+        }),
       ),
   )
 
@@ -111,7 +142,12 @@ describe('admitStreamOverwrite', () => {
     (subject, [command]) =>
       allowed(
         subject,
-        StreamOverwriteCommand.make({ file: command.file, regularFile: false, leadingText: command.leadingText }),
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: false,
+          empty: command.empty,
+          leadingText: command.leadingText,
+        }),
       ),
   )
 })
