@@ -611,12 +611,13 @@ interface AllZeroPush {
   readonly warned: boolean
 }
 
-const allZeroPush = (branch: string): Promise<AllZeroPush> =>
+const allZeroPush = (branch: string, listsCommits: boolean): Promise<AllZeroPush> =>
   withRepo({ branch }, async (dir) => {
     await write(dir, 'packages/a/src/index.js', 'export const a = 2\n')
-    await commit(dir, 'push change')
+    const pushed = await commit(dir, 'push change')
     const eventPath = `${dir}/.push-event.json`
-    await Deno.writeTextFile(eventPath, JSON.stringify({ before: UNKNOWN_SHA, forced: false, commits: [] }))
+    const commits = listsCommits ? [{ id: pushed }] : []
+    await Deno.writeTextFile(eventPath, JSON.stringify({ before: UNKNOWN_SHA, forced: false, commits }))
     const ran = await turboRun(dir, { affected: true, env: { GITHUB_ACTIONS: 'true', GITHUB_EVENT_PATH: eventPath } })
     assertEqual(ran.code, 0, `the all-zero push on ${branch} still exits 0`)
     return {
@@ -626,16 +627,24 @@ const allZeroPush = (branch: string): Promise<AllZeroPush> =>
     }
   })
 
-Deno.test('an all-zero push before off main falls back to every task and says it could not determine the change', async () => {
-  const push = await allZeroPush('trunk')
+Deno.test('an all-zero push before with no commits off main falls back to every task and says it could not determine the change', async () => {
+  const push = await allZeroPush('trunk', false)
   assertEqual(push.selected, push.all, 'an undeterminable push off main runs every task')
   assert(push.warned, 'stderr names the fallback')
 })
 
-Deno.test('an all-zero push before on main selects no task and prints no warning', async () => {
-  const push = await allZeroPush('main')
+Deno.test('an all-zero push before with no commits on main selects no task and prints no warning', async () => {
+  const push = await allZeroPush('main', false)
   assertEqual(push.selected, [], 'an undeterminable push on main selects nothing')
   assert(!push.warned, 'nothing on stderr says the change was undeterminable')
+})
+
+Deno.test("an all-zero push before that lists its commits diffs from the first commit's parent, on main and off it", async () => {
+  for (const branch of ['trunk', 'main']) {
+    const push = await allZeroPush(branch, true)
+    assertEqual(push.selected, ['@probe/a#build', '@probe/a#test'], `on ${branch} only the pushed change is selected`)
+    assert(!push.warned, `on ${branch} nothing on stderr says the change was undeterminable`)
+  }
 })
 
 Deno.test('turbo query affectedTasks keeps the package-level lockfile diff and diverges from run --affected', async () => {
