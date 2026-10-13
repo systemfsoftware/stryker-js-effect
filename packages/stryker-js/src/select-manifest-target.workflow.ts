@@ -20,6 +20,12 @@ import {
 
 const PACKAGE_SOURCE_CONDITION = '@systemfsoftware/source'
 
+const TYPE_CONDITION = 'types'
+
+const VERSIONED_TYPE_CONDITION_PREFIX = 'types@'
+
+const RUNTIME_CONDITIONS: readonly string[] = ['import', 'node', 'default']
+
 const DEFAULT_ENTRY_KEY = '.'
 
 const PATTERN_WILDCARD = '*'
@@ -50,8 +56,20 @@ const stringOf = (value: S.Json | undefined): Option.Option<string> => Option.li
 
 const isEntryList = (value: S.Json): value is ReadonlyArray<S.Json> => Array.isArray(value)
 
+const isTypeCondition = (key: string): boolean =>
+  [key === TYPE_CONDITION, key.startsWith(VERSIONED_TYPE_CONDITION_PREFIX)].some((flag) => flag)
+
+const runtimeConditionValueOption = (conditions: S.JsonObject): Option.Option<S.Json> =>
+  Option.flatMap(
+    Option.filter(
+      Arr.findFirst(Object.keys(conditions), (key) => !isTypeCondition(key)),
+      (key) => RUNTIME_CONDITIONS.includes(key),
+    ),
+    (key) => ownValueOf(conditions, key),
+  )
+
 const conditionValueOption = (conditions: S.JsonObject): Option.Option<S.Json> =>
-  Option.orElse(ownValueOf(conditions, PACKAGE_SOURCE_CONDITION), () => Arr.head(Object.values(conditions)))
+  Option.orElse(ownValueOf(conditions, PACKAGE_SOURCE_CONDITION), () => runtimeConditionValueOption(conditions))
 
 const entryTargetOfEntry = (entry: S.Json): Option.Option<string> =>
   Match.value(entry).pipe(
@@ -117,9 +135,18 @@ const rootEntryOption = (root: S.Json, subpath: string): Option.Option<Option.Op
     onFalse: () => Option.none(),
   })
 
+const isSubpathKey = (key: string): boolean => key.startsWith(DEFAULT_ENTRY_KEY)
+
+const objectExportsOption = (entries: S.JsonObject, subpath: string): Option.Option<Option.Option<string>> =>
+  Match.value(Object.keys(entries)).pipe(
+    Match.when((keys) => keys.every(isSubpathKey), () => mapEntryOption(entries, entryKeyOf(subpath))),
+    Match.when((keys) => !keys.some(isSubpathKey), () => rootEntryOption(entries, subpath)),
+    Match.orElse(() => Option.some(Option.none<string>())),
+  )
+
 const exportsEntryOption = (exports: S.Json, subpath: string): Option.Option<Option.Option<string>> =>
   Match.value(exports).pipe(
-    Match.when(isEntryMap, (entries) => mapEntryOption(entries, entryKeyOf(subpath))),
+    Match.when(isEntryMap, (entries) => objectExportsOption(entries, subpath)),
     Match.when(Predicate.isString, (root) => rootEntryOption(root, subpath)),
     Match.when(isEntryList, (root) => rootEntryOption(root, subpath)),
     Match.orElse(() => Option.none()),

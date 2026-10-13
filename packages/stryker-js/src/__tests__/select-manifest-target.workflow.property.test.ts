@@ -57,8 +57,29 @@ const exported = (
 
 const ROOT_REQUEST = PackageExportRequest.make({ subpath: '' })
 
+const RUNTIME_CONDITIONS: ReadonlyArray<string> = ['import', 'node', 'default']
+
+const runtimeConditionAt = (depth: number): string => RUNTIME_CONDITIONS[depth % RUNTIME_CONDITIONS.length] ?? 'default'
+
 const nestedUnder = (keys: ReadonlyArray<string>, innermost: S.Json): S.Json =>
-  keys.reduceRight<S.Json>((inner, key) => ({ [key]: inner, [`${key}#later`]: './later.ts' }), innermost)
+  keys.reduceRight<S.Json>(
+    (inner, _key, depth) => ({
+      types: './index.d.ts',
+      [`types@>=${depth}`]: './versioned.d.ts',
+      [runtimeConditionAt(depth)]: inner,
+      require: './later.cjs',
+    }),
+    innermost,
+  )
+
+const NON_RUNTIME_CONDITIONS: ReadonlyArray<string> = ['require', 'browser', 'module', 'module-sync', 'development']
+
+const nonRuntimeConditionOf = (command: ManifestTargetCommand): string =>
+  [
+    ...NON_RUNTIME_CONDITIONS,
+    `c${oneSegmentOf(command)}`,
+  ][textOf(command).length % (NON_RUNTIME_CONDITIONS.length + 1)] ??
+    'require'
 
 const targetOf = (command: ManifestTargetCommand): string => `./${oneSegmentOf(command)}x.ts`
 
@@ -209,7 +230,7 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_ConditionChain_≡FirstValueAtEveryDepthForExportsAndImports',
+    '∀c_ConditionChain_≡FirstRuntimeConditionPastTypesAtEveryDepthForExportsAndImports',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
       const target = targetOf(command)
@@ -220,6 +241,37 @@ describe('selectManifestTarget', () => {
         exported(subject, command, { [exportKeyOf(subpath)]: nested }, subpath),
         imported(subject, command, { [specifier]: nested }, specifier),
       ].every((outcome) => outcome === `path:${target}`)
+    },
+  )
+
+  it.prop(
+    '∀c_ConditionChain_≡MissingWhenTheFirstConditionPastTypesIsNoRuntimeOne',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const target = targetOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const specifier = `#${subpath}`
+      const undecided = { types: './index.d.ts', [nonRuntimeConditionOf(command)]: target, default: target }
+      const nested = nestedUnder(keysOf(command), undecided)
+      return [
+        exported(subject, command, { [exportKeyOf(subpath)]: nested }, subpath),
+        imported(subject, command, { [specifier]: nested }, specifier),
+      ].every((outcome) => outcome === 'missing')
+    },
+  )
+
+  it.prop(
+    '∀c_RootConditions_≡ReadAsTheRootEntryAndMissingBesideASubpathKey',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const target = targetOf(command)
+      const conditions = nestedUnder(keysOf(command), target)
+      const subpath = `x${oneSegmentOf(command)}`
+      return [
+        exported(subject, command, conditions, '') === `path:${target}`,
+        exported(subject, command, conditions, subpath) === 'missing',
+        exported(subject, command, { import: conditions, [exportKeyOf(subpath)]: target }, '') === 'missing',
+      ].every((holds) => holds)
     },
   )
 

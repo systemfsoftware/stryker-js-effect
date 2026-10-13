@@ -19,11 +19,19 @@ const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.u
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
 
-const CONFIG = `export default {
-  testRunner: 'vm',
+const CLOSURE_ONLY_RUNNER_PLUGIN = new URL('./__fixtures__/closure-only-runner/index.mjs', import.meta.url).href
+
+const MODULE_REPORTING_RUNNER = "testRunner: 'vm',\n  coverageAnalysis: 'perTest',"
+
+const CLOSURE_ONLY_RUNNER = `testRunner: { plugin: ${
+  JSON.stringify(CLOSURE_ONLY_RUNNER_PLUGIN)
+} },\n  coverageAnalysis: 'off',`
+
+const configOf = (runner: string): string =>
+  `export default {
+  ${runner}
   testFiles: ['test/**/*.test.js'],
   mutate: ['src/**/*.js'],
-  coverageAnalysis: 'perTest',
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
   checkers: [],
@@ -130,7 +138,10 @@ const linkInstalledPackages = (root: string): Effect.Effect<void, never, Service
     yield* fs.symlink(path.join(root, 'lib'), path.join(root, 'node_modules', '@fixture', 'lib'))
   }).pipe(Effect.orDie)
 
-const makeProject = (exports: S.Json): Effect.Effect<string, never, Services | Scope.Scope> =>
+const makeProject = (
+  exports: S.Json,
+  runner = MODULE_REPORTING_RUNNER,
+): Effect.Effect<string, never, Services | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-exports-reuse-' }))
@@ -138,7 +149,7 @@ const makeProject = (exports: S.Json): Effect.Effect<string, never, Services | S
     yield* Effect.forEach(
       [
         ['package.json', '{ "name": "exports-reuse-app", "type": "module", "private": true }\n'],
-        ['stryker.config.mjs', CONFIG],
+        ['stryker.config.mjs', configOf(runner)],
         ['src/math.js', SOURCE],
         ['test/math.test.js', TEST],
         [UNRELATED_FILE, 'export const unrelated = 1\n'],
@@ -164,6 +175,10 @@ const RUNTIME_EDIT: Edit = { file: 'lib/dist/index.js', content: 'export const d
 
 const TYPES_FIRST_EXPORTS: S.Json = { '.': { import: { types: './dist/index.d.ts', default: './dist/index.js' } } }
 
+const FLAT_TYPES_FIRST_EXPORTS: S.Json = { '.': { types: './dist/index.d.ts', default: './dist/index.js' } }
+
+const BARE_CONDITIONS_EXPORTS: S.Json = { types: './dist/index.d.ts', import: './dist/index.js' }
+
 const runTwiceAround = (root: string, edit: Edit): Effect.Effect<RunPair, never, Services> =>
   Effect.gen(function*() {
     const first = yield* spawnRun(root)
@@ -175,21 +190,58 @@ const runTwiceAround = (root: string, edit: Edit): Effect.Effect<RunPair, never,
 Feature('Reusing verdicts for tests that import a linked workspace package', { timeout: 600_000 })
   .withLayer(NodeServices.layer)
   .live('the built stryker binary runs a project twice around an edit')
-  .body(({ scenario, scenarioOutline }) => {
+  .body(({ scenarioOutline }) => {
     scenarioOutline(
-      'A linked package whose exports use <shape> keeps every verdict across an edit no test reaches',
+      'A linked package whose exports use <shape> keeps every verdict on <runner> across an edit no test reaches',
       [
-        { shape: 'a flat string root', exports: { '.': './dist/index.js' } },
-        { shape: 'nested conditions with types first', exports: TYPES_FIRST_EXPORTS },
-        { shape: 'an array fallback', exports: { '.': ['./dist/index.js'] } },
-        { shape: 'a top-level array', exports: ['./dist/index.js'] },
-        { shape: 'a null subpath beside the root', exports: { '.': './dist/index.js', './internal/*': null } },
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'a flat string root',
+          exports: { '.': './dist/index.js' },
+        },
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'nested conditions with types first',
+          exports: TYPES_FIRST_EXPORTS,
+        },
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'an array fallback',
+          exports: { '.': ['./dist/index.js'] },
+        },
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'a top-level array',
+          exports: ['./dist/index.js'],
+        },
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'a null subpath beside the root',
+          exports: { '.': './dist/index.js', './internal/*': null },
+        },
+        {
+          runner: 'a runner that reports no loaded modules',
+          config: CLOSURE_ONLY_RUNNER,
+          shape: 'flat conditions with types first',
+          exports: FLAT_TYPES_FIRST_EXPORTS,
+        },
+        {
+          runner: 'a runner that reports no loaded modules',
+          config: CLOSURE_ONLY_RUNNER,
+          shape: 'root conditions without a "." key',
+          exports: BARE_CONDITIONS_EXPORTS,
+        },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
           Given(`a project whose test imports a linked package with ${row.shape} in its exports`)(
             'root',
-            () => makeProject(row.exports),
+            () => makeProject(row.exports, row.config),
           ),
           When('the binary runs the project, a file no test imports changes, and it runs again')(
             'runs',
@@ -212,31 +264,60 @@ Feature('Reusing verdicts for tests that import a linked workspace package', { t
         ),
     )
 
-    scenario(
-      'A linked package whose types come first still re-tests its importers when only its runtime file changes',
-      Gherkin.Do.pipe(
-        Given('a project whose test imports a linked package that lists its types before its runtime file')(
-          'root',
-          () => makeProject(TYPES_FIRST_EXPORTS),
+    scenarioOutline(
+      'A linked package whose types come first still re-tests its importers on <runner> when only its runtime file changes',
+      [
+        {
+          runner: 'a runner that reports the modules each test loaded',
+          config: MODULE_REPORTING_RUNNER,
+          shape: 'nested conditions',
+          exports: TYPES_FIRST_EXPORTS,
+        },
+        {
+          runner: 'a runner that reports no loaded modules',
+          config: CLOSURE_ONLY_RUNNER,
+          shape: 'nested conditions',
+          exports: TYPES_FIRST_EXPORTS,
+        },
+        {
+          runner: 'a runner that reports no loaded modules',
+          config: CLOSURE_ONLY_RUNNER,
+          shape: 'flat conditions',
+          exports: FLAT_TYPES_FIRST_EXPORTS,
+        },
+        {
+          runner: 'a runner that reports no loaded modules',
+          config: CLOSURE_ONLY_RUNNER,
+          shape: 'root conditions without a "." key',
+          exports: BARE_CONDITIONS_EXPORTS,
+        },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            `a project whose test imports a linked package that lists its types before its runtime file in ${row.shape}`,
+          )(
+            'root',
+            () => makeProject(row.exports, row.config),
+          ),
+          When('the binary runs the project, only the package runtime file changes, and it runs again')(
+            'runs',
+            (s) => runTwiceAround(s.root, RUNTIME_EDIT),
+          ),
+          Then('both runs exit 0 and the second tests again every mutant the first one tested')((s, expect) => {
+            const firstRan = countsOf(s.runs.first.reuse).ran
+            return expect({
+              firstExitCode: s.runs.first.exitCode,
+              firstTestedMutants: firstRan > 0,
+              secondExitCode: s.runs.second.exitCode,
+              second: countsOf(s.runs.second.reuse),
+            }).toEqual({
+              firstExitCode: 0,
+              firstTestedMutants: true,
+              secondExitCode: 0,
+              second: { reused: 0, ran: firstRan, refusedFor: ['closureChanged'] },
+            })
+          }),
         ),
-        When('the binary runs the project, only the package runtime file changes, and it runs again')(
-          'runs',
-          (s) => runTwiceAround(s.root, RUNTIME_EDIT),
-        ),
-        Then('both runs exit 0 and the second tests again every mutant the first one tested')((s, expect) => {
-          const firstRan = countsOf(s.runs.first.reuse).ran
-          return expect({
-            firstExitCode: s.runs.first.exitCode,
-            firstTestedMutants: firstRan > 0,
-            secondExitCode: s.runs.second.exitCode,
-            second: countsOf(s.runs.second.reuse),
-          }).toEqual({
-            firstExitCode: 0,
-            firstTestedMutants: true,
-            secondExitCode: 0,
-            second: { reused: 0, ran: firstRan, refusedFor: ['closureChanged'] },
-          })
-        }),
-      ),
     )
   })
