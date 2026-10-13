@@ -38,6 +38,7 @@ export {
   ActionableStatusSchema,
   CanonicalFileName,
   EphemeralStatusSchema,
+  Guard,
   HitCount,
   Mutant,
   MutantActivationSchema,
@@ -57,6 +58,7 @@ export {
   Subsumption,
   subsumptionMatchesStatus,
   SurvivorStatusSchema,
+  uncoveredBlockStatusReason,
 } from '../Mutant.schema.js'
 export type {
   ActionableStatus,
