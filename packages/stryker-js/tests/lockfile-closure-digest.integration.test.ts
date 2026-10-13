@@ -30,7 +30,6 @@ const MUTATED_PROJECTS = [
   'packages/stryker-js',
   'packages/stryker-js-typescript-checker',
   'packages/stryker-js-vitest-runner',
-  'test/e2e-core',
 ] as const
 
 const ORACLE_PROJECTS = ['a', 'b'] as const
