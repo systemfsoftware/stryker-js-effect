@@ -1,28 +1,23 @@
 import {
   BENCH_ORDER,
   type BenchCorpusName,
-  BenchReport,
+  type BenchReportOutcome,
   type BenchRun,
   BenchRunInvalid,
   BenchRunKey,
-  BenchRunMeasured,
-  type BenchSide,
   readBenchRun,
   ReadBenchRunCommand,
-  type RunExit,
-  type SetupStep,
   summarizeBench,
   SummarizeBenchCommand,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Crypto from 'effect/Crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Ref from 'effect/Ref'
@@ -30,9 +25,21 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { abortRunPath, AbortRunPathCommand } from './abort-run-path.workflow.js'
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
+import { tailOf } from './command.js'
+import { planRunPath, PlanRunPathCommand } from './plan-run-path.workflow.js'
 import type { PreparedSide } from './prepared-side.js'
 import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
+import {
+  type RunPathFailure,
+  RunPathMoveBack,
+  type RunPathMoveIn,
+  RunPathMoveInFailed,
+  RunPathRunEnd,
+  RunPathUnlisted,
+} from './run-path.schema.js'
+import { settleRunPath, SettleRunPathCommand } from './settle-run-path.workflow.js'
 import { workloadDigest } from './workload-digest.service.js'
 
 export interface RunBenchInput {
@@ -41,15 +48,14 @@ export interface RunBenchInput {
   readonly sideA: PreparedSide
   readonly sideB: PreparedSide
   readonly runsRoot: string
-  readonly setupSteps: ReadonlyArray<SetupStep>
+  readonly runnerTemp: string
+  readonly sha: string
   readonly baseSha: string
-  readonly headSha: string
-  readonly runTimeoutMs: number
-  readonly deadlineMs: number
+  readonly ref: string
 }
 
 export interface RunBenchResult {
-  readonly report: BenchReport
+  readonly outcome: BenchReportOutcome
   readonly runs: ReadonlyArray<BenchRun>
 }
 
@@ -61,12 +67,8 @@ type BenchPlatform =
 
 const slug = (value: string): string => value.replace(/[^A-Za-z0-9._-]+/g, '-')
 
-const STDERR_TAIL_CHARS = 4096
-
-const tailOf = (text: string): string => text.slice(-STDERR_TAIL_CHARS)
-
 interface CliExit {
-  readonly exit: RunExit
+  readonly exitCode: number
   readonly stderrTail: string
 }
 
@@ -74,12 +76,11 @@ const runCli = (
   params: Pick<PreparedSide, 'cli' | 'cwd' | 'configFile'> & {
     readonly streamFile: string
     readonly incrementalFile: string
-    readonly timeoutMs: number
   },
 ): Effect.Effect<CliExit, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function*() {
     const stderr = yield* Ref.make('')
-    const exited = yield* Effect.scoped(Effect.gen(function*() {
+    const exitCode = yield* Effect.scoped(Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
         ChildProcess.make(
@@ -109,12 +110,8 @@ const runCli = (
         { concurrency: 'unbounded' },
       )
       return exitCode
-    })).pipe(Effect.timeoutOption(Duration.millis(params.timeoutMs)), Effect.orDie)
-    const exit = Option.match(exited, {
-      onNone: (): RunExit => ({ _tag: 'timed-out', afterMs: params.timeoutMs }),
-      onSome: (code): RunExit => ({ _tag: 'exited', code }),
-    })
-    return { exit, stderrTail: yield* Ref.get(stderr) }
+    })).pipe(Effect.orDie)
+    return { exitCode, stderrTail: yield* Ref.get(stderr) }
   })
 
 const streamLines = (
@@ -126,19 +123,92 @@ const streamLines = (
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
   )
 
-interface RunOutcome {
-  readonly run: BenchRun
-  readonly exit: RunExit
-  readonly wallMs: number
+const orchestrationFailed = (code: BenchOrchestrationFailed['code'], reason: string): BenchOrchestrationFailed =>
+  BenchOrchestrationFailed.make({ code, reason })
+
+const abortOf = (failure: RunPathFailure): BenchOrchestrationFailed => {
+  const abort = Result.merge(abortRunPath(AbortRunPathCommand.make({ failure })))
+  return BenchOrchestrationFailed.make({ code: abort.code, reason: abort.reason })
 }
+
+const planned = (
+  input: RunBenchInput,
+  prepared: PreparedSide,
+): Effect.Effect<RunPathMoveIn, BenchOrchestrationFailed, BenchPlatform> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const entries = yield* fs.readDirectory(input.runnerTemp).pipe(
+      Effect.mapError((cause) => RunPathUnlisted.make({ side: prepared.side, runnerTemp: input.runnerTemp, cause })),
+    )
+    const plan = yield* Effect.fromResult(
+      planRunPath(
+        PlanRunPathCommand.make({
+          runnerTemp: input.runnerTemp,
+          runnerTempEntries: [...entries],
+          side: prepared.side,
+          tree: prepared.tree,
+          cwd: prepared.cwd,
+          cli: prepared.cli,
+        }),
+      ),
+    )
+    return yield* Match.valueTags(plan, {
+      RunPathOccupied: (occupied): Effect.Effect<RunPathMoveIn, RunPathFailure> => Effect.fail(occupied),
+      RunPathMoveIn: (moveIn): Effect.Effect<RunPathMoveIn, RunPathFailure> => Effect.succeed(moveIn),
+    })
+  }).pipe(Effect.mapError(abortOf))
+
+const moveBackOf = <E>(outcome: Exit.Exit<void, E>): RunPathMoveBack =>
+  Exit.match(outcome, {
+    onFailure: (cause) => RunPathMoveBack.cases.MoveBackFailed.make({ cause }),
+    onSuccess: () => RunPathMoveBack.cases.MovedBack.make({}),
+  })
+
+const runEndOf = <A, E>(outcome: Exit.Exit<A, E>): RunPathRunEnd =>
+  Exit.match(outcome, {
+    onFailure: (cause) => RunPathRunEnd.cases.RunFailed.make({ cause }),
+    onSuccess: () => RunPathRunEnd.cases.RunSucceeded.make({}),
+  })
+
+const atRunPath = <A, R>(
+  moveIn: RunPathMoveIn,
+  use: Effect.Effect<A, BenchOrchestrationFailed, R>,
+): Effect.Effect<A, BenchOrchestrationFailed, R | FileSystem.FileSystem> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      yield* fs.rename(moveIn.tree, moveIn.runPath).pipe(
+        Effect.mapError((cause) =>
+          abortOf(RunPathMoveInFailed.make({ side: moveIn.side, tree: moveIn.tree, runPath: moveIn.runPath, cause }))
+        ),
+      )
+      const exit = yield* Effect.exit(restore(use))
+      const restored = yield* Effect.exit(fs.rename(moveIn.runPath, moveIn.tree))
+      yield* Result.match(
+        settleRunPath(
+          SettleRunPathCommand.make({
+            side: moveIn.side,
+            tree: moveIn.tree,
+            runPath: moveIn.runPath,
+            moveBack: moveBackOf(restored),
+            run: runEndOf(exit),
+          }),
+        ),
+        {
+          onFailure: (unrestored) => unrestored.pipe(abortOf, Effect.fail),
+          onSuccess: () => Effect.void,
+        },
+      )
+      return yield* exit
+    })
+  )
 
 const runOne = (
   input: RunBenchInput,
   prepared: PreparedSide,
   pristine: PristineTree,
   position: number,
-  timeoutMs: number,
-): Effect.Effect<RunOutcome, BenchOrchestrationFailed, BenchPlatform> =>
+): Effect.Effect<BenchRun, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -148,23 +218,27 @@ const runOne = (
 
     yield* restoreTree(pristine).pipe(
       Effect.mapError((cause) =>
-        BenchOrchestrationFailed.make({
-          code: 'side-setup-failed',
-          reason:
-            `side ${prepared.side}: ${pristine.root} could not be restored to its prepared state: ${cause.message}`,
-        })
+        orchestrationFailed(
+          'side-setup-failed',
+          `side ${prepared.side}: ${pristine.root} could not be restored to its prepared state: ${cause.message}`,
+        )
       ),
     )
-    const startedAt = yield* Clock.currentTimeMillis
-    const cliExit = yield* runCli({
-      cli: prepared.cli,
-      cwd: prepared.cwd,
-      configFile: prepared.configFile,
-      streamFile,
-      incrementalFile,
-      timeoutMs,
-    })
-    const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+    const moveIn = yield* planned(input, prepared)
+    const { cliExit, wallMs } = yield* atRunPath(
+      moveIn,
+      Effect.gen(function*() {
+        const startedAt = yield* Clock.currentTimeMillis
+        const cliExit = yield* runCli({
+          cli: moveIn.cli,
+          cwd: moveIn.cwd,
+          configFile: prepared.configFile,
+          streamFile,
+          incrementalFile,
+        })
+        return { cliExit, wallMs: (yield* Clock.currentTimeMillis) - startedAt }
+      }),
+    )
 
     const lines = yield* streamLines(fs, streamFile)
     const digest = yield* workloadDigest({
@@ -174,19 +248,18 @@ const runOne = (
       incrementalFile,
     })
     const key = BenchRunKey.make({ corpus: input.corpus, entry: input.entry, side: prepared.side, position })
-    const run = Result.merge(
+    return Result.merge(
       readBenchRun(
         ReadBenchRunCommand.make({
           key,
           lines,
-          exit: cliExit.exit,
+          exitCode: cliExit.exitCode,
           workloadDigest: digest,
           stderrTail: cliExit.stderrTail,
           wallMs,
         }),
       ),
     )
-    return { run, exit: cliExit.exit, wallMs }
   })
 
 interface PreparedTarget {
@@ -209,81 +282,33 @@ const prepareTarget = (
     (pristine) => ({ prepared, pristine }),
   )
 
-const budgetExceeded = (what: string, earlierWallMs: ReadonlyArray<number>): BenchOrchestrationFailed =>
-  BenchOrchestrationFailed.make({
-    code: 'budget-exceeded',
-    reason: `${what}; setup and the ${earlierWallMs.length} finished runs used the budget (runs: ${
-      earlierWallMs.map((ms) => `${(ms / 1000).toFixed(1)}s`).join(', ')
-    })`,
-  })
-
-const runAt = (
-  input: RunBenchInput,
-  targets: { readonly A: PreparedTarget; readonly B: PreparedTarget },
-  earlier: Ref.Ref<ReadonlyArray<number>>,
-) =>
-(side: BenchSide, position: number): Effect.Effect<BenchRun, BenchOrchestrationFailed, BenchPlatform> =>
-  Effect.gen(function*() {
-    const label = `run ${position + 1} of ${BENCH_ORDER.length} (side ${side})`
-    const remainingMs = input.deadlineMs - (yield* Clock.currentTimeMillis)
-    yield* Boolean.match(remainingMs <= 0, {
-      onTrue: () =>
-        Effect.flatMap(
-          Ref.get(earlier),
-          (wallMs) => Effect.fail(budgetExceeded(`the job deadline passed before ${label}`, wallMs)),
-        ),
-      onFalse: () => Effect.void,
-    })
-    const timeoutMs = Math.min(input.runTimeoutMs, remainingMs)
-    const target = targets[side]
-    const outcome = yield* runOne(input, target.prepared, target.pristine, position, timeoutMs)
-    yield* Match.valueTags(outcome.exit, {
-      exited: () => Effect.void,
-      'timed-out': () =>
-        Boolean.match(timeoutMs < input.runTimeoutMs, {
-          onTrue: () =>
-            Effect.flatMap(
-              Ref.get(earlier),
-              (wallMs) =>
-                Effect.fail(budgetExceeded(`the job deadline stopped ${label} after ${timeoutMs} ms`, wallMs)),
-            ),
-          onFalse: () => Effect.void,
-        }),
-    })
-    yield* Ref.update(earlier, (wallMs) => [...wallMs, outcome.wallMs])
-    return outcome.run
-  })
-
 export const runBench = (
   input: RunBenchInput,
 ): Effect.Effect<RunBenchResult, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
-    const earlier = yield* Ref.make<ReadonlyArray<number>>([])
     const targets = { A: yield* prepareTarget(input.sideA), B: yield* prepareTarget(input.sideB) }
-    const runs = yield* Effect.forEach(BENCH_ORDER, runAt(input, targets, earlier))
+    const runs = yield* Effect.reduce(
+      BENCH_ORDER,
+      (): ReadonlyArray<BenchRun> => [],
+      (finished, side, position) =>
+        runOne(input, targets[side].prepared, targets[side].pristine, position).pipe(
+          Effect.map((run): ReadonlyArray<BenchRun> => [...finished, run]),
+        ),
+    )
 
-    const summary = summarizeBench(SummarizeBenchCommand.make({ runs: [...runs] }))
+    const summary = summarizeBench(
+      SummarizeBenchCommand.make({ sha: input.sha, baseSha: input.baseSha, ref: input.ref, runs: [...runs] }),
+    )
     const outcome = Result.match(summary, {
-      onFailure: (failure) => ({ _tag: 'failed' as const, invalid: Arr.filter(failure.runs, S.is(BenchRunInvalid)) }),
-      onSuccess: (decision) => ({ _tag: 'summarized' as const, projects: decision.projects }),
+      onFailure: (failure): BenchReportOutcome => ({
+        _tag: 'failed',
+        invalid: Arr.filter(failure.runs, S.is(BenchRunInvalid)),
+      }),
+      onSuccess: (decision): BenchReportOutcome => ({
+        _tag: 'summarized',
+        projects: decision.projects,
+        regression: decision.regression,
+      }),
     })
-    const report = BenchReport.make({
-      schemaVersion: '1.1',
-      baseSha: input.baseSha,
-      headSha: input.headSha,
-      outcome,
-      runs: Arr.map(
-        Arr.filter(runs, S.is(BenchRunMeasured)),
-        (run) => ({
-          key: run.key,
-          wallMs: run.wallMs,
-          exitCode: run.exitCode,
-          testsExecuted: run.testsExecuted,
-          workloadDigest: run.workloadDigest,
-        }),
-      ),
-      setupSteps: [...input.setupSteps],
-    })
-
-    return { report, runs }
+    return { outcome, runs }
   })

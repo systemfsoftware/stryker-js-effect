@@ -22,7 +22,7 @@ import * as Scope from 'effect/Scope'
 import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
-import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
+import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema, PlanShardsRefused } from './plan-request.schema.js'
 import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
@@ -94,15 +94,6 @@ const reportCostsOf = (texts: readonly string[]): Record<string, number> =>
       }),
     {},
   )
-
-const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
-  Option.flatMap(
-    S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
-    (report) => Option.fromNullishOr(report.dryRunCoverage),
-  )
-
-const firstCoverageOf = (texts: readonly string[]): Option.Option<DryRunCoverage> =>
-  Option.firstSomeOf(texts.map(decodeCoverage))
 
 const testsTimeOf = (tests: ReadonlyArray<{ readonly timeSpentMs: number }>): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
@@ -259,7 +250,8 @@ const planProject = (
     const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
-    const coverage = firstCoverageOf(texts)
+    const dryRunChoice = yield* dryRunChoiceOf(done, project, texts)
+    const coverage = dryRunChoice.prior
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const reportCosts = reportCostsOf(texts)
     const label = labelOf(path, labelBase, project)
@@ -290,12 +282,12 @@ const planProject = (
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
           texts,
+          kept: dryRunChoice.kept,
         }),
       ),
       (neverError) => neverError,
     )
     const dependentIds = HashSet.fromIterable(dependentMutantIdsOf(dryRunDecision))
-    const dryRunChoice = yield* dryRunChoiceOf(done, project)
     const dryRunCostMs = Boolean.match(S.is(DryRunCoverageReused)(dryRunChoice.decision), {
       onTrue: () => 0,
       onFalse: () =>
