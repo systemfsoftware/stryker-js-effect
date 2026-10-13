@@ -37,7 +37,7 @@ import { classifyRunOutcome, type FailedRunOutcome, RunExit, RunParseFailed } fr
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
 import { makeNodePlatformLayer } from '../node-platform.js'
-import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import { OutputModeProbe } from '../output-mode-probe.service.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { environmentParentContext } from '../reporter-stream.service.js'
@@ -144,9 +144,9 @@ const compileCacheChildEnv = inheritableCompileCacheDirectory === undefined
 const nodePlatform = makeNodePlatformLayer({ childEnv: compileCacheChildEnv })
 
 const probeGroup = Layer.mergeAll(
-  OutputModeProbeLive,
-  RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
-  RunEventDrain.fileLayer,
+  OutputModeProbe.layer,
+  RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.layerFile)),
+  RunEventDrain.layerFile,
 ).pipe(Layer.provide(nodePlatform))
 
 const cliLayer = Layer.mergeAll(
@@ -234,7 +234,7 @@ const strykerProgram = Effect.gen(function*() {
   const answer = yield* Ref.make<CliAnswer>(undefined)
   const command = makeStrykerCommand({ environment, recordAnswer: (recorded) => Ref.set(answer, recorded) })
   const machineConsole = Boolean.match(mode.mode === 'machine', {
-    onTrue: () => MachineConsole.captureLayer,
+    onTrue: () => MachineConsole.layerCapture,
     onFalse: () => Layer.empty,
   })
   const parent = Option.getOrUndefined(Option.map(yield* environmentParentContext, OtelTracer.makeExternalSpan))

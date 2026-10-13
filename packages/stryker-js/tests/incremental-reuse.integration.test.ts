@@ -128,7 +128,7 @@ const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.E
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(root), queue), ports),
       ports,
     )
     const exit = yield* Engine.mutationTestCell
@@ -930,7 +930,7 @@ Feature('Content-keyed reuse across incremental reports')
                 ran: s.fixture.second.reuse?.ran,
               },
               discardLineCount: discardLines.length,
-              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 5')),
+              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 6')),
             }).toEqual({
               runSucceeded: true,
               firstRanEverything: true,

@@ -293,7 +293,7 @@ const planProject = (
     const basePath = channel.environment.basePath
     const project = yield* fs.realPath(path.resolve(basePath, directory))
     const env = { ...channel.environment.host.env, basePath: project }
-    const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
+    const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
     const stageInput = {
       cliOptions: stageCliOptionsOf(resolvedSince, request.full),
       targetMutatePatterns: undefined,
@@ -506,7 +506,7 @@ const rootOptionsOf = (
 ): Effect.Effect<Options.StrykerOptions, never, EnginePorts | Scope.Scope> =>
   Effect.gen(function*() {
     const env = { ...channel.environment.host.env, basePath: channel.environment.basePath }
-    const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
+    const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
     const loaded = yield* Cell.provideContext(loadConfigCell, context).run({
       cliOptions: stageCliOptionsOf(request.since, request.full),
       targetMutatePatterns: undefined,

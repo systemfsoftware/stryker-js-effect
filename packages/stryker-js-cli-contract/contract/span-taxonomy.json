@@ -564,6 +564,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.report.sarif",
+    "name": "stryker.report.sarif",
+    "attributes": {}
+  },
+  {
     "id": "stryker.reporterStream.attach",
     "name": "stryker.reporterStream.attach",
     "attributes": {}
@@ -887,6 +892,11 @@
   {
     "id": "stryker.sandbox.move_entry",
     "name": "stryker.sandbox.move_entry",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.prepare",
+    "name": "stryker.sandbox.prepare",
     "attributes": {}
   },
   {
