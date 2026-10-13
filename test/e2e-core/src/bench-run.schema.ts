@@ -1,5 +1,7 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 export const BenchSide = S.Literals(['A', 'B'])
@@ -28,14 +30,8 @@ export const WorkloadDigest = S.TaggedUnion({
 })
 export type WorkloadDigest = typeof WorkloadDigest.Type
 
-export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid', 'timeout'])
+export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid'])
 export type BenchRunFailureCode = typeof BenchRunFailureCode.Type
-
-export const RunExit = S.TaggedUnion({
-  exited: { code: S.Int },
-  'timed-out': { afterMs: Report.NonNegativeFinite },
-})
-export type RunExit = typeof RunExit.Type
 
 export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measured', {
   key: BenchRunKey,
@@ -54,7 +50,7 @@ export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid>()('invalid',
   code: BenchRunFailureCode,
   reason: S.String,
   lineNumber: S.NullOr(S.Int),
-  exitCode: S.NullOr(S.Int),
+  exitCode: S.Int,
   stderrTail: S.String,
 }) {
   readonly [BenchRunTypeId] = BenchRunTypeId
@@ -62,3 +58,42 @@ export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid>()('invalid',
 
 export const BenchRun = S.Union([BenchRunMeasured, BenchRunInvalid])
 export type BenchRun = typeof BenchRun.Type
+
+const acceptsFailureCode = (code: string): boolean => Result.isSuccess(S.decodeUnknownResult(BenchRunFailureCode)(code))
+
+const acceptsInvalidExitCode = (exitCode: number | null): boolean =>
+  Result.isSuccess(
+    S.decodeUnknownResult(BenchRunInvalid)({
+      _tag: 'invalid',
+      key: { corpus: 'repo', entry: 'entry', side: 'A', position: 0 },
+      code: 'stream-invalid',
+      reason: 'reason',
+      lineNumber: null,
+      exitCode,
+      stderrTail: '',
+    }),
+  )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀s_BenchRunFailureCodeRefusal_≡OnlyAnUndecodableOrInvalidStream',
+    { of: [S.String], subject: acceptsFailureCode },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append(['', 'timeout', 'stream-undecodable', 'stream-invalid'], drawn),
+        (code) => subject(code) === (code === 'stream-undecodable' || code === 'stream-invalid'),
+      ),
+  )
+
+  it.prop(
+    '∀n_InvalidRunExitCodeRefusal_≡AlwaysASafeInteger',
+    { of: [S.NullOr(S.Finite)], subject: acceptsInvalidExitCode },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.append([null, -1, 0, 1, 1.5, 2 ** 53, Number.NaN], drawn),
+        (exitCode) => subject(exitCode) === (exitCode !== null && Number.isSafeInteger(exitCode)),
+      ),
+  )
+}
