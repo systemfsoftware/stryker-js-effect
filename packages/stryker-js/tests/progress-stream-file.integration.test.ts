@@ -62,12 +62,19 @@ const prepareProject = (): Effect.Effect<string, never, FileSystem.FileSystem | 
     return root
   }).pipe(Effect.orDie)
 
-const runStryker = (cwd: string): Effect.Effect<number, never, ChildProcessSpawner.ChildProcessSpawner> =>
+const RUN = ['run', '--json']
+
+const HELP = ['--help', '--json']
+
+const runStryker = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<number, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.scoped(
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
-        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'run', '--json'], {
+        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, ...args], {
           cwd,
           stdin: 'ignore',
           stdout: 'pipe',
@@ -92,35 +99,35 @@ const reuseOf = (stream: string): RunEvent.ReuseReported | undefined =>
 const readOptional = (file: string): Effect.Effect<Option.Option<string>, never, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file).pipe(Effect.option))
 
-interface SecondRun {
+interface LastRun {
   readonly exitCodes: readonly number[]
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly reportedMutants: number
   readonly defaultStreamWritten: boolean
 }
 
-const runTwice = Effect.scoped(
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const root = yield* prepareProject()
-    const first = yield* runStryker(root)
-    const second = yield* runStryker(root)
-    const stream = yield* readOptional(path.join(root, CONFIGURED_STREAM))
-    const report = yield* readOptional(path.join(root, JSON_REPORT))
-    const defaultStreamWritten = yield* fs.exists(path.join(root, DEFAULT_STREAM)).pipe(Effect.orDie)
-    const run: SecondRun = {
-      exitCodes: [first, second],
-      reuse: Option.getOrUndefined(Option.map(stream, reuseOf)),
-      reportedMutants: Option.match(Option.flatMap(report, decodeReport), {
-        onNone: () => 0,
-        onSome: (decoded) => Object.values(decoded.files).reduce((total, file) => total + file.mutants.length, 0),
-      }),
-      defaultStreamWritten,
-    }
-    return run
-  }),
-)
+const runInOrder = (commands: ReadonlyArray<ReadonlyArray<string>>) =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const root = yield* prepareProject()
+      const exitCodes = yield* Effect.forEach(commands, (args) => runStryker(root, args))
+      const stream = yield* readOptional(path.join(root, CONFIGURED_STREAM))
+      const report = yield* readOptional(path.join(root, JSON_REPORT))
+      const defaultStreamWritten = yield* fs.exists(path.join(root, DEFAULT_STREAM)).pipe(Effect.orDie)
+      const run: LastRun = {
+        exitCodes,
+        reuse: Option.getOrUndefined(Option.map(stream, reuseOf)),
+        reportedMutants: Option.match(Option.flatMap(report, decodeReport), {
+          onNone: () => 0,
+          onSome: (decoded) => Object.values(decoded.files).reduce((total, file) => total + file.mutants.length, 0),
+        }),
+        defaultStreamWritten,
+      }
+      return run
+    }),
+  )
 
 Feature('A configured progress stream file stays out of the next run', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
@@ -131,7 +138,7 @@ Feature('A configured progress stream file stays out of the next run', { timeout
       Gherkin.Do.pipe(
         Given(
           'a project with no ignore patterns whose config names progressStreamFile, run twice with nothing changed',
-        )('run', () => runTwice),
+        )('run', () => runInOrder([RUN, RUN])),
         Then(
           'the second run writes its stream at the configured path, reuses every reported mutant and writes no default stream',
         )((s, expect) =>
@@ -149,6 +156,28 @@ Feature('A configured progress stream file stays out of the next run', { timeout
             reused: s.run.reportedMutants,
             mutantsReported: true,
             defaultStreamWritten: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run after another stryker command in the same project still re-runs no mutant',
+      Gherkin.Do.pipe(
+        Given(
+          'a project with no ignore patterns whose config names progressStreamFile, run, then asked for help, then run again',
+        )('run', () => runInOrder([RUN, HELP, RUN])),
+        Then('the last run reuses every reported mutant')((s, expect) =>
+          expect({
+            exitCodes: s.run.exitCodes,
+            ran: s.run.reuse?.ran,
+            reused: s.run.reuse?.reused,
+            mutantsReported: s.run.reportedMutants > 0,
+          }).toEqual({
+            exitCodes: [0, 0, 0],
+            ran: 0,
+            reused: s.run.reportedMutants,
+            mutantsReported: true,
           })
         ),
       ),

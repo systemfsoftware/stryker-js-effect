@@ -300,7 +300,7 @@ $ pnpm exec stryker run --json
 {"_tag":"verdict","schemaVersion":"8.0","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag","score":83.33333333333333,"thresholds":{"high":100,"low":80,"break":null},"reportFile":"reports/mutation/mutation.json","counts":{"pending":0,"killed":5,"timeout":0,"survived":1,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":1},"mutants":[{"id":"5b2e8d17c4a90f36","file":"src/calc.ts","location":{"start":{"line":3,"column":55},"end":{"line":3,"column":64}},"mutator":"EqualityOperator","replacement":"value >= 0","status":"Survived"}],"scope":"full","mutantSetPolicy":"default","phaseDurations":{"prepare":115,"instrument":42,"dry-run":380,"mutation-test":1210},"static":{"count":0,"costMs":0},"budget":{"predictedSeconds":1.4,"actualSeconds":1.21}}
 ```
 
-Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to `reports/mutation-stream.jsonl` (`--progressStreamFile`), the artifact `stryker merge` rebuilds partial reports from.
+Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to the `progressStreamFile` (`--progressStreamFile`, default `reports/mutation-stream.jsonl`), the artifact `stryker merge` rebuilds partial reports from.
 
 ---
 
@@ -375,7 +375,7 @@ The in-process `vm` runner executes your Vitest suites in one worker thread per 
 <details>
 <summary>How can CI jobs parse real-time mutation progress?</summary>
 
-Set `--json`, or `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload; every mode also writes the same records to `reports/mutation-stream.jsonl`.
+Set `--json`, or `STRYKER_MODE=machine`, or run with one of the agent tool variables (`CLAUDECODE`, `CODEX_SANDBOX`, `AGENT`) set. Stryker streams typed NDJSON events to `stdout` including phase transitions, progress ticks, and the final verdict payload; every mode also writes the same records to the `progressStreamFile` (default `reports/mutation-stream.jsonl`).
 
 </details>
 

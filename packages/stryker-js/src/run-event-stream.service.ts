@@ -39,6 +39,7 @@ import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
 import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
 import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
+import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -102,8 +103,6 @@ export type FramedDrain = (
   toStdout: boolean,
 ) => Effect.Effect<void, never, never>
 
-const DEFAULT_PROGRESS_STREAM_FILE = 'reports/mutation-stream.jsonl'
-
 export interface RunEventDrainShape {
   readonly drainFramed: FramedDrain
   readonly setProgressStreamFile: (fileName: string) => Effect.Effect<void, never, never>
@@ -122,8 +121,6 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
       })
     }),
   )
-
-  static readonly DefaultProgressStreamFile = DEFAULT_PROGRESS_STREAM_FILE
 
   static readonly fileLayer: Layer.Layer<
     RunEventDrain,

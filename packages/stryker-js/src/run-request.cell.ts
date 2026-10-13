@@ -76,6 +76,7 @@ import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
+import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
@@ -134,7 +135,7 @@ export type CliFailure =
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
   Option.getOrElse(
     S.decodeUnknownOption(S.NonEmptyString)(options['progressStreamFile']),
-    () => RunEventDrain.DefaultProgressStreamFile,
+    () => DEFAULT_PROGRESS_STREAM_FILE,
   )
 
 const flaggedStreamFileOf = (invocation: CliInvocation): Effect.Effect<string> =>
@@ -146,7 +147,7 @@ const streamFileNameOf = (invocation: CliInvocation): Effect.Effect<string, neve
       'run',
       () =>
         readConfig(invocation.options, { command: 'run', mode: invocation.environment.mode.mode }).pipe(
-          Effect.map((resolved) => resolved.progressStreamFile),
+          Effect.map(progressStreamFileName),
           Effect.catch(() => flaggedStreamFileOf(invocation)),
         ),
     ),
