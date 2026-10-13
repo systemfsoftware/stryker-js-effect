@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-html-reporter
 
+## 6.0.5
+
+Updated dependency @systemfsoftware/stryker-js-cli-contract to 0.6.0
+
 ## 6.0.4
 
 Updated dependency @systemfsoftware/stryker-js-cli-contract to 0.5.0

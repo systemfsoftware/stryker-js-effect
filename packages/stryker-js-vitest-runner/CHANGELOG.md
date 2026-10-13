@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-vitest-runner
 
+## 10.0.0
+
+Nothing you configure or import changes: the published plugin, its options and its behaviour stay the same. The Vitest runner worker is rebuilt from reorganised modules. The plugin name, its options and the results it reports stay the same, so upgrading needs nothing from you. No change to the published packages. The repository's own mutation run of these three packages now grades workflow files only, not schema files. The package now declares Node 24.13.1 or later in `engines`, the same floor as `@systemfsoftware/stryker-js`. On Node 22, a mutant run that filters to named tests ended in an error instead of a verdict. To migrate, install Node 24.13.1 or later.
+
 ## 9.0.2
 
 The runner worker bundles the current `@systemfsoftware/stryker-js-plugin-interface` code, which now names the ignore rule on every Ignored mutant. The worker shares that vocabulary with a `@systemfsoftware/stryker-js` engine that reports ignore rules.
