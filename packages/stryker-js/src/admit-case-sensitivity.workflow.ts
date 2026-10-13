@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Boolean } from 'effect'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -10,7 +11,13 @@ type CaseSensitivityTypeId = typeof CaseSensitivityTypeId
 const FileIdentity = S.Struct({ dev: S.Finite, ino: S.Option(S.Finite) })
 type FileIdentity = typeof FileIdentity.Type
 
-const CaseProbeResult = S.Struct({ own: FileIdentity, swapped: S.Option(FileIdentity) })
+const SwappedMissing = S.TaggedStruct('SwappedMissing', {})
+
+const SwappedFound = S.TaggedStruct('SwappedFound', { identity: FileIdentity })
+
+const SwappedName = S.Union([SwappedMissing, SwappedFound])
+
+const CaseProbeResult = S.Struct({ own: FileIdentity, swapped: SwappedName })
 type CaseProbeResult = typeof CaseProbeResult.Type
 
 export class CaseSensitivityCommand extends S.TaggedClass<CaseSensitivityCommand>()('CaseSensitivityCommand', {
@@ -37,7 +44,11 @@ const distinctFiles = (one: FileIdentity, other: FileIdentity) =>
   ])
 
 const tellsCaseApart = (probe: CaseProbeResult) =>
-  Option.match(probe.swapped, { onNone: () => true, onSome: (swapped) => distinctFiles(probe.own, swapped) })
+  Match.value(probe.swapped).pipe(
+    Match.tag('SwappedMissing', () => true),
+    Match.tag('SwappedFound', (found) => distinctFiles(probe.own, found.identity)),
+    Match.exhaustive,
+  )
 
 export const admitCaseSensitivity = Workflow.make({
   command: CaseSensitivityCommand,

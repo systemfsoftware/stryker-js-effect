@@ -76,6 +76,8 @@ const OVERSIZED_STREAM_RECORD = `${
 
 const TORN_RECORD = '{"_tag":"verdict","schemaVersion":"8.0","runId":"06GK'
 
+const LINK_TARGET = 'linked-stream.jsonl'
+
 const caseSwapped = (name: string) =>
   name.split('').map((char) => char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()).join('')
 
@@ -421,6 +423,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         { starting: 'with a blank line', bytes: Array.from(UTF8.encode(`\n${NOTES}`)) },
         { starting: 'with an incomplete UTF-8 character', bytes: [0xc3] },
         { starting: 'with a bare stream object', bytes: Array.from(UTF8.encode(`{"_tag":"stream"}\n${NOTES}`)) },
+        { starting: 'holding only a bare stream object', bytes: Array.from(UTF8.encode('{"_tag":"stream"}')) },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -593,6 +596,45 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             }).toEqual({ exitCode: 0, fileFailuresLogged: 0, streamEndsWithVerdict: true })
           ),
         ),
+    )
+
+    scenario(
+      'A stream path that is a dangling link gets its target written, and the run logs no file failure',
+      Gherkin.Do.pipe(
+        Given('a project whose configured stream file is a link to a file that does not exist yet')(
+          'project',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareProject(configNaming(CONFIGURED_STREAM))
+              yield* fs.makeDirectory(path.join(root, path.dirname(CONFIGURED_STREAM)), { recursive: true }).pipe(
+                Effect.orDie,
+              )
+              yield* fs.symlink(LINK_TARGET, path.join(root, CONFIGURED_STREAM)).pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        When('the link target is read')(
+          'target',
+          (s) =>
+            Effect.flatMap(
+              Path.Path,
+              (path) => readOptional(path.join(s.project, path.dirname(CONFIGURED_STREAM), LINK_TARGET)),
+            ),
+        ),
+        Then('the target holds the stream ending with the verdict, and no file failure is logged')((s, expect) =>
+          expect({
+            exitCode: s.run.exitCode,
+            fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+            targetEndsWithVerdict: Option.exists(
+              s.target,
+              (text) => S.is(RunEvent.VerdictReached)(eventsOf(text).at(-1)),
+            ),
+          }).toEqual({ exitCode: 0, fileFailuresLogged: 0, targetEndsWithVerdict: true })
+        ),
+      ),
     )
 
     scenario(

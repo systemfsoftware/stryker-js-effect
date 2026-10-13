@@ -143,7 +143,13 @@ const probeOf = (fs: FileSystem.FileSystem, pathService: Path.Path, root: string
     fs.stat(pathService.join(root, pair.swapped)).pipe(Effect.option),
   ])
     .pipe(
-      Effect.map(([own, swapped]) => ({ own: identityOf(own), swapped: Option.map(swapped, identityOf) })),
+      Effect.map(([own, swapped]) => ({
+        own: identityOf(own),
+        swapped: Option.match(swapped, {
+          onNone: () => ({ _tag: 'SwappedMissing' as const }),
+          onSome: (info) => ({ _tag: 'SwappedFound' as const, identity: identityOf(info) }),
+        }),
+      })),
       Effect.option,
     )
 

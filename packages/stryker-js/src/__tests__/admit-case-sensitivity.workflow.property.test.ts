@@ -14,11 +14,14 @@ const tagOf = (subject: typeof admitCaseSensitivity, probes: ReadonlyArray<Probe
 
 const another = (value: number) => value === 1 ? 2 : 1
 
-const reachingItself = (probe: Probe): Probe => ({ own: probe.own, swapped: Option.some(probe.own) })
+const reachingItself = (probe: Probe): Probe => ({
+  own: probe.own,
+  swapped: { _tag: 'SwappedFound', identity: probe.own },
+})
 
 const withIdentityUnknown = (probe: Probe): Probe => ({
   own: { dev: probe.own.dev, ino: Option.none() },
-  swapped: Option.some({ dev: probe.own.dev, ino: probe.own.ino }),
+  swapped: { _tag: 'SwappedFound', identity: { dev: probe.own.dev, ino: probe.own.ino } },
 })
 
 const foldedPlus = (
@@ -47,7 +50,8 @@ describe('admitCaseSensitivity', () => {
   it.prop(
     '∀c_FoldedProbesPlusOneWhoseSwappedNameIsMissing_≡CaseToldApart',
     { of: [commandArb], subject: admitCaseSensitivity },
-    (subject, [command]) => foldedPlus(subject, command, (first) => ({ own: first.own, swapped: Option.none() })),
+    (subject, [command]) =>
+      foldedPlus(subject, command, (first) => ({ own: first.own, swapped: { _tag: 'SwappedMissing' } })),
   )
 
   it.prop(
@@ -56,7 +60,7 @@ describe('admitCaseSensitivity', () => {
     (subject, [command]) =>
       foldedPlus(subject, command, (first) => ({
         own: first.own,
-        swapped: Option.some({ dev: another(first.own.dev), ino: first.own.ino }),
+        swapped: { _tag: 'SwappedFound', identity: { dev: another(first.own.dev), ino: first.own.ino } },
       })),
   )
 
@@ -68,7 +72,7 @@ describe('admitCaseSensitivity', () => {
         const ino = Option.getOrElse(first.own.ino, () => 0)
         return {
           own: { dev: first.own.dev, ino: Option.some(ino) },
-          swapped: Option.some({ dev: first.own.dev, ino: Option.some(another(ino)) }),
+          swapped: { _tag: 'SwappedFound', identity: { dev: first.own.dev, ino: Option.some(another(ino)) } },
         }
       }),
   )

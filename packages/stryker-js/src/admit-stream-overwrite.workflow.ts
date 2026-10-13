@@ -3,7 +3,7 @@ import { Array as Arr, Boolean, String as Str } from 'effect'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { RunEventRecordOpening, StreamFileFirstLine } from './stream-file-head.schema.js'
+import { JsonLine, RunEventRecordOpening, StreamFileFirstLine } from './stream-file-head.schema.js'
 
 const StreamOverwriteTypeId = Symbol.for('@systemfsoftware/stryker-js/StreamOverwriteDecision')
 type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
@@ -19,6 +19,7 @@ const isTornRecord = (command: StreamOverwriteCommand) =>
     command.wholeFileRead,
     command.leadingText.length > 0,
     !command.leadingText.includes('\n'),
+    Option.isNone(S.decodeOption(JsonLine)(command.leadingText)),
     RunEventRecordOpening.literals.some(sharesAPrefix(command.leadingText)),
   ])
 

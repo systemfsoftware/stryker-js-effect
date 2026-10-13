@@ -8,6 +8,8 @@ export const StreamFileFirstLine = S.Union([
   S.fromJsonString(S.TaggedStruct('stream', { schemaVersion: S.String, runId: S.String })),
 ])
 
+export const JsonLine = S.fromJsonString(S.Unknown)
+
 const wireTags = Arr.filter([SchemaAST.toEncoded(RunEvent.RunEvent.ast)], SchemaAST.isUnion)
   .flatMap((union) => union.types)
   .filter(SchemaAST.isObjects)

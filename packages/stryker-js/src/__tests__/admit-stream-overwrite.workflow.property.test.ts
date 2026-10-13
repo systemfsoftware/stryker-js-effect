@@ -91,6 +91,42 @@ describe('admitStreamOverwrite', () => {
   )
 
   it.prop(
+    '∀ec_TornRunEventRecordFromAPartialRead_≡Refused',
+    { of: [Arbitrary.all({ event: eventArb, command: commandArb })], subject: admitStreamOverwrite },
+    (subject, [draw]) =>
+      Option.match(encodeLine(draw.event), {
+        onNone: () => false,
+        onSome: (line) =>
+          refused(
+            subject,
+            StreamOverwriteCommand.make({
+              file: draw.command.file,
+              regularFile: true,
+              empty: false,
+              wholeFileRead: false,
+              leadingText: line.trimEnd().slice(0, -1),
+            }),
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀c_WholeFileHoldingOnlyABareStreamObject_≡Refused',
+    { of: [commandArb], subject: admitStreamOverwrite },
+    (subject, [command]) =>
+      refused(
+        subject,
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: false,
+          wholeFileRead: true,
+          leadingText: JSON.stringify({ _tag: 'stream', tool: command.file }),
+        }),
+      ),
+  )
+
+  it.prop(
     '∀c_RegularFileStartingWithABareStreamObject_≡Refused',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>
