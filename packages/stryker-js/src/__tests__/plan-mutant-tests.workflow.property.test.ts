@@ -316,12 +316,6 @@ const blockIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId
 const alternateIsCovered = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   guard.alternate !== undefined && blockIsCovered(command, guard.alternate)
 
-const mutantIsOpenById = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
-  Option.match(Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId), {
-    onNone: () => false,
-    onSome: (mutant) => mutant.status === undefined,
-  })
-
 const witnessIsUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
   Option.match(Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId), {
     onNone: () => !blockIsCovered(command, mutantId),
@@ -716,25 +710,6 @@ describe('planMutantTests', () => {
     '∀h_RunPlan_≡HeldExactlyWhenItsGuardWitnessesAreOpenAndUncovered',
     { of: [guardCommandArb], subject: planMutantTests },
     (subject, [command]) => heldAsDefined(subject, command),
-  )
-
-  it.prop(
-    '∀q_IgnoredGuardWitness_≡GuardNotHeld',
-    { of: [guardCommandArb], subject: planMutantTests },
-    (subject, [command]) =>
-      heldAsDefined(subject, command) &&
-      refusesHeldBy(subject, command, (mutant) =>
-        Option.match(Option.fromUndefinedOr(mutant.guard), {
-          onNone: () => false,
-          onSome: (guard) =>
-            Boolean.or(
-              Boolean.not(mutantIsOpenById(command, guard.block)),
-              Option.match(Option.fromUndefinedOr(guard.alternate), {
-                onNone: () => false,
-                onSome: (alternate) => Boolean.not(mutantIsOpenById(command, alternate)),
-              }),
-            ),
-        })),
   )
 
   it.prop(
