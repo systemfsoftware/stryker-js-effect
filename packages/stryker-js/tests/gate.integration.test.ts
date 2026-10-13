@@ -105,6 +105,9 @@ const MERGED_BREACH_PROJECTS: ReadonlyArray<string> = Array.from({ length: 32 },
 const BREAK_REMEDIATION_LINE =
   'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
 
+const SURVIVOR_REMEDIATION_LINE =
+  'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
+
 const mergedBreachReportJsonOf = (projects: ReadonlyArray<string>): string => {
   const hexId = (value: number): string => value.toString(16).padStart(16, '0')
   const fileOf = (project: string, index: number): string =>
@@ -474,12 +477,14 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             written: [...s.written],
             breakLineAppearances: occurrencesOf(s.ran.stderr, breakLineOf('.')),
             remediationAppearances: occurrencesOf(s.ran.stderr, BREAK_REMEDIATION_LINE),
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
             summaryNamesCount: s.ran.stderr.includes('stryker gate: 1 of 1 project(s) scored below thresholds.break'),
           }).toStrictEqual({
             exitCode: 1,
             written: [COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR],
             breakLineAppearances: 1,
             remediationAppearances: 1,
+            survivorRemediationAppearances: 0,
             summaryNamesCount: true,
           })
         ),
@@ -498,7 +503,8 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
           expect({
             exitCode: s.ran.exitCode,
             namesTheBreak: s.ran.stderr.includes('score-below-break: . scored 50.00 < break 60'),
-          }).toStrictEqual({ exitCode: 1, namesTheBreak: true })
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
+          }).toStrictEqual({ exitCode: 1, namesTheBreak: true, survivorRemediationAppearances: 0 })
         ),
       ),
     )
@@ -573,7 +579,13 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
               !s.ran.stderr.includes(`score-below-break: ${project} scored 50.00 < break 60`)
             ),
             namesRemediation: s.ran.stderr.includes(BREAK_REMEDIATION_LINE),
-          }).toStrictEqual({ exitCode: 1, missingBreaches: [], namesRemediation: true })
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
+          }).toStrictEqual({
+            exitCode: 1,
+            missingBreaches: [],
+            namesRemediation: true,
+            survivorRemediationAppearances: 0,
+          })
         ),
       ),
     )
