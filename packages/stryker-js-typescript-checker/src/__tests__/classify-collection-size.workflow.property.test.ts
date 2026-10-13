@@ -10,19 +10,63 @@ import {
   classifyCollectionSize,
   ClassifyCollectionSizeCommand,
   type CollectionSizeDecision,
+  type LengthSide,
   type ReceiverKind,
   type SizeComparison,
+  type SizeOperator,
 } from '../classify-collection-size.workflow.js'
 
-const ALWAYS: {
-  readonly [side in SizeComparison['lengthSide']]: { readonly [operator in SizeComparison['operator']]?: boolean }
-} = {
-  left: { '>=': true, '<': false },
-  right: { '<=': true, '>': false },
-}
+const CONSTANT_CELLS: ReadonlyArray<readonly [LengthSide, SizeOperator, boolean, Option.Option<boolean>]> = [
+  ['left', '>=', true, Option.some(true)],
+  ['left', '>=', false, Option.none()],
+  ['left', '<', true, Option.some(false)],
+  ['left', '<', false, Option.none()],
+  ['left', '>', true, Option.none()],
+  ['left', '>', false, Option.none()],
+  ['left', '<=', true, Option.none()],
+  ['left', '<=', false, Option.none()],
+  ['right', '<=', true, Option.some(true)],
+  ['right', '<=', false, Option.none()],
+  ['right', '>', true, Option.some(false)],
+  ['right', '>', false, Option.none()],
+  ['right', '<', true, Option.none()],
+  ['right', '<', false, Option.none()],
+  ['right', '>=', true, Option.none()],
+  ['right', '>=', false, Option.none()],
+]
+
+const constantOf = (comparison: SizeComparison): Option.Option<boolean> =>
+  Option.flatMap(
+    Arr.findFirst(
+      CONSTANT_CELLS,
+      ([side, operator, againstZero]) =>
+        side === comparison.lengthSide &&
+        operator === comparison.operator &&
+        againstZero === comparison.againstZero,
+    ),
+    (row) => row[3],
+  )
 
 const receiverIsCollection = (receiver: ReadonlyArray<ReceiverKind>): boolean =>
   Boolean.every([receiver.length > 0, Arr.every(receiver, (kind) => kind !== 'other')])
+
+const qualifies = (comparison: SizeComparison): boolean =>
+  Boolean.every([
+    comparison.referenceReceiver,
+    comparison.strictNullChecks,
+    receiverIsCollection(comparison.receiver),
+  ])
+
+const siblingBacks = (
+  candidates: ClassifyCollectionSizeCommand['sites'][number]['candidates'],
+  index: number,
+  always: boolean,
+): boolean =>
+  Arr.some(
+    candidates,
+    (sibling, siblingIndex) =>
+      Boolean.every([siblingIndex !== index, sibling.kept, Option.contains(sibling.literal, always)]),
+  )
 
 const decisions = (
   command: ClassifyCollectionSizeCommand,
@@ -39,23 +83,13 @@ const expected = (
     Arr.getSomes(
       Arr.map(site.candidates, (candidate, index) => {
         const constant = Option.flatMap(candidate.comparison, (comparison) =>
-          Option.filter(
-            Option.fromUndefinedOr(ALWAYS[comparison.lengthSide][comparison.operator]),
-            () =>
-              Boolean.every([
-                comparison.againstZero,
-                comparison.referenceReceiver,
-                comparison.strictNullChecks,
-                receiverIsCollection(comparison.receiver),
-              ]),
-          ))
-        const siblingBacks = Option.exists(constant, (always) =>
-          Arr.some(
-            site.candidates,
-            (sibling, siblingIndex) =>
-              Boolean.every([siblingIndex !== index, sibling.kept, Option.contains(sibling.literal, always)]),
-          ))
-        return Boolean.and(candidate.kept, siblingBacks)
+          Option.filter(constantOf(comparison), () => qualifies(comparison)))
+        const culled = Boolean.and(
+          candidate.kept,
+          Option.exists(constant, (always) =>
+            siblingBacks(site.candidates, index, always)),
+        )
+        return culled
           ? Option.map(constant, (always): { readonly id: string; readonly always: boolean } => ({
             id: candidate.id,
             always,
