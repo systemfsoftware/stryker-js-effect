@@ -33,14 +33,13 @@ permissions:
 env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
-  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
   INCREMENTAL_REPORTS: |
     packages/stryker-js/reports/stryker-incremental.json
     packages/stryker-js-typescript-checker/reports/stryker-incremental.json
     packages/stryker-js-vitest-runner/reports/stryker-incremental.json
-    test/e2e-core/reports/stryker-incremental.json
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
@@ -61,7 +60,7 @@ jobs:
       - id: cache-key
         name: Content key of the incremental report
         env:
-          KEY: mutation-incremental-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**/src/**', 'packages/**/stryker.config.ts', 'test/e2e-core/src/**', 'test/e2e-core/stryker.config.ts') }}
+          KEY: mutation-incremental-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**/src/**', 'packages/**/stryker.config.ts') }}
         run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v6
@@ -115,7 +114,7 @@ jobs:
       - id: key
         name: Content key of the build
         env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
         run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v6
