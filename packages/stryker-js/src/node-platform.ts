@@ -179,7 +179,7 @@ const settleRemoval = (
     },
   )
 
-export const nodeEmptyDirectoryLayer = Layer.succeed(
+const nodeEmptyDirectoryLayer = Layer.succeed(
   EmptyDirectory,
   EmptyDirectory.of({
     removeIfEmpty: (path) =>
