@@ -77,6 +77,7 @@ const materializeMutant = (
   mutatorName: original.mutatorName,
   replacement: original.replacement,
   location: original.location,
+  probeEligibility: original.probeEligibility,
   ...Option.match(Option.fromUndefinedOr(firstDefined(decided.status, original.status)), {
     onNone: () => ({} as const),
     onSome: (status) => ({ status } as const),
