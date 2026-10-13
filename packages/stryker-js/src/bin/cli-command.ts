@@ -446,7 +446,7 @@ const planOptions = {
   ),
   since: Flag.String('since').pipe(
     Flag.withDescription(
-      'Plan only the mutants on lines changed since a git ref, with the same diff rules as `run --since`. The plan records the merge base and HEAD, and `run --plan` refuses it at any other HEAD.',
+      'Plan only the mutants on lines changed since a git ref, with the same diff rules as `run --since`. The plan records the merge base and HEAD, and `run --plan <file> --shard k/N` refuses it at any other HEAD.',
     ),
     optional,
   ),

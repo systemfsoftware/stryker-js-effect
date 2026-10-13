@@ -68,7 +68,7 @@ import {
   type MutantRerunSettlement,
   RerunRefused,
 } from './Rerun/mod.js'
-import { routeCliRequest } from './route-cli-request.workflow.js'
+import { routeCliRequest, RunPlanWithoutShardRefused } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
 import { readConfig } from './run/load-config.js'
@@ -120,6 +120,7 @@ export type CliFailure =
   | SchemaError
   | SurvivorsRejection
   | RerunRefused
+  | RunPlanWithoutShardRefused
   | ConfigFileNotFoundError
   | ConfigFileUnreadableError
   | ConfigFileInvalidError
@@ -746,6 +747,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
     CliRerunRequested: (rerun, channel) => mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
+    RunPlanWithoutShardRefused: (refusal) => Effect.fail(RunPlanWithoutShardRefused.make(refusal)),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })

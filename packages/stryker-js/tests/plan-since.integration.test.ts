@@ -764,4 +764,45 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
         ),
       ),
     )
+
+    scenario(
+      'A run naming a plan but no shard is refused before any shard output is written',
+      Gherkin.Do.pipe(
+        Given('a repository planned from a scoped ref')('planned', () =>
+          Effect.gen(function*() {
+            const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+            const base = yield* headOf(root)
+            yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+            yield* commitAll(root, 'change the target line')
+            const planned = yield* planTo(root, PLAN_FILE, ['--since', base])
+            return { root, planned }
+          })),
+        When('stryker runs the plan without naming a shard')('observed', (s) =>
+          Effect.gen(function*() {
+            const fs = yield* FileSystem.FileSystem
+            const path = yield* Path.Path
+            const ran = yield* runCli({ root: s.planned.root, args: ['run', '--plan', PLAN_FILE], mode: 'human' })
+            const shardOutput = yield* fs.exists(path.join(s.planned.root, 'reports', 'shards'))
+            return { ran, shardOutput }
+          }).pipe(Effect.ensuring(removeWorkspace(s.planned.root)))),
+        Then('the run exits with the configuration class, names the shard flag and writes no shard output')((
+          s,
+          expect,
+        ) =>
+          expect({
+            exitCode: s.observed.ran.exitCode,
+            namesTheClass: s.observed.ran.stderr.includes('exit 2 (ConfigError)'),
+            namesTheShardFlag: s.observed.ran.stderr.includes('--shard'),
+            namesTheNextAction: s.observed.ran.stderr.includes(`stryker run --plan ${PLAN_FILE} --shard k/N`),
+            shardOutput: s.observed.shardOutput,
+          }).toEqual({
+            exitCode: 2,
+            namesTheClass: true,
+            namesTheShardFlag: true,
+            namesTheNextAction: true,
+            shardOutput: false,
+          })
+        ),
+      ),
+    )
   })
