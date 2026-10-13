@@ -70,6 +70,9 @@ ${
 }
 `
 
+const reportWithoutThresholdsJson = (): string =>
+  reportJsonOf('null').replace('  "thresholds": { "high": 80, "low": 60, "break": null },\n', '')
+
 const BELOW_BREAK = '50'
 
 const scoredReportJsonOf = (breakThreshold: string): string =>
@@ -507,6 +510,23 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             exitCode: s.ran.exitCode,
             emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
           }).toStrictEqual({ exitCode: 0, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A report with no thresholds is refused as an unusable input, not passed',
+      Gherkin.Do.pipe(
+        Given('a project whose finished report carries no thresholds')(
+          'project',
+          () => prepareProject(null, null, reportWithoutThresholdsJson()),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits with the input failure code and stderr names the undecodable report')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesUndecodableReport: s.ran.stderr.includes('cannot decode the finished mutation report'),
+          }).toStrictEqual({ exitCode: 2, namesUndecodableReport: true })
         ),
       ),
     )

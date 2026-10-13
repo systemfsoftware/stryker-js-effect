@@ -11,7 +11,7 @@ const GateThresholds = S.Struct({
 
 export const GateReportDocument = S.Struct({
   ...PriorReportDocument.fields,
-  thresholds: GateThresholds.pipe(S.withDecodingDefaultKey(Effect.succeed({ break: null }))),
+  thresholds: GateThresholds,
   projects: S.Array(MergedProject).pipe(S.withDecodingDefaultKey(Effect.succeed([]))),
 })
 export type GateReportDocument = typeof GateReportDocument.Type
