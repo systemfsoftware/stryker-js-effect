@@ -334,6 +334,7 @@ const NOT_CONSTANT_SITE = [6, 50, 63] as const
 const COLLECTION_UNION_SITE = [7, 63, 76] as const
 const MIXED_UNION_SITE = [8, 74, 87] as const
 const ACCESSOR_SITE = [9, 73, 93] as const
+const MIRRORED_SITE = [10, 55, 67] as const
 
 const RECEIVER_SOURCE = [
   'export const chained = (box: { items: string[] }): boolean => box.items.length > 0',
@@ -398,6 +399,13 @@ const ACCESSOR_MUTANTS: ReadonlyArray<SizeMutant> = [
   sizeMutant('0000000000000061', ACCESSOR_SITE, 'ConditionalExpression', 'true'),
 ]
 
+const MIRRORED_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000070', MIRRORED_SITE, 'EqualityOperator', '0 <= s.length'),
+  sizeMutant('0000000000000071', MIRRORED_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000072', MIRRORED_SITE, 'EqualityOperator', '0 > s.length'),
+  sizeMutant('0000000000000073', MIRRORED_SITE, 'ConditionalExpression', 'false'),
+]
+
 const sizeCaseOf = (fixture: string, mutants: ReadonlyArray<SizeMutant>): Case => ({
   fixture,
   brokenId: '',
@@ -424,6 +432,8 @@ const receiverCase = sizeCaseOf('receiver-project', RECEIVER_MUTANTS)
 const looseCollectionSizeCase = sizeCaseOf('loose-project', LOOSE_SIZE_MUTANTS)
 
 const accessorReceiverCase = sizeCaseOf('per-mutant-collection-size', ACCESSOR_MUTANTS)
+
+const mirroredReceiverCase = sizeCaseOf('per-mutant-collection-size', MIRRORED_MUTANTS)
 
 const sizeProjectOf = (strictNullChecks: boolean, source: string): Readonly<Record<string, string>> => ({
   'tsconfig.json': JSON.stringify({
@@ -723,6 +733,33 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               '0000000000000061': 'passed',
             },
             culled: {},
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A comparison that puts the length on the right is culled in its mirrored form',
+      Gherkin.Do.pipe(
+        When('the mirrored length-versus-zero comparisons and their true and false siblings are handed to the checker')(
+          'seen',
+          () => checkFixture(mirroredReceiverCase),
+        ),
+        Then('the always-true and always-false right-side comparisons are ignored and both siblings pass')((
+          s,
+          expect,
+        ) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000070': 'ignored',
+              '0000000000000071': 'passed',
+              '0000000000000072': 'ignored',
+              '0000000000000073': 'passed',
+            },
+            culled: {
+              '0000000000000070': 'constant-collection-size: 0 <= s.length is always true',
+              '0000000000000072': 'constant-collection-size: 0 > s.length is always false',
+            },
           })
         ),
       ),
