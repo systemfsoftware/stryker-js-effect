@@ -1,11 +1,11 @@
 ---
 title: The --ignorePatterns help says what Stryker always ignores - Plan
 type: fix
-date: 2026-10-12
+date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-12-2042-fix-ignore-patterns-help-plan.md
+supersedes: docs/plans/2026-10-12-2111-fix-ignore-patterns-help-plan.md
 ---
 
 # The --ignorePatterns help says what Stryker always ignores - Plan
@@ -14,8 +14,9 @@ supersedes: docs/plans/2026-10-12-2042-fix-ignore-patterns-help-plan.md
 
 - **Objective:** a user who reads `stryker run --help` knows exactly which files Stryker leaves out of the project regardless of their `ignorePatterns`. No one is led to drop a pattern they still need, or to keep one they don't.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This is one small PR off `main`.
+- **Supersedes:** the 2111 plan, executed in `687a584b`. Its engine scenario called `Engine.mutationTestCell` in-process. The root's M4 rule, set in session, rejects that for an integration test: it must drive the built CLI or a documented user-facing API on a real project and assert only observable outputs. This plan moves both scenarios to the built `stryker` binary, and it absorbs `main` at `7b6b8272` (#329), which made `reports/mutation-stream.jsonl` an always-excluded output. 2111 is removed in the same PR.
 - **Open blockers:** none.
-- **Citations:** line numbers name `main` at `ee7038a5`, the base this branch was cut from.
+- **Citations:** line numbers name `main` at `ee7038a5`, the base this branch was cut from, unless they name a file this PR changes.
 
 ---
 
@@ -38,7 +39,7 @@ Session context from the root (no artifact in this repository): a downstream roo
 ### Requirements
 
 - R1. The `--ignorePatterns` help lists every fixed pattern the engine always applies, and no pattern it does not apply.
-- R2. The help says Stryker's own output files are always excluded, names the options that place them, and says other files under `reports/` are not ignored.
+- R2. The help says Stryker's own output files are always excluded, names the options that place them (and the fixed default stream path `reports/mutation-stream.jsonl`, excluded whatever `progressStreamFile` holds), and says other files under `reports/` are not ignored.
 - R3. The help and the engine read the always-ignored patterns from one source, so a change to the engine's list changes the help.
 - R4. Stryker's own output files never enter the project files that verdict reuse reads, whatever `ignorePatterns` holds. The scenario "A first repeat run under default ignore patterns reuses every verdict" (`packages/stryker-js/tests/incremental-reuse.integration.test.ts:658-696` on main) stays unchanged and passes.
 - R5. A patch changeset tells consumers what the help now says, and that `reports/` content other than Stryker's own outputs was never excluded.
@@ -49,12 +50,13 @@ Session context from the root (no artifact in this repository): a downstream roo
   - Rejected: a text-only fix. A hand-written list is how this defect happened: the help and `ALWAYS_IGNORE` were two copies with nothing joining them, and they disagreed from the first commit. A second hand-written copy recreates that.
   - Rejected: a hand-written list plus a test that compares it with the constant. That still keeps two copies and adds a gate that only exists to keep them in step. One source removes the need.
 - **Stryker's outputs are named by option, not by default path.** Covers R2. The paths are configurable, so a default path like `reports/mutation/mutation.html` is only true for users who kept the default. The option names are true for everyone.
-- **The proof is behavioural.** Covers R1, R4. A test that reads a string back from the constant it was built from certifies nothing. The tests read the help the CLI actually renders and check it against what the engine actually leaves out of a real workspace.
+- **The proof is behavioural, through the built CLI.** Covers R1, R2, R4. A test that reads a string back from the constant it was built from certifies nothing. Both scenarios run the built `stryker` binary on a real temporary project and read only what it prints and writes: the `help` and `reuse` records on `stdout`, the exit code, and the files on disk.
+  - Rejected: running `Engine.mutationTestCell` in-process (the 2111 plan). It is an internal entry point, not a documented surface (M4), and it loaded the package's own `stryker.config.ts` from the test's working directory, which the CLI never does for a user's project.
 
 ### Acceptance Examples
 
-- AE1. Covers R1. **Given** a workspace that holds a file under each pattern the help lists as always ignored. **When** Stryker reads the project with `ignorePatterns: []`. **Then** none of those files is in the project.
-- AE2. Covers R1, R2. **Given** the same workspace with `reports/coverage/lcov.info`, a file no Stryker option writes. **When** Stryker reads the project with `ignorePatterns: []`. **Then** that file is in the project, and the rendered help does not claim `reports/` is ignored.
+- AE1. Covers R1, R2. **Given** a project with `ignorePatterns: []` and every output option moved, run once. **When** a file is written under each pattern the help lists as always ignored, a leftover in `tempDirName`, and a file at `reports/mutation-stream.jsonl`, and the project is run again. **Then** the second run reuses every verdict and runs no mutant.
+- AE2. Covers R1, R2. **Given** the same project with `reports/coverage/lcov.info` added, a file no Stryker option writes. **When** it is run again. **Then** every verdict is refused with `closureChanged`, and the help the binary renders does not claim `reports/` is ignored.
 - AE3. Covers R4. The scenario at `incremental-reuse.integration.test.ts:658-696` passes unchanged: with `ignorePatterns: []`, a second run reuses every verdict although the first run wrote reports into the project.
 
 ### Scope Boundaries
@@ -76,22 +78,23 @@ Session context from the root (no artifact in this repository): a downstream roo
 
 - KTD1. **One module owns the always-ignored set, and the help is built where the help lives.** A new `packages/stryker-js/src/project-ignores.ts` holds `ALWAYS_IGNORE` (moved verbatim from `read-project.cell.ts:33-42`) and nothing else. `read-project.cell.ts` imports it. `bin/cli-command.ts` imports it too and builds the always-ignored sentences next to the description that uses them. Governs R3.
   - CONST-W3 declaration: the sentence builder is a branch-free `map`/`join` in `cli-command.ts`, which no `mutate` glob covers (`stryker.config.ts:15-22`), as the description it replaces was not. A review asked for it to move into a `*.workflow.ts` under CONST-T4. That shape does not compile: `Workflow.make` refuses a one-variant decision with "this workflow decides one outcome, which is not a decision; … fold the function into its owning module" (`effect-cell-types` `SingleVariantDecision`). The owning module is `cli-command.ts`. The integration test pins the rendered text instead.
-- KTD2. **The output files and their names come from the same option keys.** `stryker-outputs.ts` lists the option keys once (`tempDirName`, `incrementalFile`, `progressStreamFile`) and the reporter keys once (`htmlReporter`, `jsonReporter`). `strykerOutputFilesOf` reads the files through those keys in the same order as before, and `strykerOutputSources` names the same keys, so an option cannot be named for another option's file. The SARIF row is named "the SARIF file beside `jsonReporter.fileName`" and the reproducers row by its fixed path, since no option sets either. Governs R2, R3.
-- KTD3. **Tests go where the guarantee lives, and the oracle is independent.** A new `packages/stryker-js/tests/ignore-patterns.integration.test.ts` holds one hand-written table of always-ignored patterns, each with a sample path, and one list of the outputs the help must name. Each scenario checks something different against them:
-  - The engine scenario runs `Engine.mutationTestCell` in-process with `coverageAnalysis: 'off'` and no `testFiles`, like `optionsOf` in `incremental-reuse.integration.test.ts:151-165`. With no test-file closures, every mutant's digest is the project digest, which hashes every discovered project file (`incremental-reuse.cell.ts:316-319`, `import-closure.cell.ts:745-751`), so any new project file refuses reuse with `closureChanged`. The `reports/coverage/lcov.info` run proves the fixture is sensitive. Without it, a fixture whose digest ignored new files would pass the ignored-files run for the wrong reason.
-  - The engine scenario sets every output option to a non-default path and writes a file at each. The in-process run loads `packages/stryker-js/stryker.config.ts` from the test's working directory, whose shared config moves the reports (`packages/toolchain/stryker-config/lib/base.js:17-18`). Default paths would test nothing, and explicit paths prove the option is what excludes a file.
-  - The fixture sets no `since`, so git is never run. `.git` is sampled as `.git/HEAD`, a file inside a directory, never as a bare `.git` file that git would read as a worktree link.
-  - Every run must succeed, so a run that reports reuse and then fails cannot pass.
-  - The help scenario runs the built `dist/main.mjs` in machine mode and decodes the `help` event (`RunEvent.HelpRendered`) through the published contract. It uses the same pattern as `rerun-by-id.integration.test.ts:56-97`: it checks that `dist` exists, drains both pipes and asserts exit code 0, because the rendered help is visible only at the CLI seam.
+- KTD2. **The output files and their names come from the same option keys.** `stryker-outputs.ts` lists the option keys once (`tempDirName`, `incrementalFile`, `progressStreamFile`) and the reporter keys once (`htmlReporter`, `jsonReporter`). `strykerOutputFilesOf` reads the option files, then `DEFAULT_PROGRESS_STREAM_FILE`, then the reporter files, the order `main` uses since #329, and `strykerOutputSources` names the same entries in the same order, so an option cannot be named for another option's file. The default stream is named by its fixed path, because it is excluded whatever `progressStreamFile` holds. The SARIF row is named "the SARIF file beside `jsonReporter.fileName`" and the reproducers row by its fixed path, since no option sets either. Governs R2, R3.
+- KTD3. **Tests go where the guarantee lives, through the built binary, and the oracle is independent.** `packages/stryker-js/tests/ignore-patterns.integration.test.ts` holds one hand-written table of always-ignored patterns, each with a sample path, and one list of the outputs the help must name. It runs `dist/main.mjs` through `runCli` from `tests/__fixtures__/cli-project.fixture.ts`, which pins `STRYKER_MODE=machine`, `GITHUB_ACTIONS=''` and `ALLOW_LOCAL_MUTATION=1` like every sibling CLI suite, and decodes records through the published `RunEvent.RunEventWireLine`.
+  - The exclusion scenario sets `coverageAnalysis: 'off'` and no `testFiles`, so every mutant's digest is the project digest, which hashes every discovered project file (`incremental-reuse.cell.ts:316-319`, `import-closure.cell.ts:745-751`): any new project file refuses reuse with `closureChanged`. The `reports/coverage/lcov.info` run proves the fixture is sensitive. Without it, a project whose digest ignored new files would pass the ignored-files run for the wrong reason.
+  - Every output option is set to a non-default path, and the first run must have written a file at each (`outputsWritten`), so the option is what excludes the file. `tempDirName` and the default stream path are not written by that run, so the test writes a file at each.
+  - The project links the package under a real `node_modules` directory rather than the fixture's whole-`node_modules` symlink, so the `node_modules` sample is written inside the project, not into the package.
+  - The project sets no `since`, so git is never run. `.git` is sampled as `.git/HEAD`, a file inside a directory, never as a bare `.git` file that git would read as a worktree link.
+  - Every run must exit 0, so a run that reports reuse and then fails cannot pass.
+  - The help scenario runs `stryker run --help --json` in a scratch directory (a help run writes the default stream, so never in the package) and decodes the `help` record (`RunEvent.HelpRendered`).
 
-  The two scenarios never read `ALWAYS_IGNORE` or `strykerOutputSources`. Since the help and the engine share one list, they cannot disagree with each other. What the scenarios catch is the shared list drifting from the table: a pattern or output the engine stops excluding fails the engine scenario, and a pattern or output dropped from the help fails the help scenario.
+  The two scenarios never read `ALWAYS_IGNORE` or `strykerOutputSources`. Since the help and the engine share one list, they cannot disagree with each other. What the scenarios catch is the shared list drifting from the table: a pattern or output the engine stops excluding fails the exclusion scenario, and a pattern or output dropped from the help fails the help scenario.
 - KTD4. **No CI or turbo change.** The new test file joins the package's existing `test` task, and its inputs already cover `tests/**`. The turbo-query-optimization rule is not triggered.
 
 ### Packs
 
 - `cell-architecture` (`service-and-layer-boundaries`): `project-ignores.ts` is a plain data module with no service or layer, and the cell keeps its I/O.
-- `boundary-testing` (`no-mocks-on-internal-glue`): both scenarios run the real engine or the real binary, with no double of the project reader.
-- `schema-laws` (`tests-own-no-schemas`): the help scenario decodes through the published `RunEvent.RunEventWireLine` and declares no schema.
+- `boundary-testing` (`no-mocks-on-internal-glue`): both scenarios run the real binary on a real project, with no double of the project reader and no internal entry point.
+- `schema-laws` (`tests-own-no-schemas`): both scenarios decode through the published `RunEvent.RunEventWireLine` and declare no schema.
 - `package-topology` does not apply: nothing is added to or removed from a published entry.
 
 ---
@@ -114,8 +117,8 @@ Session context from the root (no artifact in this repository): a downstream roo
 - **Goal:** R1, R2, R4 (AE1, AE2).
 - **Files:** `packages/stryker-js/tests/ignore-patterns.integration.test.ts` (new).
 - **Test scenarios:**
-  - **Engine exclusion (AE1, AE2):** after a first run with `ignorePatterns: []` and every output option moved, a file is written under each pattern in the table and at each output, and a second run reuses every verdict with no refusal. Writing `reports/coverage/lcov.info` makes a third run refuse every verdict with `closureChanged`. All three runs succeed.
-  - **Help contract (AE1, AE2):** the built binary exits 0, and its rendered help lists exactly the table's patterns as always ignored and exactly the expected outputs, each named by its option, and does not list `/reports`.
+  - **Exclusion (AE1, AE2):** after a first run with `ignorePatterns: []` and every output option moved, a file is written under each pattern in the table, in `tempDirName` and at the default stream path, and a second run reuses every verdict and runs none. Writing `reports/coverage/lcov.info` makes a third run refuse every verdict with `closureChanged`. All three runs exit 0.
+  - **Help contract (AE1, AE2):** the built binary exits 0, and its rendered help lists exactly the table's patterns as always ignored and exactly the expected outputs, each named by its option or fixed path, and does not list `/reports`.
 - **Verification:** both scenarios pass on the branch. Run against `main`'s built binary, the help scenario fails, which shows the test catches the stale promise. No source is edited to stage a failure.
 
 ### U3. Changeset
@@ -135,10 +138,10 @@ Session context from the root (no artifact in this repository): a downstream roo
 | R4 scenario   | `vitest run tests/incremental-reuse.integration.test.ts -t "under default ignore patterns"` | passes unchanged                                       |
 | Smoke         | the help scenario, which runs the built binary                                              | the built sentences render                             |
 | Changeset     | the author-changesets validator                                                             | OK                                                     |
-| Review        | `ce-code-review` report-only with the cross-model pass                                      | every finding has a disposition                        |
-| CI            | `xd://github run_watch` on the PR head                                                      | every required check green; Bench reported, not chased |
+| Review        | `ce-code-review` report-only on the final head                                              | every finding fixed or validator-rejected; packs ruled |
+| CI            | `xd://github run_watch` on the PR head                                                      | every check green                                      |
 
 ## Definition of Done
 
 - U1-U3 have landed in one PR off main, and every Verification Contract row holds on its head.
-- The PR body names the review lenses, the non-Claude model that actually served the cross-model pass, OQ1 and OQ2.
+- The PR body names the review lenses, the non-Claude model that actually served them, every pack ruling, every finding's disposition, OQ1 and OQ2.

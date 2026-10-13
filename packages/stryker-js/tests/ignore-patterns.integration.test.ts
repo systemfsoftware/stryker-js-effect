@@ -1,27 +1,19 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
-import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
-import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
-import * as Stream from 'effect/Stream'
+import * as Scope from 'effect/Scope'
+
+import { type ProjectFiles, runCli, scratchDirectory, writeFiles } from './__fixtures__/cli-project.fixture.js'
 
 const Feature = makeFeature({ it })
 
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
-const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
 
 const ALWAYS_IGNORED: ReadonlyArray<readonly [pattern: string, sample: string]> = [
   ['node_modules', 'node_modules/left-pad/index.js'],
@@ -34,8 +26,8 @@ const ALWAYS_IGNORED: ReadonlyArray<readonly [pattern: string, sample: string]> 
   ['.turbo', '.turbo/cache.json'],
 ]
 
-const OUTPUT_FILES = [
-  '.stryker-scratch/leftover.txt',
+const WRITTEN_OUTPUTS = [
+  'out/incremental.json',
   'out/stream.jsonl',
   'out/report.html',
   'out/report.json',
@@ -43,10 +35,13 @@ const OUTPUT_FILES = [
   'reports/mutation/reproducers.json',
 ]
 
+const UNWRITTEN_OUTPUTS = ['.stryker-scratch/leftover.txt', 'reports/mutation-stream.jsonl']
+
 const NAMED_OUTPUTS = [
   '`tempDirName`',
   '`incrementalFile`',
   '`progressStreamFile`',
+  '`reports/mutation-stream.jsonl`',
   '`htmlReporter.fileName`',
   '`jsonReporter.fileName`',
   'the SARIF file beside `jsonReporter.fileName`',
@@ -55,165 +50,129 @@ const NAMED_OUTPUTS = [
 
 const FOREIGN_REPORT = 'reports/coverage/lcov.info'
 
-const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
+const CONFIG = `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'true' },
+  coverageAnalysis: 'off',
+  mutate: ['src/**/*.ts'],
+  checkers: [],
+  reporters: ['html', 'json', 'sarif'],
+  concurrency: 1,
+  cleanTempDir: 'always',
+  incremental: true,
+  ignorePatterns: [],
+  tempDirName: '.stryker-scratch',
+  incrementalFile: 'out/incremental.json',
+  progressStreamFile: 'out/stream.jsonl',
+  htmlReporter: { fileName: 'out/report.html' },
+  jsonReporter: { fileName: 'out/report.json' },
+}
+`
+
+const PROJECT: ProjectFiles = [
+  ['package.json', '{ "name": "ignore-consumer", "type": "module", "private": true }\n'],
+  ['stryker.config.mjs', CONFIG],
+  ['src/math.ts', 'export const add = (left: number, right: number): number => left + right\n'],
+]
 
 const ALWAYS_IGNORED_LIST = /always ignored: \[([^\]]*)\]/
 
 const OUTPUT_LIST = /own output files are always excluded too: (.*?)\. Other files under `reports\/` are not ignored\./
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
-  runStartedAt: 0,
-  basePath: directory,
-  builtinReporters: {},
-  allowConsoleColors: false,
-})
+const decodeWireLine = S.decodeOption(RunEvent.RunEventWireLine)
 
-const optionsOf = (root: string): Options.PartialStrykerOptions => ({
-  testRunner: 'command',
-  commandRunner: { command: 'true' },
-  coverageAnalysis: 'off',
-  reporters: [],
-  mutate: ['src/**/*.ts'],
-  checkers: [],
-  cleanTempDir: 'always',
-  incremental: true,
-  incrementalFile: `${root}/reports/main.json`,
-  tempDirName: '.stryker-scratch',
-  progressStreamFile: 'out/stream.jsonl',
-  htmlReporter: { fileName: 'out/report.html' },
-  jsonReporter: { fileName: 'out/report.json' },
-  ignorePatterns: [],
-})
+const eventsOf = (output: string): ReadonlyArray<RunEvent.RunEvent> =>
+  output.split('\n').flatMap((line) => Option.toArray(decodeWireLine(line.trim())))
+
+const placeholdersAt = (files: ReadonlyArray<string>): ProjectFiles => files.map((file) => [file, `${file}\n`])
+
+const prepareProject: Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> = Effect.gen(
+  function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* scratchDirectory
+    yield* fs.makeDirectory(path.join(root, 'node_modules', '@systemfsoftware'), { recursive: true })
+    yield* fs.symlink(PACKAGE_ROOT, path.join(root, 'node_modules', '@systemfsoftware', 'stryker-js'))
+    yield* writeFiles(root, PROJECT)
+    return root
+  },
+).pipe(Effect.orDie)
 
 interface ReuseRun {
-  readonly succeeded: boolean
+  readonly exitCode: number
   readonly reuse: RunEvent.ReuseReported | undefined
 }
 
-const reuseOf = (root: string): Effect.Effect<ReuseRun> =>
-  Effect.gen(function*() {
-    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-    const ports = Engine.nodePlatformLayer
-    const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
-    const exit = yield* Engine.mutationTestCell
-      .run({ cliOptions: optionsOf(root), targetMutatePatterns: undefined })
-      .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
-    const events = [
-      ...(yield* Queue.end(queue).pipe(
-        Effect.andThen(Queue.takeAll(queue)),
-        Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
-      )),
-    ]
-    return {
-      succeeded: Exit.isSuccess(exit),
-      reuse: events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
-    }
-  })
-
-const writeFiles = (root: string, files: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* Effect.forEach(
-      files,
-      (file) =>
-        Effect.gen(function*() {
-          const target = path.join(root, file)
-          yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-          yield* fs.writeFileString(target, `${file}\n`)
-        }),
-      { discard: true },
-    )
-  })
+const reusedRun = (
+  root: string,
+): Effect.Effect<ReuseRun, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  Effect.map(runCli({ root, args: ['run', '--json'] }), (run) => ({
+    exitCode: run.exitCode,
+    reuse: eventsOf(run.output).find((event) => S.is(RunEvent.ReuseReported)(event)),
+  }))
 
 const renderedHelp = Effect.scoped(
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const binaryPresent = yield* fs.exists(STRYKER_BIN)
-    yield* Effect.when(
-      Effect.die(new Error('dist/main.mjs is missing — build the package first')),
-      Effect.succeed(!binaryPresent),
-    )
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'run', '--help'], {
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: { STRYKER_MODE: 'machine', NO_COLOR: '1' },
-        extendEnv: true,
-      }),
-    )
-    const printedOut = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
-    const printedErr = yield* Effect.forkScoped(handle.stderr.pipe(Stream.decodeText, Stream.mkString))
-    const exitCode = Number(yield* handle.exitCode)
-    const [out] = yield* Effect.all([Fiber.join(printedOut), Fiber.join(printedErr)])
-    const help = out.split('\n').flatMap((line) =>
-      Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.HelpRendered))(line.trim()))
-    )
-    return { exitCode, text: help.map((event) => event.help).join('\n') }
+    const root = yield* scratchDirectory
+    const run = yield* runCli({ root, args: ['run', '--help', '--json'] })
+    const text = eventsOf(run.output).filter((event) => S.is(RunEvent.HelpRendered)(event)).map((event) => event.help)
+      .join('\n')
+    return { exitCode: run.exitCode, text }
   }),
-).pipe(Effect.orDie)
+)
 
 Feature('What Stryker always leaves out of a project', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
-  .live('the scenarios drive the real engine over the host filesystem and the built stryker binary')
+  .live('the built stryker binary runs a real project on the host filesystem')
   .body(({ scenario }) => {
     scenario(
-      'Every always-ignored pattern stays out of the project while other files under reports/ do not',
+      'Every always-ignored pattern and every output stays out of the project while other files under reports/ do not',
       Gherkin.Do.pipe(
         Given(
-          'a workspace with no ignore patterns of its own and its outputs moved, run once, then given files under each pattern and at each output',
-        )(
-          'runs',
-          () =>
+          'a project with no ignore patterns of its own and its outputs moved, run once, then given files under each pattern and at each output it did not write',
+        )('runs', () =>
+          Effect.scoped(
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
-              const root = yield* fs.makeTempDirectory()
-              return yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  yield* writeFiles(root, ['src/math.ts'])
-                  yield* fs.writeFileString(`${root}/src/math.ts`, SOURCE)
-                  const first = yield* reuseOf(root)
-                  yield* writeFiles(root, [
-                    ...ALWAYS_IGNORED.map(([, sample]) => sample),
-                    ...OUTPUT_FILES,
-                  ])
-                  const afterIgnored = yield* reuseOf(root)
-                  yield* writeFiles(root, [FOREIGN_REPORT])
-                  const afterForeignReport = yield* reuseOf(root)
-                  return { first, afterIgnored, afterForeignReport }
-                }),
-                fs.remove(root, { recursive: true, force: true }).pipe(Effect.orDie),
+              const path = yield* Path.Path
+              const root = yield* prepareProject
+              const first = yield* reusedRun(root)
+              const outputsWritten = yield* Effect.forEach(WRITTEN_OUTPUTS, (file) => fs.exists(path.join(root, file)))
+                .pipe(Effect.orDie)
+              yield* writeFiles(
+                root,
+                placeholdersAt([...ALWAYS_IGNORED.map(([, sample]) => sample), ...UNWRITTEN_OUTPUTS]),
               )
-            }).pipe(Effect.orDie, Effect.provide(filePorts)),
-        ),
+              const afterIgnored = yield* reusedRun(root)
+              yield* writeFiles(root, placeholdersAt([FOREIGN_REPORT]))
+              const afterForeignReport = yield* reusedRun(root)
+              return { first, outputsWritten, afterIgnored, afterForeignReport }
+            }),
+          )),
         Then(
           'files under the always-ignored patterns and at every output keep every verdict, and a foreign report refuses them',
-        )(
-          (s, expect) => {
-            const planned = s.runs.afterIgnored.reuse?.reused ?? 0
-            return expect({
-              runsSucceeded: [s.runs.first, s.runs.afterIgnored, s.runs.afterForeignReport].map((run) => run.succeeded),
-              plannedNonZero: planned > 0,
-              afterIgnored: {
-                ran: s.runs.afterIgnored.reuse?.ran,
-                closureChanged: s.runs.afterIgnored.reuse?.refused.closureChanged,
-              },
-              afterForeignReport: {
-                reused: s.runs.afterForeignReport.reuse?.reused,
-                closureChanged: s.runs.afterForeignReport.reuse?.refused.closureChanged,
-              },
-            }).toEqual({
-              runsSucceeded: [true, true, true],
-              plannedNonZero: true,
-              afterIgnored: { ran: 0, closureChanged: 0 },
-              afterForeignReport: { reused: 0, closureChanged: planned },
-            })
-          },
-        ),
+        )((s, expect) => {
+          const planned = s.runs.afterIgnored.reuse?.reused ?? 0
+          return expect({
+            exitCodes: [s.runs.first, s.runs.afterIgnored, s.runs.afterForeignReport].map((run) => run.exitCode),
+            outputsWritten: s.runs.outputsWritten,
+            plannedNonZero: planned > 0,
+            afterIgnored: {
+              ran: s.runs.afterIgnored.reuse?.ran,
+              closureChanged: s.runs.afterIgnored.reuse?.refused.closureChanged,
+            },
+            afterForeignReport: {
+              reused: s.runs.afterForeignReport.reuse?.reused,
+              closureChanged: s.runs.afterForeignReport.reuse?.refused.closureChanged,
+            },
+          }).toEqual({
+            exitCodes: [0, 0, 0],
+            outputsWritten: WRITTEN_OUTPUTS.map(() => true),
+            plannedNonZero: true,
+            afterIgnored: { ran: 0, closureChanged: 0 },
+            afterForeignReport: { reused: 0, closureChanged: planned },
+          })
+        }),
       ),
     )
 

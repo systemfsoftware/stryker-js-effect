@@ -26,6 +26,7 @@ export const strykerOutputFilesOf = (options: OutputOptions): readonly string[] 
 
 export const strykerOutputSources: readonly string[] = [
   ...OPTION_OUTPUTS.map((option) => `\`${option}\``),
+  `\`${DEFAULT_PROGRESS_STREAM_FILE}\``,
   ...REPORTER_OUTPUTS.map((reporter) => `\`${reporter}.fileName\``),
   'the SARIF file beside `jsonReporter.fileName`',
   `\`${REPRODUCERS_FILE}\``,
