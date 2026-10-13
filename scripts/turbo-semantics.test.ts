@@ -222,10 +222,11 @@ interface DryRunOptions {
   readonly affected?: boolean
   readonly base?: string
   readonly env?: Readonly<Record<string, string>>
+  readonly tasks?: ReadonlyArray<string>
 }
 
 const turboRun = (dir: string, options: DryRunOptions): Promise<Ran> => {
-  const args = ['run', ...TASKS, '--dry=json', '--cwd', dir]
+  const args = ['run', ...(options.tasks ?? TASKS), '--dry=json', '--cwd', dir]
   if (options.affected === true) args.push('--affected')
   const overrides: Record<string, string> = options.base === undefined ? {} : { TURBO_SCM_BASE: options.base }
   return run(TURBO_PROGRAM, args, REPO_ROOT, cleanEnv({ ...overrides, ...options.env }))
@@ -331,6 +332,40 @@ Deno.test('a root package.json script edit that changes no dependency selects no
     await write(dir, 'package.json', editedRootPackageJson)
     await commit(dir, 'root script edit')
     assertEqual(await selectedTasks(dir, { base }), [], 'a dependency-neutral root edit selects no task')
+  })
+})
+
+Deno.test("a root task's declared inputs, at the root or inside a package, move its hash and select it", async () => {
+  const rootTaskTurboJson = rootTurboJson().replace(
+    '"//#root": {}',
+    '"//#root": { "inputs": ["scripts/**", "packages/a/src/index.js"], "outputs": [] }',
+  )
+  await withRepo({ rootTurboJson: rootTaskTurboJson }, async (dir) => {
+    const rootOnly = { tasks: ['root'] }
+    const rootHash = async (): Promise<string> => {
+      const task = (await dryRun(dir, rootOnly)).find((candidate) => candidate.taskId === '//#root')
+      if (task === undefined) throw new Error('//#root missing from dry run')
+      return task.hash
+    }
+    await write(dir, 'scripts/check.ts', 'export const check = 1\n')
+    await commit(dir, 'root script')
+    const base = await head(dir)
+    await write(dir, 'README.md', 'outside every root input\n')
+    await commit(dir, 'root readme')
+    assertEqual(await selectedTasks(dir, { ...rootOnly, base }), [], 'a root file outside the inputs selects nothing')
+    for (
+      const [path, content] of [
+        ['scripts/check.ts', 'export const check = 2\n'],
+        ['packages/a/src/index.js', 'export const a = 2\n'],
+      ] as const
+    ) {
+      const before = await rootHash()
+      const edited = await head(dir)
+      await write(dir, path, content)
+      assert(before !== (await rootHash()), `editing ${path} changes //#root's hash`)
+      await commit(dir, `edit ${path}`)
+      assertEqual(await selectedTasks(dir, { ...rootOnly, base: edited }), ['//#root'], `${path} selects //#root`)
+    }
   })
 })
 
