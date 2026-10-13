@@ -81,6 +81,7 @@ const writeFile = (
 interface Fixture {
   readonly root: string
   readonly realHead: string
+  readonly elsewhere: string
 }
 
 const gitOutput = (
@@ -141,6 +142,7 @@ const prepareFixture = (): Effect.Effect<
       () => new Error('the planner did not write a decodable ShardPlan'),
     )
     const single = singleShardPlanOf(plan)
+    const currentDiff = yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: realHead } })
     yield* fs.writeFileString(
       path.join(root, STALE_DIFF_FILE),
       yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD } }),
@@ -152,14 +154,16 @@ const prepareFixture = (): Effect.Effect<
         scope: { _tag: 'FullScope', base: realHead, head: OTHER_HEAD, reason: '--since main' },
       }),
     )
-    yield* fs.writeFileString(
-      path.join(root, CURRENT_FILE),
-      yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: realHead } }),
-    )
+    yield* fs.writeFileString(path.join(root, CURRENT_FILE), currentDiff)
     yield* writeFile(root, VERSION_ONE_FILE, VERSION_ONE_PLAN)
     yield* writeFile(root, NO_SCOPE_FILE, NO_SCOPE_PLAN)
     yield* writeFile(root, NO_HEAD_FILE, NO_HEAD_PLAN)
-    return { root, realHead }
+    const elsewhere = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-head-elsewhere-' }))
+    yield* writeFile(elsewhere, 'package.json', CONSUMER_PACKAGE)
+    yield* writeFile(elsewhere, 'stryker.config.mjs', CONFIG)
+    yield* writeFile(elsewhere, 'src/math.js', SOURCE)
+    yield* fs.writeFileString(path.join(elsewhere, CURRENT_FILE), currentDiff)
+    return { root, realHead, elsewhere }
   }).pipe(Effect.orDie)
 
 const runShard = (
@@ -201,6 +205,28 @@ const observeShard = (fixture: Fixture, planFile: string, mode: 'human' | 'machi
       namedPlanHead: ran.stderr.includes(OTHER_HEAD),
       namedHead: ran.stderr.includes(fixture.realHead),
       shardDir: yield* shardDirExists(fixture.root),
+    }
+  })
+
+interface GitFailureObservation {
+  readonly exitCode: number
+  readonly stderr: string
+  readonly namesTheCommand: boolean
+  readonly shardDir: boolean
+}
+
+const observeGitFailure = (root: string): Effect.Effect<
+  GitFailureObservation,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const ran = yield* runShard(root, CURRENT_FILE, 'human')
+    return {
+      exitCode: ran.exitCode,
+      stderr: ran.stderr,
+      namesTheCommand: ran.stderr.includes('git rev-parse HEAD failed'),
+      shardDir: yield* shardDirExists(root),
     }
   })
 
@@ -264,6 +290,27 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             })
           ),
         ),
+    )
+
+    scenario(
+      'A scoped plan whose checkout is not a git repository is refused as a configuration error and writes no shard output',
+      Gherkin.Do.pipe(
+        Given('a project and its scoped plan copied into a directory that is not a git repository')(
+          'fixture',
+          () => prepareFixture(),
+        ),
+        When('the shard runs in that directory')('ran', (s) => observeGitFailure(s.fixture.elsewhere)),
+        Then('the run exits two, names the git command it could not read HEAD with and creates no shard output')((
+          s,
+          expect,
+        ) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheCommand: s.ran.namesTheCommand,
+            shardDir: s.ran.shardDir,
+          }).toEqual({ exitCode: 2, namesTheCommand: true, shardDir: false })
+        ),
+      ),
     )
 
     scenario(

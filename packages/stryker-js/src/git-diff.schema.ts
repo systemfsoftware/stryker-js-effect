@@ -39,6 +39,8 @@ export class GitCommandFailed extends S.TaggedError<GitCommandFailed>()('GitComm
   command: S.String,
   detail: S.String,
 }) {
+  readonly exitClass = 'ConfigError' as const
+
   override get message(): string {
     return `git ${this.command} failed: ${this.detail}`
   }
