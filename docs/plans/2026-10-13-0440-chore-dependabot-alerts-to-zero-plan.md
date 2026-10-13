@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0423-chore-dependabot-alerts-to-zero-plan.md
+supersedes: docs/plans/2026-10-13-0437-chore-dependabot-alerts-to-zero-plan.md
 ---
 
 # Bring main to zero Dependabot alerts by removing what does not belong and bumping what does - Plan
@@ -44,7 +44,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 
 - R1. The `effect` subtree and its `subtrees.toml` entry are gone from main, so no future subtree pull re-adds it.
 - R2. Every docs citation that resolved only through the subtree resolves to an upstream commit permalink at the release it was verified against, or to the installed package where the citation is about current behavior.
-- R3. No committed file outside lockfiles names the removed subtree path afterwards (DEL1).
+- R3. No committed file, lockfiles and fixture snapshots included, names the removed subtree path afterwards (DEL1).
 
 **Root lockfile**
 
@@ -94,7 +94,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 - **Requirements:** R1, R2, R3, R8.
 - **Files:** the six plans `docs/plans/2026-09-21-0025-feat-v8-vm-vitest-runner-compatibility-plan.md`, `docs/plans/2026-09-23-1903-feat-effect-concurrency-mutators-plan.md`, `docs/plans/2026-09-26-0550-refactor-idiomatic-effect-rewrite-plan.md`, `docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md`, `docs/plans/2026-10-10-1719-perf-execution-engine-bench-lane-plan.md`, `docs/plans/2026-10-11-1203-fix-e2e-locked-fixtures-plan.md`; `subtrees.toml`; the subtree directory; this plan.
 - **Approach:** repoint per KTD2 in one commit; `git rm -r` the subtree and delete its `subtrees.toml` entry in a second (KTD3).
-- **Verification:** `git grep -nI -e 'repos/effec[t]' -- . ':!*.lock' ':!*lock.yaml' ':!*lock.json'` exits 1; every permalink's cited line holds the cited symbol at its release; `pnpm install --frozen-lockfile` and `pnpm check:ci` pass; the dependency-graph compare for the PR lists the subtree manifests as removed.
+- **Verification:** `git grep -nI -e 'repos/effec[t]'` exits 1 with no pathspec exclusions; every permalink's cited line holds the cited symbol at its release; `pnpm install --frozen-lockfile` and `pnpm check:ci` pass; the dependency-graph compare for the PR lists the subtree manifests as removed.
 
 ### U2. Clear the root-lock alerts that have a patched release
 
@@ -116,11 +116,11 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 
 ## Verification Contract
 
-| Gate                                 | Command                                                                                        | Units      |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- | ---------- |
-| Formatting                           | `pnpm format:check`                                                                            | U1, U2     |
-| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                                | U1, U2     |
-| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR             | U1, U2     |
-| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile`         | U1, U2     |
-| Removal is total                     | `git grep -nI -e '<removed identifier>' -- . ':!*.lock' ':!*lock.yaml' ':!*lock.json'` exits 1 | U1, U2     |
-| Alerts closed                        | the alert count on main after merge, read with Dependabot access (KTD1)                        | U1, U2, U3 |
+| Gate                                 | Command                                                                                                                                                                                | Units      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Formatting                           | `pnpm format:check`                                                                                                                                                                    | U1, U2     |
+| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                                                                                                                        | U1, U2     |
+| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR                                                                                                     | U1, U2     |
+| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile`                                                                                                 | U1, U2     |
+| Removal is total                     | U1: `git grep -nI -e 'repos/effec[t]'` exits 1, no exclusions. U2: no edited `package.json` declares a removed dependency, and `pnpm why -r <name>` shows no edge from those importers | U1, U2     |
+| Alerts closed                        | the alert count on main after merge, read with Dependabot access (KTD1)                                                                                                                | U1, U2, U3 |
