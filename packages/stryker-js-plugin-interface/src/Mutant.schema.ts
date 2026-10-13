@@ -128,7 +128,7 @@ export const Guard = S.Struct({
   }),
 }).annotate({
   description:
-    "The `if` whose condition this mutant sits in. A mutant carries a guard only while a `BlockStatement` mutant for the consequent block is planned; when none is planned — an empty block, a block outside the `mutate` range, or the `BlockStatement` mutator not selected — the `if`'s condition mutants run unguarded. An `excludedMutations` entry or a disable directive over the block leaves its `BlockStatement` mutant in the run as Ignored, so it still witnesses the guard.",
+    "The `if` whose condition this mutant sits in. A mutant carries a guard only while a `BlockStatement` mutant for the consequent block is planned; when none is planned — an empty block, a block outside the `mutate` range, or the `BlockStatement` mutator not selected — the `if`'s condition mutants run unguarded. An `excludedMutations` entry or a disable directive over the block leaves its `BlockStatement` mutant in the run as Ignored, but an Ignored block mutant never witnesses the guard, so the `if`'s condition mutants run unguarded.",
 })
 export type Guard = typeof Guard.Type
 
