@@ -687,9 +687,8 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
             })
           ),
         )
-        const { since: _since, ...withoutSince } = channel.options
         const options = {
-          ...withoutSince,
+          ...channel.options,
           mutantIds: [...project.mutants],
           ...(verified ? { plannedMutantsFile: loaded.file } : {}),
         }
