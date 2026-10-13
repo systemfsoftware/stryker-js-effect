@@ -60,6 +60,8 @@ Provisional: this entry changes shape when its consumer confirms it, and that ch
 
 `./type-query` exports `TypeQueryLive`, a `Layer` that implements the `TypeQuery` port from the `TypeQuery` namespace of `@systemfsoftware/stryker-js-plugin-interface`. It answers type queries on its own tsgo server, opened on first use per `tsconfigFile` and closed when the layer's scope closes.
 
+A candidate is `NotAssignable` only where a declared type enforces the site's context. A site under an object spread or a non-null assertion, or on the right of `??`, `||` or `&&` when the left operand's type keeps that side out of the result, answers `Unknown` with reason `context-not-enforced`, because the checker never checks such a site against the context.
+
 ```ts
 import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
