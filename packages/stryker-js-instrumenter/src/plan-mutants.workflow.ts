@@ -5,8 +5,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { shiftedLocation } from './Location.js'
-import { ScriptOrigin } from './Location.schema.js'
+import { ScriptOrigin, shiftedLocation } from './Location.schema.js'
 
 import {
   type LocatedDirective,
@@ -343,8 +342,6 @@ const warningsOf = (command: PlanMutantsCommand): readonly string[] =>
   unusedDirectives(command.directives, command.mutatorNames)
     .map((unused) => unusedDirectiveWarning(unused, command.fileName))
 
-const shiftedLocationOf = shiftedLocation
-
 const plannedMutant = (
   command: PlanMutantsCommand,
   candidate: MutantCandidate,
@@ -361,7 +358,7 @@ const plannedMutant = (
             id: candidate.id,
             mutatorName: candidate.mutatorName,
             replacementCode: candidate.replacementCode,
-            location: shiftedLocationOf(location, command.offset),
+            location: shiftedLocation(location, command.offset),
             ignoreReason: reasons.ignoreReason,
             ...Option.match(reasons.subsumption, { onNone: () => ({}), onSome: (subsumption) => ({ subsumption }) }),
           }),
