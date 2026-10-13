@@ -27,7 +27,7 @@ on:
         type: boolean
         default: false
       lane:
-        description: Which lane to run. `kill-matrix` runs only the full kill-matrix lane.
+        description: Which lane to run. `kill-matrix` runs the full kill-matrix lane and the drop audit of its matrix; `all` also runs the scoring lane.
         type: choice
         options:
           - all
@@ -414,7 +414,8 @@ jobs:
         name: Record the start time
         run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v7
+      - id: checkout
+        uses: actions/checkout@v7
 
       - id: build-key
         name: Key of the build cache, hashed before install as the build job hashes it
@@ -422,15 +423,20 @@ jobs:
           KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
         run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
 
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - id: pnpm
+        uses: pnpm/action-setup@v6
+      - id: node
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
-      - run: pnpm install --frozen-lockfile
+      - id: tarballs
+        uses: ./.github/actions/released-tarballs
+      - id: install
+        run: pnpm install --frozen-lockfile
 
-      - name: Restore the build the build job cached
+      - id: restore
+        name: Restore the build the build job cached
         uses: actions/cache/restore@v6
         with:
           path: .turbo/cache
@@ -439,24 +445,27 @@ jobs:
             mutation-build-${{ runner.os }}-
 
       - id: download
-        name: Download this run's kill matrix
+        name: Download this run's kill matrix (not a verdict; matrix-check judges its outcome)
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: ${{ env.MATRIX_ARTIFACT }}
           path: ${{ env.MATRIX_DIR }}
 
-      - name: Check the kill matrix covers the corpus
+      - id: matrix-check
+        name: Check the kill matrix covers the corpus
         shell: bash
         env:
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
           DOWNLOAD: ${{ steps.download.outcome }}
         run: |
           set -euo pipefail
-          dispatch='dispatch the kill-matrix lane (gh workflow run mutation.yml --ref main -f lane=kill-matrix)'
-          next="read the failed kill-matrix job of this run, fix its cause, then $dispatch"
-          if [ ! -d "$MATRIX_DIR" ] || [ "${DOWNLOAD:-success}" != 'success' ]; then
-            echo "::error title=MATRIX_MISSING::Artifact $MATRIX_ARTIFACT is not on this run, so the drop audit has no kill matrix. Next action: $next."
-            printf '## Drop audit\n\n**Failed: `MATRIX_MISSING`.** This run published no `%s`. Next action: %s.\n' "$MATRIX_ARTIFACT" "$next" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$KILL_MATRIX" != success ]; then
+            echo 'reason=MATRIX_MISSING' >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          if [ "$DOWNLOAD" != success ] || [ ! -d "$MATRIX_DIR" ]; then
+            echo 'reason=MATRIX_NOT_DOWNLOADED' >> "$GITHUB_OUTPUT"
             exit 1
           fi
           absent=''
@@ -465,13 +474,12 @@ jobs:
             [ -f "$MATRIX_DIR/$project/stryker-incremental.json" ] || absent="${absent:+$absent,}$project"
           done < <(tr ',' '\n' <<< "$PROJECTS")
           if [ -n "$absent" ]; then
-            fix="make both projects defaults in kill-matrix.yml equal mutation.yml's PROJECTS, then $dispatch"
-            echo "::error title=MATRIX_INCOMPLETE::$MATRIX_ARTIFACT has no kill matrix for $absent, so it does not cover the corpus. Next action: $fix."
-            printf '## Drop audit\n\n**Failed: `MATRIX_INCOMPLETE`.** `%s` has no kill matrix for %s, so it does not cover the corpus. Next action: %s.\n' "$MATRIX_ARTIFACT" "$absent" "$fix" >> "$GITHUB_STEP_SUMMARY"
+            { echo 'reason=MATRIX_INCOMPLETE'; echo "absent=$absent"; } >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-      - name: Build the CLI and the audited projects
+      - id: build
+        name: Build the CLI and the audited projects
         run: |
           mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|')
           pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
@@ -482,32 +490,26 @@ jobs:
         env:
           NO_COLOR: "1"
         run: |
-          set -euo pipefail
-          set +e
-          node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" | tee audit.txt
-          status=${PIPESTATUS[0]}
-          set -e
-          if [ "$status" -ne 0 ]; then
-            echo "::error title=DROP_AUDIT_FAILED::stryker audit exited $status (1: a drop failed the audit; 2: the audit refused its input). Next action: read the audit's lines in this run's summary and artifact drop-audit-${{ github.run_number }}; a Fail names a dropped mutant whose dominator has a killer the dropped mutant lacks."
-            exit "$status"
-          fi
+          set -uo pipefail
+          node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" 2>&1 | tee audit.txt
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
-      - name: Copy the audit's output to the summary
+      - id: audit-summary
+        name: Copy the audit's output to the summary (report only)
         if: ${{ !cancelled() && steps.audit.outcome != 'skipped' && hashFiles('audit.txt') != '' }}
-        env:
-          RESULT: "${{ steps.audit.outcome == 'success' && 'Passed.' || '**Failed: `DROP_AUDIT_FAILED`.**' }}"
         run: |
           {
-            echo '## Drop audit'
-            echo
-            echo "$RESULT Against \`$MATRIX_ARTIFACT\` of this run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            echo "#### stryker audit against \`$MATRIX_ARTIFACT\` of this run"
             echo
             echo '```text'
             cat audit.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && hashFiles(env.AUDIT_OUT) != '' }}
         with:
           name: drop-audit-${{ github.run_number }}
@@ -515,9 +517,73 @@ jobs:
           retention-days: 14
           overwrite: true
 
-      - name: Record the drop audit's wall time
+      - id: verdict
+        name: Verdict of the drop audit
         if: always()
+        shell: bash
         env:
-          STARTED: ${{ steps.start.outputs.at }}
+          STEPS: ${{ toJSON(steps) }}
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
+          RUN: ${{ github.run_id }}
         run: |
-          echo "wall time: $(( $(date +%s) - STARTED )) s" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          fetch="gh run download $RUN -R $GITHUB_REPOSITORY -n $MATRIX_ARTIFACT -D $MATRIX_DIR"
+          filters=$(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|' | paste -sd' ')
+          build="pnpm install --frozen-lockfile && pnpm exec turbo run build $filters"
+          audit="node packages/stryker-js/dist/main.mjs audit --matrix $MATRIX_DIR --projects $PROJECTS --out $AUDIT_OUT"
+          dispatch='gh workflow run mutation.yml --ref main -f lane=kill-matrix'
+          rerun="gh run rerun $RUN -R $GITHUB_REPOSITORY --failed"
+          first='' outcome=''
+          for id in checkout build-key pnpm node tarballs install restore matrix-check build audit audit-summary upload; do
+            o=$(jq -r --arg id "$id" '.[$id].outcome // "skipped"' <<< "$STEPS")
+            if [ "$o" = failure ] || [ "$o" = cancelled ]; then first=$id outcome=$o; break; fi
+          done
+          if [ -z "$first" ]; then
+            reason=DROP_AUDIT_OK next=''
+          elif [ "$outcome" = cancelled ]; then
+            reason=DROP_AUDIT_TIMED_OUT next="Step $first was cancelled: the run was cancelled or the job hit its 60-minute backstop. Next action: $rerun."
+          else
+            case "$first" in
+              install)
+                reason=DROP_AUDIT_INSTALL_FAILED next="Step install failed. Reproduce with: pnpm install --frozen-lockfile" ;;
+              matrix-check)
+                reason=$(jq -r '.["matrix-check"].outputs.reason // "MATRIX_MISSING"' <<< "$STEPS")
+                absent=$(jq -r '.["matrix-check"].outputs.absent // ""' <<< "$STEPS")
+                case "$reason" in
+                  MATRIX_MISSING)
+                    next="The kill-matrix lane of this run ended '$KILL_MATRIX', so it published no $MATRIX_ARTIFACT. Next action: fix the cause its failed job's annotation names, then $dispatch. Reproduce with: $fetch" ;;
+                  MATRIX_NOT_DOWNLOADED)
+                    next="The kill-matrix lane passed but $MATRIX_ARTIFACT did not download. Either its plan job planned no shard (count 0: the corpus has no mutant to grade, so collect was skipped and published nothing) or the download failed. Reproduce with: $fetch (it succeeds only if the artifact exists). Next action: if it succeeds, $rerun; if it finds no artifact, read the kill-matrix plan job's plan.json artifact and fix the mutate globs that select nothing." ;;
+                  *)
+                    next="$MATRIX_ARTIFACT has no kill matrix for $absent, so it does not cover the corpus. Next action: make both projects defaults in .github/workflows/kill-matrix.yml equal mutation.yml's PROJECTS, then $dispatch. Reproduce with: $fetch && for p in ${PROJECTS//,/ }; do test -f $MATRIX_DIR/\$p/stryker-incremental.json || echo \"absent: \$p\"; done" ;;
+                esac ;;
+              build)
+                reason=DROP_AUDIT_BUILD_FAILED next="A build task of the audited projects failed. Reproduce with: $build" ;;
+              audit)
+                status=$(jq -r '.audit.outputs.status // ""' <<< "$STEPS")
+                if [ "$status" = 2 ]; then
+                  reason=DROP_AUDIT_REFUSED next="stryker audit exited 2: it refused its input, and its refusal line is in the audit output above. Next action: fix the kill matrix or the projects list it names. Reproduce with: $fetch && $build && $audit"
+                else
+                  reason=DROP_AUDIT_FAILED next="stryker audit exited ${status:-unknown}: a Fail line in the audit output above (and artifact drop-audit-$GITHUB_RUN_NUMBER) names a dropped mutant whose dominator has a killer the dropped mutant lacks. Reproduce with: $fetch && $build && $audit"
+                fi ;;
+              upload)
+                reason=DROP_AUDIT_UPLOAD_FAILED next="The audit passed but drop-audit-$GITHUB_RUN_NUMBER did not upload. Next action: $rerun." ;;
+              *)
+                reason=DROP_AUDIT_UNCLASSIFIED next="Setup step $first failed; it is outside this job's reason table. Next action: open step $first of this job, then $rerun." ;;
+            esac
+          fi
+          {
+            echo "reason=$reason"
+            echo "next<<NEXT_EOF"
+            echo "$next"
+            echo 'NEXT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report the drop audit
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.verdict.outputs.reason }}
+          next-action: ${{ steps.verdict.outputs.next }}
+          started-at: ${{ steps.start.outputs.at }}
