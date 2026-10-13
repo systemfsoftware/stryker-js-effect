@@ -65,7 +65,7 @@ import {
   isFunctionLike,
   isImportedLocal,
   isShadowed,
-  resolveImportedExport,
+  resolveCallee,
 } from './effect-imports.js'
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
@@ -930,8 +930,8 @@ const aridCalleeOf = (
   const context = toMutatorContext([call, ...ancestorsOfFrame(callFrame)], policy)
   return Option.orElse(
     Option.map(
-      resolveImportedExport(call.callee, context, table),
-      (resolved): AridCallee => ({ _tag: 'EffectExport', module: resolved.module, exportName: resolved.exportName }),
+      resolveCallee(call.callee, context, table),
+      (callee): AridCallee => ({ _tag: 'EffectExport', module: callee.module, exportName: callee.exportName }),
     ),
     () => aridGlobalCalleeOf(call.callee, context, table),
   )

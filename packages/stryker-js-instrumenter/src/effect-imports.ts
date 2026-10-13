@@ -526,33 +526,6 @@ const isPipeNamespaceBinding = <M extends string>(binding: NamespaceBinding<M>):
     Match.orElse(() => false),
   )
 
-export interface ResolvedEffectExport<M extends string = EffectModuleName> {
-  readonly module: M
-  readonly exportName: string
-}
-
-const resolveImportedExportDataFirst = <M extends string>(
-  node: Expression,
-  context: MutatorContext,
-  table: ImportTable<M>,
-): Option.Option<ResolvedEffectExport<M>> =>
-  Option.map(
-    resolveCallee(node, context, table),
-    (callee): ResolvedEffectExport<M> => ({ module: callee.module, exportName: callee.exportName }),
-  )
-
-export const resolveImportedExport: {
-  <M extends string>(
-    node: Expression,
-    context: MutatorContext,
-    table: ImportTable<M>,
-  ): Option.Option<ResolvedEffectExport<M>>
-  <M extends string>(
-    context: MutatorContext,
-    table: ImportTable<M>,
-  ): (node: Expression) => Option.Option<ResolvedEffectExport<M>>
-} = dual((args: IArguments): boolean => args.length >= 3, resolveImportedExportDataFirst)
-
 const isImportedLocalDataFirst = <M extends string>(name: string, table: ImportTable<M>): boolean =>
   table.valueLocals.has(name)
 
