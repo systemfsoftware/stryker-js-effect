@@ -1694,12 +1694,6 @@ const sizeComparisonOf = (
     },
   )
 
-interface CheckedMutant {
-  readonly mutant: Checker.CheckerMutantWire
-  readonly check: MutantVerdict
-  readonly comparison: Option.Option<SizeComparison>
-}
-
 interface CheckSteps {
   readonly resolveFileName: (fileName: string) => string
   readonly fileOf: (fileName: string) => Effect.Effect<Option.Option<ScriptFile>>
@@ -1906,12 +1900,13 @@ const decisionsOfFile = Effect.fnUntraced(function*(
 const classifyBatchTce = Effect.fnUntraced(function*(
   rt: TSCompilerRuntime,
   tsconfigFile: string,
-  mutants: readonly Checker.CheckerMutantWire[],
-  checked: ReadonlyArray<MutantVerdict>,
-): Effect.fn.Return<ReadonlyArray<MutantVerdict>, CompilerFailed> {
-  const passedIds = HashSet.fromIterable(Arr.map(Arr.filter(checked, isVerdictPassed), (entry) => entry.id))
-  const passedMutants = Arr.filter(mutants, (mutant) => HashSet.has(passedIds, mutant.id))
-  const fileNames = Arr.dedupe(Arr.map(passedMutants, (mutant) => resolveFileName(rt, mutant.fileName)))
+  entries: ReadonlyArray<Outcome>,
+): Effect.fn.Return<ReadonlyArray<Outcome>, CompilerFailed> {
+  const passedIds = HashSet.fromIterable(
+    Arr.map(Arr.filter(entries, (entry) => isVerdictPassed(entry.check)), (entry) => entry.check.id),
+  )
+  const passedEntries = Arr.filter(entries, (entry) => HashSet.has(passedIds, entry.check.id))
+  const fileNames = Arr.dedupe(Arr.map(passedEntries, (entry) => resolveFileName(rt, entry.mutant.fileName)))
   const perFile = yield* Effect.forEach(
     fileNames,
     (fileName) =>
@@ -1919,16 +1914,22 @@ const classifyBatchTce = Effect.fnUntraced(function*(
         rt,
         tsconfigFile,
         fileName,
-        Arr.filter(passedMutants, (mutant) => resolveFileName(rt, mutant.fileName) === fileName),
+        Arr.map(
+          Arr.filter(passedEntries, (entry) => resolveFileName(rt, entry.mutant.fileName) === fileName),
+          (entry) => entry.mutant,
+        ),
       ),
   )
   const decisions = Arr.flatten(perFile)
   return Arr.map(
-    checked,
+    entries,
     (entry) =>
-      Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.id), {
+      Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.check.id), {
         onNone: () => entry,
-        onSome: (decision) => VerdictIgnored.make({ id: entry.id, ignore: decision.classification }),
+        onSome: (decision): Outcome => ({
+          ...entry,
+          check: VerdictIgnored.make({ id: entry.check.id, ignore: decision.classification }),
+        }),
       }),
   )
 })
@@ -1941,15 +1942,12 @@ const booleanLiteralOf = (replacement: string): Option.Option<boolean> =>
     (text) => text === 'true',
   )
 
-const collectionSizeChecked = (
-  measured: ReadonlyArray<CheckedMutant>,
-  checked: ReadonlyArray<MutantVerdict>,
-): ReadonlyArray<MutantVerdict> => {
-  const candidates = Arr.zipWith(measured, checked, ({ mutant, comparison }, entry) => ({
+const collectionSizeChecked = (entries: ReadonlyArray<Outcome>): ReadonlyArray<Outcome> => {
+  const candidates = Arr.map(entries, ({ mutant, check, comparison }) => ({
     site: siteKeyOf(mutant),
     candidate: {
       id: mutant.id,
-      kept: isVerdictPassed(entry),
+      kept: isVerdictPassed(check),
       literal: booleanLiteralOf(mutant.replacement),
       comparison,
     },
@@ -1959,21 +1957,20 @@ const collectionSizeChecked = (
     sites: Arr.map(sites, (site) => ({ candidates: Arr.map(site, (entry) => entry.candidate) })),
   })))
   const always = HashMap.fromIterable(Arr.map(decisions, (decision) => [decision.id, decision.always] as const))
-  return Arr.map(checked, (entry) =>
-    Option.match(HashMap.get(always, entry.id), {
+  return Arr.map(entries, (entry) =>
+    Option.match(HashMap.get(always, entry.check.id), {
       onNone: () => entry,
-      onSome: (constant): MutantVerdict =>
-        VerdictIgnored.make({ id: entry.id, ignore: constant ? 'always-true' : 'always-false' }),
+      onSome: (constant): Outcome => ({
+        ...entry,
+        check: VerdictIgnored.make({ id: entry.check.id, ignore: constant ? 'always-true' : 'always-false' }),
+      }),
     }))
 }
 
-const classifyBatchCollectionSize = (
-  measured: ReadonlyArray<CheckedMutant>,
-  checked: ReadonlyArray<MutantVerdict>,
-): ReadonlyArray<MutantVerdict> =>
-  Boolean.match(Arr.some(measured, (entry) => Option.isSome(entry.comparison)), {
-    onFalse: () => checked,
-    onTrue: () => collectionSizeChecked(measured, checked),
+const classifyBatchCollectionSize = (entries: ReadonlyArray<Outcome>): ReadonlyArray<Outcome> =>
+  Boolean.match(Arr.some(entries, (entry) => Option.isSome(entry.comparison)), {
+    onFalse: () => entries,
+    onTrue: () => collectionSizeChecked(entries),
   })
 export const nodes = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerNodes.name)(function*(self: TSCompiler) {
   return yield* self.pipe(runtimeOf, nodesOf)
@@ -2516,18 +2513,8 @@ export const check: {
       (current, round) => roundProgressOf(ctx, byId, current, round),
     )
     const outcomes = inInputOrder(mutants, progress.outcomes)
-    const measured: ReadonlyArray<CheckedMutant> = Arr.map(outcomes, (outcome) => ({
-      mutant: outcome.mutant,
-      check: outcome.check,
-      comparison: outcome.comparison,
-    }))
-    const tceChecked = yield* classifyBatchTce(
-      rt,
-      state.tsconfigFile,
-      mutants,
-      Arr.map(measured, (entry) => entry.check),
-    )
-    const checked = classifyBatchCollectionSize(measured, tceChecked)
+    const tceChecked = yield* classifyBatchTce(rt, state.tsconfigFile, outcomes)
+    const checked = Arr.map(classifyBatchCollectionSize(tceChecked), (entry) => entry.check)
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
       lastMutants: [...progress.previous],
