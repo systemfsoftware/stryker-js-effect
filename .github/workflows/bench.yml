@@ -1,3 +1,19 @@
+# Cost: about 267 runner-min/day (241-319) for the run every push to main starts.
+# Run shape: the full corpus, the lane's only run. A plan job and one job per corpus entry
+# (three repo projects and the enterprise fixture) bench the pushed commit against its
+# first parent. Side A is HEAD^1, not the lane's last green commit: the corpus is a fixed
+# workload and only the engine differs between the sides, so an older base selects no
+# smaller workload and would credit several pushes' speed change to one commit.
+# Per run: 15.3-20.3 job-min (median 17.0), summed job wall times of the seven dispatch runs
+# of this design. Run 38297580066 took 20.3; runs 38279943505, 38144176368, 38143012318,
+# 38140987766, 38138985254 and 38135504932 took 15.3-17.7. There is no push run yet.
+# Rate: 110 first-parent commits on main, 2026-10-06T01:54Z to 2026-10-13T01:54Z, so
+# 15.71 pushes/day. This public repo runs on standard runners: occupancy, billed at 0.
+# PR CI: a push holds at most 4 runners at once, 3.7-7.7 min each. That week, jobs with no
+# `needs` started within a 2 s median below 40 concurrent jobs and queued a median 33-224 s
+# at 40-69, so Bench delays PR CI only while the pool already holds about 40 jobs. A replay
+# of the week, dropping the pull_request Bench (500.7 runner-min/day) and adding these runs
+# unqueued, lowers the hours at 40+ concurrent jobs from 11.98 to 11.45.
 name: Bench
 
 on:
