@@ -150,7 +150,7 @@ const slowedOnB = (rawA: ReadonlyArray<number>, rawExtra: number): ReadonlyArray
 }
 
 const summaryOf = (subject: Subject, runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', ref: MAIN_REF, runs })))
+  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', baseSha: 'base', ref: MAIN_REF, runs })))
 
 const rowOf = (summary: BenchSummary, phase: string) => {
   const row = summary.projects[0].rows.find((candidate) => candidate.phase === phase)
@@ -346,7 +346,7 @@ describe('summarizeBench', () => {
     (subject, [rawA, rawB, reason, mask]) => {
       const runs = withInvalidA(positives(rawA), positives(rawB), mask, reason)
       const expected = labelsOf(runs.filter((run) => S.is(BenchRunInvalid)(run)))
-      const command = SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', ref: MAIN_REF, runs })
+      const command = SummarizeBenchCommand.make({ sha: 'sha', baseSha: 'base', ref: MAIN_REF, runs })
       return Result.match(subject(command), {
         onFailure: (failure) => S.is(BenchRunsInvalid)(failure) && labelsOf(failure.runs) === expected,
         onSuccess: () => expected.length === 0,
@@ -427,13 +427,13 @@ describe('summarizeBench', () => {
       of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString, S.NonEmptyString],
       subject: summarizeBench,
     },
-    (subject, [rawA, rawExtra, parentSha, sha]) => {
+    (subject, [rawA, rawExtra, baseSha, sha]) => {
       const runs = slowedOnB(rawA, rawExtra)
-      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, parentSha, ref: MAIN_REF, runs })))
+      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, baseSha, ref: MAIN_REF, runs })))
       const regression = summary.regression
       return regression !== null &&
         regression.sha === sha &&
-        regression.parentSha === parentSha &&
+        regression.baseSha === baseSha &&
         regression.metrics.map((metric) => `${metric.corpus}/${metric.entry}/${metric.phase}`).join(',') ===
           'repo/entry/total,repo/entry/mutation-test' &&
         regression.metrics[1].deltaMs === deltaOf(rowOf(summary, 'mutation-test').verdict) &&
@@ -448,7 +448,7 @@ describe('summarizeBench', () => {
       const ref = `refs/heads/stryker/${branch}`
       const command = SummarizeBenchCommand.make({
         sha: 'sha',
-        parentSha: 'parent',
+        baseSha: 'base',
         ref,
         runs: slowedOnB(rawA, rawExtra),
       })

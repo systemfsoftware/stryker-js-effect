@@ -107,7 +107,7 @@ export type RegressedMetric = typeof RegressedMetric.Type
 export const PhaseRegression = S.Struct({
   code: S.Literal('phase-regressed'),
   sha: S.String,
-  parentSha: S.String,
+  baseSha: S.String,
   metrics: S.NonEmptyArray(RegressedMetric),
   nextAction: S.NonEmptyString,
 })
@@ -133,7 +133,7 @@ const acceptsRegression = (fields: Partial<typeof PhaseRegression.Encoded>): boo
     S.decodeResult(PhaseRegression)({
       code: 'phase-regressed',
       sha: 'head',
-      parentSha: 'base',
+      baseSha: 'base',
       metrics: [METRIC],
       nextAction: 'next',
       ...fields,
@@ -155,7 +155,7 @@ const acceptsRegressionCode = (code: string): boolean =>
     S.decodeUnknownResult(PhaseRegression)({
       code,
       sha: 'head',
-      parentSha: 'base',
+      baseSha: 'base',
       metrics: [METRIC],
       nextAction: 'next',
     }),
@@ -166,7 +166,7 @@ const acceptsMetricCount = (metrics: ReadonlyArray<RegressedMetric>): boolean =>
     S.decodeUnknownResult(PhaseRegression)({
       code: 'phase-regressed',
       sha: 'head',
-      parentSha: 'base',
+      baseSha: 'base',
       metrics,
       nextAction: 'next',
     }),

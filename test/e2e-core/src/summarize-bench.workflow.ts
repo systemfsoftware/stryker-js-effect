@@ -37,7 +37,7 @@ const abs = Math.abs
 
 export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
   sha: S.String,
-  parentSha: S.String,
+  baseSha: S.String,
   ref: S.NonEmptyString,
   runs: S.Array(BenchRun),
 }) {
@@ -421,7 +421,7 @@ const regressionOf = (
     onNonEmpty: (metrics): PhaseRegression => ({
       code: 'phase-regressed',
       sha: command.sha,
-      parentSha: command.parentSha,
+      baseSha: command.baseSha,
       metrics,
       nextAction: nextActionOf(command.ref),
     }),
@@ -458,7 +458,7 @@ const acceptsSummarizeRef = (ref: string): boolean =>
     S.decodeResult(SummarizeBenchCommand)({
       _tag: 'SummarizeBenchCommand',
       sha: 'head',
-      parentSha: 'base',
+      baseSha: 'base',
       ref,
       runs: [],
     }),

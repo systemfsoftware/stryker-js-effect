@@ -96,7 +96,7 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
 const MAIN_REF = 'refs/heads/main'
 
 const summaryOf = (runs: ReadonlyArray<BenchRun>, ref: string = MAIN_REF): BenchSummary =>
-  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', ref, runs })))
+  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', baseSha: 'base', ref, runs })))
 
 const LEG: LegTime = LegTime.cases.LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
 

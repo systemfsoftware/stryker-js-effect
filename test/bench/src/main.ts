@@ -238,7 +238,7 @@ const bench = (env: BenchEnv) =>
       runsRoot,
       runnerTemp: env.runnerTemp,
       sha: env.headSha,
-      parentSha: env.baseSha,
+      baseSha: env.baseSha,
       ref: env.ref,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))

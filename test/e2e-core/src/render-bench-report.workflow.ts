@@ -137,7 +137,7 @@ const regressionAnnotation = (
 ): Annotation =>
   error(
     regression.code,
-    `Bench ${regression.sha} against parent ${regression.parentSha} on ${ref}: ${
+    `Bench ${regression.sha} against base ${regression.baseSha} on ${ref}: ${
       [...Arr.map(regression.metrics, (metric) => `regressed ${metricText(metric)}`), ...improved].join('; ')
     } ${RULE}.${unverifiedText(projects)} Next: ${regression.nextAction}`,
   )
@@ -169,7 +169,7 @@ const invalidAnnotation = (invalid: ReadonlyArray<BenchRunInvalid>): Annotation 
     }.`,
   )
 
-const TABLE_HEADER = '| phase | parent (A) | commit (B) | Δ | verdict |'
+const TABLE_HEADER = '| phase | base (A) | commit (B) | Δ | verdict |'
 const TABLE_RULE = '| --- | --- | --- | --- | --- |'
 
 const SIGNAL_NOTE =
@@ -289,7 +289,7 @@ const abortedBlock = (code: BenchAbortCode, reason: string, nextAction: string):
 const regressionBlock = (regression: PhaseRegression): string =>
   [
     `### Regression: ${regression.code}`,
-    `Commit \`${regression.sha}\` against its parent \`${regression.parentSha}\`:`,
+    `Commit \`${regression.sha}\` against its base \`${regression.baseSha}\`:`,
     Arr.map(regression.metrics, (metric) => `- ${metric.corpus}/${metricText(metric)}`).join('\n'),
     `**Next action:** ${regression.nextAction}`,
   ].join('\n\n')
