@@ -749,8 +749,13 @@ jobs:
           [ -n "$found" ] || missing 'No unexpired kill-matrix-<n> artifact is on the newest 100 completed main runs of mutation.yml or kill-matrix.yml.'
           read -r name run sha <<< "$found"
           gh run download "$run" --name "$name" --dir "$MATRIX_DIR"
-          projects=$(find "$MATRIX_DIR" -name stryker-incremental.json -printf '%h\n' | sed "s|^$MATRIX_DIR/||" | sort | paste -sd, -)
-          [ -n "$projects" ] || missing "Artifact $name of run $run holds no <project>/stryker-incremental.json."
+          projects=$(awk '/^env:/ { inEnv = 1; next } inEnv && /^[^ ]/ { exit } inEnv && $1 == "PROJECTS:" { print $2; exit }' .github/workflows/mutation.yml)
+          if [ -z "$projects" ]; then
+            echo "::error title=Drop audit cannot read the corpus (corpus-unreadable)::.github/workflows/mutation.yml has no top-level env PROJECTS, so the job cannot tell which projects the kill matrix must cover."
+            exit 1
+          fi
+          absent=$(tr ',' '\n' <<< "$projects" | while read -r project; do [ -f "$MATRIX_DIR/$project/stryker-incremental.json" ] || echo "$project"; done | paste -sd, -)
+          [ -z "$absent" ] || missing "Artifact $name of run $run has no kill matrix for $absent, so it does not cover the Mutation corpus ($projects)."
           {
             echo "name=$name"
             echo "sha=$sha"
