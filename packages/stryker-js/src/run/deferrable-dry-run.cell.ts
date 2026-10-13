@@ -1,5 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import { absurd } from 'effect/Function'
@@ -7,6 +8,7 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import { type CheckedPlans, type CheckerPoolHandle, checkPlans } from '../Checker/checker-pool.handle.js'
@@ -14,7 +16,8 @@ import type { CheckerCrash } from '../Checker/Checker.handle.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { requireDryRun } from '../require-dry-run.workflow.js'
 import { requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
-import type { StageError } from '../Run.schema.js'
+import { StageError } from '../Run.schema.js'
+import { missingPlannedMutants } from '../shard/shard-plan.js'
 import { currentRootCoveragesOf, requireDryRunCommandOf } from './dry-run-choice.js'
 import { dryRunCell, type TestBasis } from './dry-run.cell.js'
 import { incrementalReportTextsOf } from './incremental-reuse.js'
@@ -26,6 +29,28 @@ import { mutationTestCell, type MutationTestDone } from './mutation-test.cell.js
 import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
+
+const plannedMutantsFileOf = (options: Options.StrykerOptions): Option.Option<string> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(options['plannedMutantsFile']),
+    S.decodeUnknownOption(S.NonEmptyString),
+  )
+
+const plannedMutantsRefusalOf = (command: InstrumentDone): Effect.Effect<void, StageError> =>
+  Option.match(
+    Option.all([plannedMutantsFileOf(command.options), requestedIdsOf(command.options)]),
+    {
+      onNone: () => Effect.void,
+      onSome: ([planFile, planned]) =>
+        Option.match(
+          missingPlannedMutants({ planFile, planned, discovered: command.mutants.map((mutant) => mutant.id) }),
+          {
+            onNone: () => Effect.void,
+            onSome: (refused) => Effect.fail(StageError.make({ stage: 'prepare', reason: refused.message })),
+          },
+        ),
+    },
+  )
 
 const plannableOf = (command: InstrumentDone) =>
   partitionPlannable(restrictedToRequestedIds({ mutants: command.mutants, requested: requestedIdsOf(command.options) }))
@@ -105,6 +130,7 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
 })
 
 const enterDryRun = Effect.fnUntraced(function*(command: InstrumentDone) {
+  yield* plannedMutantsRefusalOf(command)
   yield* phaseEntered('dry-run')
   const env = yield* RunEnvironment
   const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })

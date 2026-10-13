@@ -40,6 +40,27 @@ const UNRELATED_FILE = 'notes.txt'
 
 const LEAF_OUT = 'reports/shard-1'
 
+const SPARE_FILE = 'src/spare.js'
+
+const SPARE_SOURCE = [
+  'export const spare = (a, b) => {',
+  '  const total = a + b',
+  '  return total + 1',
+  '}',
+  '',
+].join('\n')
+
+const PLANNED_FILE_CONFIG = `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'true' },
+  mutate: ['${SPARE_FILE}'],
+  coverageAnalysis: 'off',
+  concurrency: 1,
+  reporters: [],
+  thresholds: { high: 80, low: 60, break: 100 },
+}
+`
+
 const DIRTY_SOURCE = [
   'export const add = (a, b) => {',
   '  const sum = a + b',
@@ -191,6 +212,21 @@ const commitAll = (
     yield* execGit(root, [...COMMITTER, 'add', '-A'])
     yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', message])
   })
+
+const plannedIdsOf = (
+  root: string,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.orDie(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const plan = Option.getOrThrowWith(
+        decodePlan(yield* fs.readFileString(path.join(root, CURRENT_FILE))),
+        () => new Error('the planner did not write a decodable ShardPlan'),
+      )
+      return plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))
+    }),
+  )
 
 interface ShardObservation {
   readonly exitCode: number
@@ -491,6 +527,45 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             namesThePlanHead: true,
             namesTheMovedHead: true,
             namesTheStaleReason: true,
+            shardDir: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A plan is refused once the configuration stops producing a mutant it scheduled',
+      Gherkin.Do.pipe(
+        Given('a repository planned at HEAD from an uncommitted edit into the untracked plan.json')(
+          'fixture',
+          () => prepareFixture(),
+        ),
+        When(
+          'the configuration stops mutating the planned file, the work moves to another file and the leaf runs',
+        )('ran', (s) =>
+          Effect.gen(function*() {
+            const plannedIds = yield* plannedIdsOf(s.fixture.root)
+            yield* writeFile(s.fixture.root, SPARE_FILE, SPARE_SOURCE)
+            yield* writeFile(s.fixture.root, 'stryker.config.mjs', PLANNED_FILE_CONFIG)
+            const ran = yield* runLeaf(s.fixture.root, CURRENT_FILE, '.', 'human')
+            return { ran, plannedIds, shardDir: yield* shardDirExists(s.fixture.root) }
+          })),
+        Then('the run exits two naming the plan, every missing id, and the next action')((s, expect) =>
+          expect({
+            exitCode: s.ran.ran.exitCode,
+            namesThePlan: s.ran.ran.stderr.includes(CURRENT_FILE),
+            namesTheCount: s.ran.ran.stderr.includes(
+              `schedules ${new Set(s.ran.plannedIds).size} mutant(s) this run does not discover`,
+            ),
+            namesAMissingId: s.ran.plannedIds.some((id) => s.ran.ran.stderr.includes(id)),
+            namesTheNext: s.ran.ran.stderr.includes('re-run stryker plan'),
+            shardDir: s.ran.shardDir,
+          }).toEqual({
+            exitCode: 2,
+            namesThePlan: true,
+            namesTheCount: true,
+            namesAMissingId: true,
+            namesTheNext: true,
             shardDir: false,
           })
         ),

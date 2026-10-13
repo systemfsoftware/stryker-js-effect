@@ -94,7 +94,7 @@ const withoutVersionOf = (value: Json): Json =>
     onNone: () => value,
   })
 
-const scopeOptionKeys: readonly string[] = ['mutate', 'since', 'mutantIds', 'dryRunOnly']
+const scopeOptionKeys: readonly string[] = ['mutate', 'since', 'mutantIds', 'dryRunOnly', 'plannedMutantsFile']
 
 const presentationOptionKeys: readonly string[] = [
   'reporters',

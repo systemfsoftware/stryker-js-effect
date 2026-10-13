@@ -1,8 +1,10 @@
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -16,6 +18,39 @@ export interface LoadedShardPlan {
   readonly plan: ShardPlan
   readonly file: string
   readonly directory: string
+}
+
+const MISSING_IDS_NAMED = 5
+
+const missingIdsTextOf = (missingIds: ReadonlyArray<string>): string =>
+  `${missingIds.slice(0, MISSING_IDS_NAMED).join(', ')}${
+    Option.match(Option.liftPredicate(missingIds.length - MISSING_IDS_NAMED, (rest) => rest > 0), {
+      onNone: () => '',
+      onSome: (rest) => `, +${rest} more`,
+    })
+  }`
+
+export class ShardPlanMutantsMissing extends S.TaggedError<ShardPlanMutantsMissing>()('ShardPlanMutantsMissing', {
+  planFile: S.String,
+  missingIds: S.Array(S.String),
+}) {
+  readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `the shard plan at ${this.planFile} schedules ${this.missingIds.length} mutant(s) this run does not discover: ${
+      missingIdsTextOf(this.missingIds)
+    }; re-run stryker plan`
+  }
+}
+
+export const missingPlannedMutants: (input: {
+  readonly planFile: string
+  readonly planned: ReadonlyArray<string>
+  readonly discovered: ReadonlyArray<string>
+}) => Option.Option<ShardPlanMutantsMissing> = ({ planFile, planned, discovered }) => {
+  const discoveredIds = new Set(discovered)
+  const missingIds = Arr.filter(Arr.dedupe(planned), (id) => !discoveredIds.has(id))
+  return Option.map(Arr.head(missingIds), () => ShardPlanMutantsMissing.make({ planFile, missingIds }))
 }
 
 const decodeShardPlan = S.decodeUnknownResult(S.fromJsonString(ShardPlan))

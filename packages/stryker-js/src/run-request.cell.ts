@@ -673,7 +673,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliShardLeafRequested: (leaf, channel) =>
       Effect.gen(function*() {
         const loaded = yield* loadShardPlan(channel.environment.basePath, leaf.plan)
-        yield* planVerifiedAt(channel.environment.basePath, loaded)
+        const verified = yield* planVerifiedAt(channel.environment.basePath, loaded)
         const selected = yield* Effect.fromResult(
           selectShard(SelectShardCommand.make({ plan: loaded.plan, shard: leaf.shard })),
         )
@@ -688,7 +688,11 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
           ),
         )
         const { since: _since, ...withoutSince } = channel.options
-        const options = { ...withoutSince, mutantIds: [...project.mutants] }
+        const options = {
+          ...withoutSince,
+          mutantIds: [...project.mutants],
+          ...(verified ? { plannedMutantsFile: loaded.file } : {}),
+        }
         return yield* runStage({ ...channel, options }, WholeProject.make({}))
       }),
     CliCompareRequested: (compare) => compareReports(compare),
