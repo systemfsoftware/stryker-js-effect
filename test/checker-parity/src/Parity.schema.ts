@@ -146,9 +146,10 @@ export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()(
  * Legacy, decode-only: an earlier driver wrote one `TypeQueryServers` line per branch project recording the
  * peak live tsgo query servers it held. Queries now run inside the branch worker, so the driver can no
  * longer observe them and nothing produces this line; it stays in {@link ParityLine} so a shard artifact
- * written by that driver still decodes (and the CI cost fold skips it). No consumer reads its payload, and
- * the comparison excludes it from the project set so a stale line naming a project absent elsewhere cannot
- * enter `compare-sides`' `projectCount` or `typeQuery.projects`.
+ * written by that driver still decodes (and the CI cost fold skips it). No consumer reads its payload: the
+ * comparison excludes it from the project set and from each project's own lines, so a stale line can neither
+ * add a project to `projectCount` or `typeQuery.projects` nor drop a skipped project from `summary.skipped`,
+ * and the report's shard hints ignore it.
  */
 export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
   schemaVersion: SCHEMA_VERSION,

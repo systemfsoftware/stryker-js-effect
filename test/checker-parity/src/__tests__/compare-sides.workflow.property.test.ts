@@ -758,6 +758,7 @@ describe('compareSides', () => {
         S.is(ParityHolds)(withLegacy),
         JSON.stringify(without) === JSON.stringify(withLegacy),
         JSON.stringify(withoutOnSkipped) === JSON.stringify(withLegacyOnSkipped),
+        withLegacyOnSkipped.summary.skipped.some((entry) => entry.project === OTHER_PROJECT),
         S.is(ParityBroken)(withBoot),
       ].every((holds) => holds)
     },
