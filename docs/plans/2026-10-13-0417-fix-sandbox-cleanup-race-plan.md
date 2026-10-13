@@ -4,6 +4,7 @@ type: fix
 date: 2026-10-12
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
+supersedes: docs/plans/2026-10-12-2046-fix-sandbox-cleanup-race-plan.md
 execution: code
 ---
 
@@ -12,7 +13,7 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** Stryker runs that share one `tempDirName` directory, started or finished at overlapping times, each keep a working sandbox for their whole run, and the shared directory is gone once the last of them has cleaned up.
-- **Product authority:** Stream H intent of 2026-10-12. The root accepted the diagnosis after checking main: `packages/stryker-js/src/Sandbox.service.ts:32-41` reads the shared parent, then calls `fs.remove(parent, { recursive: true, force: true })`.
+- **Product authority:** Stream H intent of 2026-10-12, and the root house law of 2026-10-12 22:08 (an integration test drives the real product through its published surface on a real project and asserts only user-observable outcomes; injected ports and engine internals are not integration tests). The root accepted the diagnosis after checking main: `packages/stryker-js/src/Sandbox.service.ts:32-41` reads the shared parent, then calls `fs.remove(parent, { recursive: true, force: true })`.
 - **Means:** cleanup removes the shared parent through an atomic remove-if-empty capability added to `Engine.EnginePorts` (KTD1, KTD2), and acquisition retries the parent-then-sandbox pair when the parent vanishes (KTD3).
 - **Open blockers:** none. KTD1 makes `@systemfsoftware/stryker-js` a major release. The root may overrule it with the rejected alternative recorded there.
 - **Stop conditions:** stop and report if the regression test cannot be made to fail against main's `Sandbox.service.ts`, if the fix needs a change to `ci.yml`, e2e fixtures or `turbo.json`, or if a package outside `packages/stryker-js` and `packages/stryker-js-cli-contract` has to change.
@@ -53,7 +54,7 @@ F1 is proven. F2 and F3 follow from the code but have not been observed; each co
 
 **Proof**
 
-- R6. A durable regression test reproduces each of F1-F3 against main's `Sandbox.service.ts` and passes after the fix, without relying on luck in timing.
+- R6. A durable regression test reproduces F1 against main's `Sandbox.service.ts` on every run and passes after the fix. F2 and F3 are reproduced on main where real runs can reach them without a scheduler (KTD4); the rate is recorded, not claimed as deterministic.
 - R7. The test judges outcomes on the real filesystem (which directories exist, whether acquisition and cleanup succeeded), not the order in which calls were made.
 
 ### Acceptance Examples
@@ -77,21 +78,21 @@ F1 is proven. F2 and F3 follow from the code but have not been observed; each co
 - **KTD1. A new port, `EmptyDirectory`, joins `Engine.EnginePorts`; it is not an inline Node call in the service.** The Effect `FileSystem` port cannot remove a directory only when it is empty: `remove` calls `fs.rm`, which refuses a directory without `recursive` (`ERR_FS_EISDIR`, probed in Bun 1.4.3 and in the shipped `@effect/platform-node-shared` 4.0.0, `NodeFileSystem.js:117-124`). A `*.service.ts` must import no driver (pack: cell-architecture, `service-and-layer-boundaries.md`, rule 1 table and the adapter-module paragraph). The Node implementation therefore lives in the adapter module `node-platform.ts`, and the contract lives in a pure `empty-directory.service.ts`. This is #272's pattern for `SourceParser` (`251a511f0`). Widening `EnginePorts` breaks any consumer that builds its own ports layer, so the changeset is a major bump, as #272's was. Rejected alternative: `globalThis.process.getBuiltinModule('node:fs/promises').rmdir` inside `Sandbox.service.ts`, as `plugin-loader.service.ts:398,415` does. That needs no API change but puts a driver call in a service contract. Also rejected: a lock directory around acquisition and removal. A run killed while holding the lock blocks every later run.
 - **KTD2. `EmptyDirectory.removeIfEmpty` is POSIX `rmdir`, and a non-empty or missing directory is a normal outcome, not an error.** `rmdir` fails with `ENOTEMPTY` or `EEXIST` when the directory has entries (opengroup `rmdir`, https://pubs.opengroup.org/onlinepubs/7990989775/xsh/rmdir.html), so a removal can never take a sibling's sandbox with it (R1). `ENOENT` means another run already removed it. All three are reported as `Kept`/`Absent` outcomes, which keeps the finalizer's `Effect.orDie` (`Sandbox.service.ts:78`) from turning another run's cleanup into this run's defect (R3). Any other errno is a `PlatformError`, as on main today. The errno-to-outcome classification is a decision, so it is a `Workflow.make` in a `*.workflow.ts` that the mutation config covers. The adapter calls it as `node-platform.ts:79` calls `classifyWorkerExit` (pack: cell-architecture, `service-and-layer-boundaries.md:61,248`). Release becomes: remove own sandbox, then `removeIfEmpty(parent)`, with no `exists` or `readDirectory` in between (R4).
 - **KTD3. Acquisition retries "create parent, make sandbox" only when the sandbox call reports the parent `NotFound`, at most 16 attempts.** Each lost attempt uses up one rival run's single pending removal of the empty parent: a run removes the parent at most once, after its own sandbox is gone, and only if the parent is empty. Losses are therefore bounded by the number of runs sharing this `tempDirName` that finish during this run's acquisition. 16 attempts cover 15 such runs finishing at once. Beyond that, and for a non-Stryker process that keeps removing the parent, acquisition surfaces today's `NotFound` instead of spinning. That residual is the accepted reading of R2, whose "another run" this bound discharges. The bound is a named constant beside the schedule, with that reason.
-- **KTD4. The regression test interleaves two real runs at every filesystem step that touches the shared parent.** It is a `tests/*.integration.test.ts` feature (ADR-0001 `:59`: services are graded by integration suites through the published surface) that runs `Engine.strykerCell` twice on one project, so the runs share `tempDirName`, with `dryRunOnly: true`. Each run gets its own ports layer that delegates to `Engine.nodePlatformLayer`'s real `FileSystem` and `EmptyDirectory`. It records every call that names the shared parent or a sandbox directly under it, and can hold that run before its k-th such call. That makes it a scheduler over real I/O, not a mock (pack: boundary-testing, `no-mocks-on-internal-glue.md`). For each phase pair the test walks k = 0, 1, 2, … and, at each k, runs the other run's whole phase while the first is held. It stops at the first k the held run never reaches, which covers the boundary after the last step. Indexing by call number keeps the test independent of which calls an implementation makes: main's cleanup and the fix's cleanup each get every one of their own boundaries. The held run is released in `Effect.ensuring`, so an injected run that fails makes the scenario fail rather than hang. Assertions are outcomes on disk and run results (R7).
+- **KTD4. The regression test races real runs against a rival acting on the real directory on disk, not a scheduler over injected ports.** The 2026-10-12 harness held each run before its k-th filesystem call through a ports layer it built; the house law rules that out. `tests/sandbox-cleanup-race.integration.test.ts` now runs `Engine.strykerCell` with `Engine.nodePlatformLayer` four times on one real project, while a rival fiber removes the shared directory with `rmdir` whenever it finds it empty: from the start (F1), or once the run holds a sandbox (F2/F3). It asserts only the run exits, whether the rival did remove the directory, and that no shared directory is left. Two more scenarios grade the published `Engine.EmptyDirectory` on a real directory: removal against a rival that keeps adding a file (never loses one, 300 files), and the four outcomes for an empty directory, a directory holding a file, a missing path and a plain file. Cost: F1 fails on main on every run; the after-acquisition row failed on main in 2 of 5 runs (2026-10-13), so F2/F3 are reproduced, not pinned. A deterministic F2/F3 proof needs the scheduler the house law forbids; root decides whether that residual stands.
 
 ### Sequencing
 
-U2 (port and classification workflow) lands first. It changes no behavior, because main's `Sandbox.service.ts` never calls the port. U1 (the test) is then run red against main's `Sandbox.service.ts` with U2 in place, F1-F3 each named by a failing phase pair. Then U3 (release and acquisition) and U4 (changeset and API report).
+U2 (port and classification workflow) lands first. It changes no behavior, because main's `Sandbox.service.ts` never calls the port. U1 (the test) is then run red against main's `Sandbox.service.ts`: the outline's rows need only `Engine.strykerCell`, so they run on main unchanged. Then U3 (release and acquisition) and U4 (changeset and API report).
 
 ## Implementation Units
 
-### U1. Interleaving regression feature
+### U1. Race regression feature
 
-- **Goal:** R6, R7; covers AE1, AE2, AE3, AE5, and AE4 through the final parent assertion.
+- **Goal:** R6, R7; covers AE1, AE4, AE5 through real runs and R1 through the published `EmptyDirectory`.
 - **Files:** `packages/stryker-js/tests/sandbox-cleanup-race.integration.test.ts` (new).
-- **Approach:** per KTD4. Phase pairs: cleanup held, other's acquisition injected (F2, AE2); acquisition held, other's cleanup injected (F1, AE1); cleanup held, other's cleanup injected (F3, AE3); acquisition held, other's acquisition injected (two runs starting together). Every pair runs on a fresh project written as `clean-temp-dir.integration.test.ts:29-44` writes one. Runs use `cleanTempDir: 'always'`, `incremental: false`, `reporters: []`, `checkers: []`, `dryRunOnly: true`, and a passing test file, so they share no report path. The process working directory is set to the project root once around both runs of a pair and restored after both end. It is not set per run, because two concurrent `runFromProject` restores would race. The feature sets its own timeout above the package's 60 s `testTimeout` (`vitest.config.ts`), as `compile-error-reuse.integration.test.ts` does. The k walk stops at a cap of 16 boundaries, so a runaway walk fails instead of timing out.
-- **Test scenarios:** one scenario per phase pair, each checking one record over all k. Every pair checks that both runs ended without a defect or failure. An acquisition-injected pair also checks that the injected run's sandbox, with a file written into it, still exists once the held run's cleanup has ended, before the injected run's own cleanup (AE2, AE5). A cleanup-injected pair also checks that the held run ended holding a sandbox it could write to (AE1) and that its cleanup ended without error (AE3). After both runs at every k, the project holds no `tempDirName` directory (R4, AE4).
-- **Verification:** with U2 in place and main's `Sandbox.service.ts`, the F1, F2 and F3 pairs each fail with a named k; after U3 all four pass. Record the main-side failure output in the PR body.
+- **Approach:** per KTD4. Runs use `cleanTempDir: 'always'`, `incremental: false`, `reporters: []`, `checkers: []`, `dryRunOnly: true`, `concurrency: 1` and a passing test file on a fresh project; the working directory is set to the project root around the runs and restored after.
+- **Test scenarios:** a scenario outline with two rival rows (from the start; after the run holds a sandbox) checking every run succeeded, the rival removed the directory at least once, and no shared directory is left; the remove-if-empty churn scenario; the four-target remove-if-empty scenario.
+- **Verification:** against main's `Sandbox.service.ts` (main `251201755`), the from-the-start row fails with all four runs `failed`; the after-acquisition row fails in some runs. On the branch all four scenarios pass on repeated runs.
 
 ### U2. `EmptyDirectory` port, its Node adapter and its classification workflow
 
@@ -121,11 +122,11 @@ U2 (port and classification workflow) lands first. It changes no behavior, becau
 Local, targeted only (no mutation runs, no e2e):
 
 - `packages/stryker-js`: `node_modules/.bin/tsc -b`, `node_modules/.bin/tsc -p tsconfig.test.json --noEmit`, `node_modules/.bin/oxlint .`, `pnpm lint:tsgo`, `pnpm api:check`, and `vitest run` on `tests/sandbox-cleanup-race.integration.test.ts`, `tests/clean-temp-dir.integration.test.ts`, `tests/sandbox-acquisition-telemetry.integration.test.ts` and `tests/compile-error-reuse.integration.test.ts`.
-- Red-first proof: U1 run with U2 in place against main's `Sandbox.service.ts`, with the failing pairs recorded.
+- Red-first proof: U1's outline run against main's `Sandbox.service.ts`, with the failing rows and their rates recorded.
 - CI on the pushed head is watched once; the full suite runs there.
 
 ## Definition of Done
 
-- R1-R7 hold, with U1 failing on main's `Sandbox.service.ts` for F1, F2 and F3, and passing after U3.
+- R1-R7 hold, with U1 failing on main's `Sandbox.service.ts` for F1 on every run and for F2/F3 at the recorded rate, and passing after U3.
 - Report-only `ce-code-review` has run, with the reviewer models that actually served named in the PR body and every finding dispositioned.
 - No probe files, scratch scripts or abandoned code remain in the diff.
