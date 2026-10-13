@@ -5,10 +5,12 @@ status: active
 date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-10-2220-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-13-0325-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
+
+This revision corrects only the unrecorded-thresholds shape: the shipped contract is a tagged union (`Recorded | Unrecorded`), never `null` (full-path review run 20261013-051057-2f111cb4, findings 4 and 5).
 
 ## Goal Capsule
 
@@ -34,14 +36,14 @@ The merged report never carries the configured break. Merge rebuilds each projec
 - R4. `stryker merge` writes each project's thresholds and its file keys into the merged report as `projects`, so the gate needs no config read (ruling A). Files outside every listed project, which is every file of an unsharded run's report, are judged as one project `.` with the report's top-level thresholds.
 - R5. The `--baseline` and `--budget-baseline` verdicts are unchanged. The gate runs the baseline check, then the budget check, then the break check, and the first failure decides the exit. Under `--update-baseline` or `--update-budget-baseline` the baselines are written first and the break check still runs: updating a baseline does not accept a low score.
 - R6. Changeset: `@systemfsoftware/stryker-js` major, because a gate that passed today now fails. Migration: raise the score, set each project's own `thresholds.break` to its current score, or set it to `null`. The README rows for `stryker gate` and exit code 1 say the gate judges each project against the break in its own config, in one statement.
-- R7. A merged project whose shard streams carry no `verdict` line has no recorded thresholds (`thresholds: null`). It gets no verdict and the stable info line `stryker gate: <project>: no thresholds recorded for this project; re-run its shards with the project's config`. No reason code is added for it.
+- R7. A merged project whose shard streams carry no `verdict` line has unrecorded thresholds (the `Unrecorded` variant of `MergedProjectThresholds`). It gets no verdict and the stable info line `stryker gate: <project>: no thresholds recorded for this project; re-run its shards with the project's config`. No reason code is added for it.
 - R8. This change edits no threshold. `packages/toolchain/stryker-config/lib/base.js` keeps `thresholds.break: 100`, and no dogfood `stryker.config.ts` overrides it. Thresholds are a judgment surface, so the change they grade may not edit them (CONST-E9). CONST-T3's check is break = 100. Lowering it without a declaration in the change itself is an automatic P0 (CONST-G3, CONST-W3). Consequence: main's Mutation lane (nightly or manual dispatch) runs the released CLI pinned by the `stryker-published` flake input, not the branch build (`.github/workflows/mutation.yml:37` `PUBLISHED_CLI`, `packages/stryker-js/package.json:71` `file:../../.sfs-deps/stryker-js.tgz`; AGENTS.md Dogfood row). Merging this change therefore leaves the lane's break check unenforced. The gate step starts failing while a project scores below 100 only after a release that contains this change ships and the pin moves to it, which is a human-approved release step (AGENTS.md Human approval row). This change also edits `stryker gate`, the program that grades the repo's own runs. That edit only tightens the gate, keeps break at 100, and cannot grade this change before that release, so no rule is bypassed and no CONST-W3 declaration is needed. Main scored 58.27 on run 37960922409, and the per-project scores on run 38083502908 were stryker-js 46.45, typescript-checker 54.27, vitest-runner 69.35 and e2e-core 72.20. Any lower floor is the instrument owner's separate change, carrying its own CONST-W3 declaration that names the rule and the case. Those measured scores are evidence for that owner, not values this change sets. `.github/workflows` is not touched.
 
 ### Acceptance (tests)
 
 - A1 (journey, `shard-merge.integration.test.ts`): the merged report below break → shards exit 0, gate exits 1, output names `score-below-break` and the threshold.
 - A2 (journey, ruling A refusal, `shard-run-verdict.integration.test.ts`): two projects, `first` with break 0 and `second` with break 50, all mutants surviving. The gate exits 1, names `second` only, and counts `1 of 2` projects.
-- A3 (workflow properties, `gate-score-break.workflow.property.test.ts`, drawing `ProjectScore`): a project fails iff it is `Scored` with a non-null break and percentage < break, with the breach naming its score and break; otherwise it passes, and its info lines are exactly the "no valid mutant" line iff `Unscored` with a break and the "no thresholds recorded" line iff its thresholds are null. Two projects: the error lists exactly the failing ones, in input order.
+- A3 (workflow properties, `gate-score-break.workflow.property.test.ts`, drawing `ProjectScore`): a project fails iff it is `Scored` with a non-null break and percentage < break, with the breach naming its score and break; otherwise it passes, and its info lines are exactly the "no valid mutant" line iff `Unscored` with a break and the "no thresholds recorded" line iff its thresholds are `Unrecorded`. Two projects: the error lists exactly the failing ones, in input order.
 - A4 (schema laws, generated by `inSourceSchemaLaws`): `MergedProject` and `GateReportDocument` round-trip.
 - A5 (journey, `gate.integration.test.ts`, the `.` project path): an unsharded report scoring 0 under break 50 with `--update-baseline` writes the baseline and exits 1 naming `.` and the break.
 - A6 (journey, `gate.integration.test.ts`): a report below break with a new survivor fails on the baseline verdict and emits no `score-below-break`.
@@ -65,8 +67,8 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 
 ## Implementation
 
-- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: { break } | null }`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project goes through `classifyExit`.
-- U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: VerdictThresholds | null, files }`; `shard-merge.ts` writes null when no shard stream of the project has a `verdict` line.
+- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project goes through `classifyExit`.
+- U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: MergedProjectThresholds, files }`, where `MergedProjectThresholds = Recorded VerdictThresholds | Unrecorded`; `shard-merge.ts` writes the `Unrecorded` variant when no shard stream of the project has a `verdict` line.
 - U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: the cell passes thresholds through and logs the decision's `lines`.
 - U4 (landed `e581c9fa0`). A2, READMEs, changeset.
 - U5 (landed `7ec745776`). A5 and A6 in `gate.integration.test.ts`; README row rewritten.
