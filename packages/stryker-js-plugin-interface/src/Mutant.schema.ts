@@ -124,9 +124,12 @@ export const Guard = S.Struct({
   }),
   alternate: S.optional(MutantId).annotate({
     description:
-      "The BlockStatement mutant that empties the `if`'s else block; absent when the `if` has no else. An `if` whose else is not a non-empty block carries no guard.",
+      "The BlockStatement mutant that empties the `if`'s else block; absent when the `if` has no else. An `if` whose else is not a non-empty block, or whose else `BlockStatement` mutant is not planned (an empty block, a block outside the `mutate` range, or that mutator not selected), carries no guard.",
   }),
-}).annotate({ description: 'The `if` whose condition this mutant sits in.' })
+}).annotate({
+  description:
+    "The `if` whose condition this mutant sits in. A mutant carries a guard only while a `BlockStatement` mutant for the consequent block is planned; when none is planned — an empty block, a block outside the `mutate` range, or the `BlockStatement` mutator not selected — the `if`'s condition mutants run unguarded. An `excludedMutations` entry or a disable directive over the block leaves its `BlockStatement` mutant in the run as Ignored, so it still witnesses the guard.",
+})
 export type Guard = typeof Guard.Type
 
 export const uncoveredBlockStatusReason: {

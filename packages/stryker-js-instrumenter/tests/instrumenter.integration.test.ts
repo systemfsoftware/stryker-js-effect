@@ -1916,4 +1916,80 @@ if (b) {}
         ),
       ),
     )
+
+    scenario(
+      'A guard stays when an exclusion leaves the block mutant in the run as Ignored',
+      Gherkin.Do.pipe(
+        Given('a flag whose block calls doWork')(
+          'source',
+          () =>
+            Effect.succeed(`if (flag) {
+  doWork(1)
+}
+`),
+        ),
+        When('it is instrumented excluding the BlockStatement mutator')(
+          'result',
+          ({ source }: { source: string }) =>
+            Instrument.instrument(
+              [{ name: '/tmp/u7-guard-excluded.ts', content: source, mutate: true }],
+              stockOptions({ ignorers: [], excludedMutations: ['BlockStatement'] }),
+            ),
+        ),
+        Then('the excluded block mutant stays Ignored and the condition mutants still name it as their guard')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const blocks = result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement')
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          return expect({
+            guardCount: result.mutants.filter((mutant) => mutant.guard !== undefined).length,
+            blockStatuses: blocks.map((mutant) => mutant.status),
+            guards: conditions.map((mutant) => mutant.guard?.block),
+          }).toEqual({
+            guardCount: 2,
+            blockStatuses: ['Ignored'],
+            guards: [blocks[0]?.id, blocks[0]?.id],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A guard drops when the run never plans a BlockStatement mutant for the block',
+      Gherkin.Do.pipe(
+        Given('a flag whose block calls doWork')(
+          'source',
+          () =>
+            Effect.succeed(`if (flag) {
+  doWork(1)
+}
+`),
+        ),
+        When('only the condition falls inside the mutate range')(
+          'result',
+          ({ source }: { source: string }) =>
+            Instrument.instrument(
+              [
+                {
+                  name: '/tmp/u7-guard-mutate-range.ts',
+                  content: source,
+                  mutate: [{ start: { line: 1, column: 1 }, end: { line: 1, column: 10 } }],
+                },
+              ],
+              stockOptions({ ignorers: [], excludedMutations: [] }),
+            ),
+        ),
+        Then('the condition mutants run unguarded because no block mutant is planned')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect({
+            conditionCount: result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression').length,
+            blockCount: result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement').length,
+            guardedCount: result.mutants.filter((mutant) => mutant.guard !== undefined).length,
+          }).toEqual({ conditionCount: 2, blockCount: 0, guardedCount: 0 })
+        ),
+      ),
+    )
   })
