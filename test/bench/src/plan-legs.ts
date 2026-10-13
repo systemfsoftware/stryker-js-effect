@@ -14,13 +14,14 @@ import {
   GreenRunsJson,
   type LegSelection,
   type NoBenchBase,
-  TurboAffectedPaths,
 } from './bench-plan.schema.js'
 import { chooseBase, ChooseBaseCommand } from './choose-base.workflow.js'
 import { runChecked, runCommand } from './command.js'
 import { ENGINE_BUILD_DIRS } from './engine-dirs.js'
 import { BenchSetupFailed } from './prepare-side.schema.js'
 import { selectLegs, SelectLegsCommand } from './select-legs.workflow.js'
+import { turboAffectedArgs } from './turbo-affected.js'
+import { TurboAffectedPaths } from './turbo-affected.schema.js'
 
 type PlanPlatform = FileSystem.FileSystem | ChildProcessSpawner.ChildProcessSpawner
 
@@ -99,7 +100,7 @@ const affectedPathsSince = (input: PlanLegsInput, base: string) =>
   cleanCheckout(input).pipe(
     Effect.andThen(runChecked({
       step: STEP_AFFECTED,
-      argv: ['pnpm', 'exec', 'turbo', 'query', 'affected', '--packages', '--base', base, '--head', input.head],
+      argv: ['pnpm', 'exec', 'turbo', ...turboAffectedArgs({ base, head: input.head })],
       cwd: input.repoRoot,
     })),
     Effect.flatMap((outcome) =>

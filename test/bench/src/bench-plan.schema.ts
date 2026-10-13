@@ -1,7 +1,6 @@
 import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const LegSelectionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/LegSelection')
 type LegSelectionTypeId = typeof LegSelectionTypeId
@@ -64,20 +63,6 @@ export class FirstParentBase extends S.TaggedClass<FirstParentBase>()('FirstPare
 
 export const BaseChoice = S.Union([GreenBase, FirstParentBase])
 export type BaseChoice = typeof BaseChoice.Type
-
-const TurboAffectedWire = S.Struct({
-  data: S.Struct({ affectedPackages: S.Struct({ items: S.Array(S.Struct({ path: S.String })) }) }),
-})
-
-export const TurboAffectedPaths: S.Codec<ReadonlyArray<string>, string> = S.fromJsonString(TurboAffectedWire).pipe(
-  S.decodeTo(
-    S.Array(S.String),
-    SchemaTransformation.transform<ReadonlyArray<string>, typeof TurboAffectedWire.Type>({
-      decode: (wire) => Arr.map(wire.data.affectedPackages.items, (item) => item.path),
-      encode: (paths) => ({ data: { affectedPackages: { items: Arr.map(paths, (path) => ({ path })) } } }),
-    }),
-  ),
-)
 
 export const BenchLegsJson: S.Codec<ReadonlyArray<string>, string> = S.NonEmptyString.pipe(S.Array, S.fromJsonString)
 
