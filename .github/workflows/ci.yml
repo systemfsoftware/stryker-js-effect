@@ -625,6 +625,7 @@ jobs:
       - if: needs.checker-parity-changes.outputs.run == 'true'
         run: pnpm turbo build --filter @systemfsoftware/stryker-checker-parity
       - name: Download every leg
+        id: legs
         if: needs.checker-parity-changes.outputs.run == 'true'
         uses: actions/download-artifact@v8
         with:
@@ -658,12 +659,34 @@ jobs:
           path: .checker-parity-costs
           key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Collect the verdict caches
+        id: verdicts
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: checker-parity-verdicts-${{ github.run_id }}-*
           path: .checker-parity-cache
           merge-multiple: true
+      - name: Artifact downloads finished
+        if: failure() && (steps.legs.outcome == 'failure' || steps.verdicts.outcome == 'failure')
+        env:
+          LEGS: ${{ steps.legs.outcome }}
+          VERDICTS: ${{ steps.verdicts.outcome }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          report() {
+            echo "::error title=checker-parity download failed::Step \"$1\" did not download artifacts $2 (code artifact-download-failed). download-artifact v8 fails on a digest mismatch, where v7 only warned. Reproduce from the workspace root: gh run download $RUN_ID --pattern '$2' --dir $3"
+            {
+              echo "### checker-parity: \`$1\` failed"
+              echo "Reason code \`artifact-download-failed\`. Reproduce: \`gh run download $RUN_ID --pattern '$2' --dir $3\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          if [ "$LEGS" = failure ]; then
+            report "Download every leg" "checker-parity-$RUN_ID-*" checker-parity-shards
+          fi
+          if [ "$VERDICTS" = failure ]; then
+            report "Collect the verdict caches" "checker-parity-verdicts-$RUN_ID-*" .checker-parity-cache
+          fi
+          exit 1
       - name: Save the merged verdict cache
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
         uses: actions/cache/save@v6
