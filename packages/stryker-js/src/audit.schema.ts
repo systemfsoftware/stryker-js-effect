@@ -1,9 +1,104 @@
 import { Mutant, Options, type Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
+import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
+import * as SchemaGetter from 'effect/SchemaGetter'
+import * as SchemaIssue from 'effect/SchemaIssue'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const AuditSchemaVersion = S.Literal('1')
 
 const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
+
+const STRING_TOKEN = /("(?:[^"\\]|\\[\s\S])*")(\s*:)?/g
+
+const decodeJsonObject = S.decodeUnknownEffect(S.fromJsonString(S.JsonObject))
+
+const decodeJsonString = S.decodeUnknownEffect(S.fromJsonString(S.String))
+
+const isJsonArray = (value: S.Json): value is ReadonlyArray<S.Json> => Arr.isArray(value)
+
+const isJsonObject = (value: S.Json): value is S.JsonObject => Match.record(value)
+
+const keyAtOffset = (
+  keyAt: Record.ReadonlyRecord<string, string>,
+  offset: string,
+): Effect.Effect<string, S.SchemaError> =>
+  Effect.fromOption(
+    Record.get(keyAt, offset),
+    () => new S.SchemaError(new SchemaIssue.InvalidValue({ message: `no key token at offset ${offset}` })),
+  )
+
+const rekeyedBy = (keyAt: Record.ReadonlyRecord<string, string>) => {
+  const rekeyedObject = (object: S.JsonObject): Effect.Effect<S.JsonObject, S.SchemaError> =>
+    Effect.map(
+      Effect.forEach(Object.entries(object), ([offset, member]) =>
+        Effect.zip(keyAtOffset(keyAt, offset), rekeyed(member))),
+      Record.fromEntries,
+    )
+  const rekeyed = (value: S.Json): Effect.Effect<S.Json, S.SchemaError> =>
+    Match.value(value).pipe(
+      Match.when(isJsonArray, (items) => Effect.forEach(items, rekeyed)),
+      Match.when(isJsonObject, rekeyedObject),
+      Match.orElse((leaf) => Effect.succeed(leaf)),
+    )
+  return rekeyedObject
+}
+
+interface KeyToken {
+  readonly offset: number
+  readonly literal: string
+}
+
+const keyTokensOf = (text: string): ReadonlyArray<KeyToken> =>
+  Arr.flatMap(
+    Arr.fromIterable(text.matchAll(STRING_TOKEN)),
+    (token) =>
+      Option.match(Option.all([Option.fromUndefinedOr(token[1]), Option.fromUndefinedOr(token[2])]), {
+        onNone: (): ReadonlyArray<KeyToken> => [],
+        onSome: ([literal]) => [{ offset: token.index, literal }],
+      }),
+  )
+
+const placeheld = (text: string): string =>
+  text.replace(
+    STRING_TOKEN,
+    (token: string, _literal: string, colon: string | undefined, offset: number) =>
+      Option.match(Option.fromUndefinedOr(colon), {
+        onNone: () => token,
+        onSome: (separator) => `"${offset}"${separator}`,
+      }),
+  )
+
+const decodeJsonPastNodejs63785 = (text: string) =>
+  Effect.gen(function*() {
+    yield* decodeJsonObject(text)
+    const tokens = keyTokensOf(text)
+    const keys = yield* Effect.forEach(tokens, (token) => decodeJsonString(token.literal))
+    const keyAt = Record.fromEntries(Arr.zip(tokens.map((token) => `${token.offset}`), keys))
+    return yield* rekeyedBy(keyAt)(yield* decodeJsonObject(placeheld(text)))
+  })
+
+const exactKeyJson = {
+  decode: SchemaGetter.transformEffect((text: string) =>
+    Effect.mapError(decodeJsonPastNodejs63785(text), (error) => error.issue)
+  ),
+  encode: SchemaGetter.stringifyJson(),
+}
+
+const JSON_TEXT = { expected: 'a string that will be decoded as JSON', contentMediaType: 'application/json' }
+
+const isFilePath = (key: string): boolean => key.length > 0 && !key.includes('\u0000')
+
+const keyedByFilePath = S.makeFilter((files: { readonly [key: string]: object }) =>
+  Arr.filter(Object.keys(files), (key) => !isFilePath(key)).map((key) => ({
+    path: [key],
+    issue: 'Expected a non-empty file path without NUL',
+  }))
+)
 
 export const KillMatrixReport = S.Struct({
   projectRoot: S.String,
@@ -18,11 +113,14 @@ export const KillMatrixReport = S.Struct({
         killedBy: S.String.pipe(S.Array, S.optionalKey),
       })),
     }),
-  ),
+  ).check(keyedByFilePath),
   testFiles: S.Record(S.String, S.Struct({ tests: S.Array(S.Struct({ id: S.String })) })),
 })
 export type KillMatrixReport = typeof KillMatrixReport.Type
-export const KillMatrixReportJson = S.fromJsonString(KillMatrixReport)
+export const KillMatrixReportJson = S.String.annotate(JSON_TEXT).pipe(
+  S.decodeTo(S.Unknown, exactKeyJson),
+  S.decodeTo(KillMatrixReport, SchemaTransformation.passthrough({ strict: false })),
+)
 
 export const CountedReport = S.Struct({
   files: S.Record(
@@ -35,11 +133,14 @@ export const CountedReport = S.Struct({
         testsCompleted: Count.pipe(S.optionalKey),
       })),
     }),
-  ),
+  ).check(keyedByFilePath),
   costs: S.Record(S.String, S.Struct({ actualMs: S.NullOr(S.Finite) })).pipe(S.optionalKey),
 })
 export type CountedReport = typeof CountedReport.Type
-export const CountedReportJson = S.fromJsonString(CountedReport)
+export const CountedReportJson = S.String.annotate(JSON_TEXT).pipe(
+  S.decodeTo(S.Unknown, exactKeyJson),
+  S.decodeTo(CountedReport, SchemaTransformation.passthrough({ strict: false })),
+)
 
 export const AuditScope = S.Union([
   S.TaggedStruct('Corpus', {}),
@@ -272,7 +373,6 @@ export class AuditInputUnusable extends S.TaggedError<AuditInputUnusable>()('Aud
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Arr = await import('effect/Array')
   const Result = await import('effect/Result')
 
   const boundaries: ReadonlyArray<number> = [
@@ -298,5 +398,76 @@ if (import.meta.vitest !== void 0) {
         Arr.prepend(boundaries, drawn),
         (value) => subject(value) === (Number.isSafeInteger(value) && value >= 0),
       ),
+  )
+
+  const KeyPrefix = S.String.check(S.isPattern(/^[^\0]*$/u))
+  const EscapedCharacter = S.Literals(['\u0001', '\b', '\t', '\n', '\f', '\r', '\u001b', '\u001f', '"'])
+  const twinBoundaries: ReadonlyArray<readonly [string, string]> = [['', '\u0001'], ['src/weird', '\t']]
+  const sameKeys = Arr.makeEquivalence<string>((left, right) => left === right)
+
+  const filesOf = <A>(keys: ReadonlyArray<string>, file: A): Record.ReadonlyRecord<string, A> =>
+    Record.fromEntries(keys.map((key) => [key, file]))
+
+  const keysReadBack = (keys: ReadonlyArray<string>): ReadonlyArray<Option.Option<ReadonlyArray<string>>> => [
+    Option.map(
+      S.decodeOption(CountedReportJson)(JSON.stringify({ files: filesOf(keys, { mutants: [] }) })),
+      (report) => Object.keys(report.files),
+    ),
+    Option.map(
+      S.decodeOption(KillMatrixReportJson)(JSON.stringify({
+        projectRoot: '',
+        mutantSetPolicy: 'full',
+        files: filesOf(keys, { source: '', mutants: [] }),
+        testFiles: {},
+      })),
+      (report) => Object.keys(report.files),
+    ),
+  ]
+
+  const filePathBoundaries: ReadonlyArray<string> = ['', '\u0000', 'a\u0000', 'src/a\u0000.ts', '\t', '\\', 'src/a.ts']
+
+  const sameRead = Option.makeEquivalence(sameKeys)
+
+  const namesAFile = (key: string): boolean => key !== '' && key.indexOf('\u0000') === -1
+
+  const keysEncoded = (key: string): ReadonlyArray<boolean> => [
+    Option.isSome(S.encodeOption(CountedReportJson)({ files: filesOf([key], { mutants: [] }) })),
+    Option.isSome(
+      S.encodeOption(KillMatrixReportJson)({
+        projectRoot: '',
+        mutantSetPolicy: 'full',
+        files: filesOf([key], { source: '', mutants: [] }),
+        testFiles: {},
+      }),
+    ),
+  ]
+
+  it.prop(
+    '∀k_ReportFilePathRefusal_≡BothReportsKeepExactlyTheNonEmptyKeysWithoutNul',
+    { of: [S.String], subject: (key: string) => ({ reads: keysReadBack([key]), encoded: keysEncoded(key) }) },
+    (subject, [drawn]) =>
+      Arr.every(Arr.prepend(filePathBoundaries, drawn), (key) => {
+        const { reads, encoded } = subject(key)
+        return Arr.every(reads, (read) => sameRead(read, Option.filter(Option.some([key]), () => namesAFile(key)))) &&
+          Arr.every(encoded, (isEncoded) => isEncoded === namesAFile(key))
+      }),
+  )
+
+  const leadOf = (prefix: string): string => `nodejs-63785/${prefix}`
+
+  const keysReadAfterTwin = (prefix: string, escaped: string): ReadonlyArray<Option.Option<ReadonlyArray<string>>> => {
+    JSON.parse(JSON.stringify(filesOf([leadOf(prefix), `${prefix}\\`], 0)))
+    return keysReadBack([leadOf(prefix), `${prefix}${escaped}`])
+  }
+
+  it.prop(
+    '∀p_ReportJsonKeys_≡ReadAnEscapedKeyExactlyAfterAParseOfItsBackslashTwin',
+    { of: [KeyPrefix, EscapedCharacter], subject: keysReadAfterTwin },
+    (subject, [prefix, escaped]) =>
+      Arr.every(Arr.prepend(twinBoundaries, [prefix, escaped] as const), ([p, e]) =>
+        Arr.every(
+          subject(p, e),
+          (read) => Option.exists(read, (keys) => sameKeys(keys, [leadOf(p), `${p}${e}`])),
+        )),
   )
 }
