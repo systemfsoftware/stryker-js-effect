@@ -29,6 +29,12 @@ export interface StrykerCliRunnerShape {
     runEnvironment: Readonly<Record<string, string>> | undefined,
     interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
   ) => Effect.Effect<ForkedStreamedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
+  readonly guest: (
+    argv: readonly [string, ...Array<string>],
+    warm: Warm.WarmSandbox,
+    label: string,
+    runEnvironment?: Readonly<Record<string, string>> | undefined,
+  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(

@@ -1,0 +1,808 @@
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Engine } from '@systemfsoftware/stryker-js'
+import { RunEvent, type ShardPlan, type ShardPlanScope } from '@systemfsoftware/stryker-js-cli-contract'
+import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as S from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
+import { removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
+import { committerArgs, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
+import { decodePlan } from './__fixtures__/shard-cli.fixture.js'
+
+const Feature = makeFeature({ it })
+
+const TARGET_FILE = 'src/target.ts'
+const OTHER_FILE = 'src/other.ts'
+const README_FILE = 'docs/readme.md'
+const CONFIG_FILE = 'stryker.config.mjs'
+const MANIFEST_FILE = 'package.json'
+const PLAN_FILE = 'plan.json'
+const UNRESOLVED_REF = 'no-such-ref'
+const BRANCH = 'scope-base'
+const STREAM_FILE = 'mutation-stream.jsonl'
+
+const TARGET_SOURCE = [
+  'export const target = (value: number): number => {',
+  '  const doubled = value * 2',
+  '  return doubled + 1',
+  '}',
+  '',
+].join('\n')
+
+const CHANGED_TARGET_SOURCE = TARGET_SOURCE.replace('return doubled + 1', 'return doubled + 2')
+
+const FIRST_LINE_TARGET_SOURCE = TARGET_SOURCE.replace('const doubled = value * 2', 'const doubled = value * 3')
+
+const SECOND_LINE_TARGET_SOURCE = FIRST_LINE_TARGET_SOURCE.replace('return doubled + 1', 'return doubled + 2')
+
+const OTHER_SOURCE = [
+  'export const other = (value: number): number => {',
+  '  const tripled = value * 3',
+  '  return tripled - 1',
+  '}',
+  '',
+].join('\n')
+
+const CHANGED_OTHER_SOURCE = OTHER_SOURCE.replace('return tripled - 1', 'return tripled + 1')
+
+const README_SOURCE = '# readme\n'
+
+const CHANGED_README_SOURCE = '# readme changed\n'
+
+const MANIFEST_SOURCE = '{ "name": "plan-since-consumer", "type": "module", "private": true }\n'
+
+const CHANGED_MANIFEST_SOURCE =
+  '{ "name": "plan-since-consumer", "type": "module", "private": true, "description": "changed" }\n'
+
+const FULL_MUTATE = ['src/**/*.ts'] as const
+const LINE_MUTATE = ['src/target.ts:3-3'] as const
+
+const PROJECT_A = 'proj-a'
+const PROJECT_B = 'proj-b'
+const PROJECT_MUTATE = ['src/**/*.js'] as const
+
+const JS_SOURCE = [
+  'export const alpha = (value) => {',
+  '  const result = value + 1',
+  '  return result + value',
+  '}',
+  '',
+].join('\n')
+
+const CHANGED_JS_SOURCE = JS_SOURCE.replace('value + 1', 'value + 2')
+
+const ADDED_JS_FILE = `${PROJECT_B}/src/added.js`
+const ADDED_JS_SOURCE = JS_SOURCE
+
+const COMMITTER = committerArgs({ email: 'plan@test', name: 'plan' })
+
+const CONFIG_SINCE_TWO = 'HEAD~2'
+const CONFIG_SINCE_ONE = 'HEAD~1'
+
+const SHA_PATTERN = /^[0-9a-f]{40}$/
+const SOURCE_DIGEST_PATTERN = /^[0-9a-f]{64}$/
+
+const configSourceOf = (mutate: ReadonlyArray<string>, since?: string): string =>
+  `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'true' },
+  mutate: ${JSON.stringify(mutate)},
+${since === undefined ? '' : `  since: ${JSON.stringify(since)},\n`}  coverageAnalysis: 'off',
+  checkers: [],
+  reporters: [],
+  cleanTempDir: 'always',
+}
+`
+
+const workspaceFilesOf = (
+  mutate: ReadonlyArray<string>,
+  since?: string,
+): ReadonlyArray<readonly [string, string]> => [
+  [MANIFEST_FILE, MANIFEST_SOURCE],
+  [CONFIG_FILE, configSourceOf(mutate, since)],
+  [TARGET_FILE, TARGET_SOURCE],
+  [OTHER_FILE, OTHER_SOURCE],
+  [README_FILE, README_SOURCE],
+]
+
+const projectFilesOf = (
+  projects: ReadonlyArray<string>,
+  mutate: ReadonlyArray<string>,
+  configSince?: string,
+): ReadonlyArray<readonly [string, string]> =>
+  projects.flatMap((project): ReadonlyArray<readonly [string, string]> => [
+    [`${project}/${MANIFEST_FILE}`, MANIFEST_SOURCE],
+    [`${project}/${CONFIG_FILE}`, configSourceOf(mutate, configSince)],
+    [`${project}/src/${project}.js`, JS_SOURCE],
+  ])
+
+const writeWorkspace = (
+  files: ReadonlyArray<readonly [string, string]>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-plan-since-' }))
+    yield* Effect.forEach(files, ([file, content]) => writeFile(root, file, content), { discard: true })
+    return root
+  }).pipe(Effect.orDie)
+
+const commitAll = (
+  root: string,
+  message: string,
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.gen(function*() {
+    yield* execGit(root, [...COMMITTER, 'add', '-A'])
+    yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', message])
+  })
+
+const headOf = (root: string): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  gitOutput(root, ['rev-parse', 'HEAD'])
+
+const cliWorkspace = (
+  files: ReadonlyArray<readonly [string, string]>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> => writeWorkspace(files)
+
+const gitWorkspace = (
+  files: ReadonlyArray<readonly [string, string]>,
+): Effect.Effect<
+  string,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> =>
+  Effect.gen(function*() {
+    const root = yield* cliWorkspace(files)
+    yield* execGit(root, ['init', '-q'])
+    yield* commitAll(root, 'base')
+    return root
+  })
+
+const readPlan = (
+  root: string,
+  out: string,
+): Effect.Effect<ShardPlan, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(path.join(root, out))
+    return Option.getOrThrowWith(
+      decodePlan(text),
+      () => new Error(`the planner wrote no decodable ShardPlan to ${out}`),
+    )
+  }).pipe(Effect.orDie)
+
+const planTo = (
+  root: string,
+  out: string,
+  extra: ReadonlyArray<string> = [],
+): Effect.Effect<
+  { readonly ran: CliOutcome; readonly plan: ShardPlan },
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> =>
+  Effect.gen(function*() {
+    const ran = yield* runCli({ root, args: ['plan', '--target-seconds', '1', '--out', out, ...extra], mode: 'human' })
+    return { ran, plan: yield* readPlan(root, out) }
+  })
+
+const runShardIn = (
+  root: string,
+  planFile: string,
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--plan', planFile, '--shard', '1/1', '--out', 'reports/shard-1'], mode: 'human' })
+
+const scheduledIds = (plan: ShardPlan): ReadonlyArray<string> =>
+  plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))
+
+const reportedIdsOf = (
+  root: string,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs
+      .readFileString(path.join(root, 'reports', 'shard-1', STREAM_FILE))
+      .pipe(Effect.orElseSucceed(() => ''))
+    return text.split('\n').flatMap((line) =>
+      Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))(line.trim())).map((tested) => tested.id)
+    )
+  }).pipe(Effect.orDie)
+
+const projectMutants = (plan: ShardPlan, project: string): ReadonlyArray<string> =>
+  plan.shards.flatMap((shard) =>
+    shard.projects.filter((entry) => entry.project === project).flatMap((entry) => entry.mutants)
+  )
+
+const sorted = (ids: ReadonlyArray<string>): ReadonlyArray<string> => [...ids].sort()
+
+const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
+  sorted(left).join(',') === sorted(right).join(',')
+
+interface ScopeView {
+  readonly base: string
+  readonly head: string
+  readonly files: ReadonlyArray<string>
+  readonly sources: string
+  readonly reason?: string | undefined
+}
+
+const scopeTagOf = (scope: ShardPlanScope): string =>
+  Match.value(scope).pipe(
+    Match.tag('DiffScoped', () => 'DiffScoped'),
+    Match.tag('FullScope', () => 'FullScope'),
+    Match.tag('Unscoped', () => 'Unscoped'),
+    Match.exhaustive,
+  )
+
+const diffScopeOf = (scope: ShardPlanScope): ScopeView | undefined =>
+  Match.value(scope).pipe(
+    Match.tag(
+      'DiffScoped',
+      (scoped): ScopeView => ({ base: scoped.base, head: scoped.head, files: scoped.files, sources: scoped.sources }),
+    ),
+    Match.orElse(() => undefined),
+  )
+
+const fullScopeOf = (scope: ShardPlanScope): ScopeView | undefined =>
+  Match.value(scope).pipe(
+    Match.tag(
+      'FullScope',
+      (full): ScopeView => ({
+        base: full.base,
+        head: full.head,
+        files: full.files,
+        sources: full.sources,
+        reason: full.reason,
+      }),
+    ),
+    Match.orElse(() => undefined),
+  )
+
+Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
+  .withLayer(Engine.nodePlatformLayer)
+  .live('the built stryker binary plans against a real temporary git repository')
+  .body(({ scenario }) => {
+    scenario(
+      'A hunk on one target line scopes the plan to diff and schedules only that line',
+      Gherkin.Do.pipe(
+        Given('a repository whose target line changed since its base commit')('planned', () =>
+          Effect.gen(function*() {
+            const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+            const base = yield* headOf(root)
+            yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+            yield* commitAll(root, 'change the target line')
+            const oracleRoot = yield* writeWorkspace(workspaceFilesOf(LINE_MUTATE))
+            yield* writeFile(oracleRoot, TARGET_FILE, CHANGED_TARGET_SOURCE)
+            return yield* Effect.ensuring(
+              Effect.gen(function*() {
+                const unscoped = yield* planTo(root, 'plan-unscoped.json')
+                const scoped = yield* planTo(root, PLAN_FILE, ['--since', base])
+                const oracle = yield* planTo(oracleRoot, 'plan-oracle.json')
+                return { base, unscoped, scoped, oracle }
+              }),
+              Effect.andThen(removeWorkspace(root), removeWorkspace(oracleRoot)),
+            )
+          })),
+        Then(
+          'the plan names the base commit as its base, scopes to the diff and matches the line-restricted plan',
+        )((s, expect) => {
+          const scope = s.planned.scoped.plan.scope
+          const diff = diffScopeOf(scope)
+          const scopedIds = scheduledIds(s.planned.scoped.plan)
+          const unscopedIds = scheduledIds(s.planned.unscoped.plan)
+          const oracleIds = scheduledIds(s.planned.oracle.plan)
+          return expect({
+            unscopedExit: s.planned.unscoped.ran.exitCode,
+            scopedExit: s.planned.scoped.ran.exitCode,
+            oracleExit: s.planned.oracle.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheBaseCommit: diff?.base === s.planned.base,
+            headIsACommit: diff !== undefined && SHA_PATTERN.test(diff.head),
+            files: diff?.files ?? [],
+            sources: diff?.sources ?? '',
+            schedulesFewerThanUnscoped: scopedIds.length < unscopedIds.length,
+            everyScheduledIdIsUnscoped: scopedIds.every((id) => unscopedIds.includes(id)),
+            schedulesAsManyAsTheLineRestrictedPlan: scopedIds.length === oracleIds.length,
+            nonEmpty: scopedIds.length > 0,
+          }).toEqual({
+            unscopedExit: 0,
+            scopedExit: 0,
+            oracleExit: 0,
+            scopeTag: 'DiffScoped',
+            baseIsTheBaseCommit: true,
+            headIsACommit: true,
+            files: [TARGET_FILE],
+            sources: expect.stringMatching(SOURCE_DIGEST_PATTERN),
+            schedulesFewerThanUnscoped: true,
+            everyScheduledIdIsUnscoped: true,
+            schedulesAsManyAsTheLineRestrictedPlan: true,
+            nonEmpty: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A manifest hunk widens the plan to full scope and schedules every unscoped mutant',
+      Gherkin.Do.pipe(
+        Given('a repository whose manifest changed since its base commit')('planned', () =>
+          Effect.gen(function*() {
+            const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+            const base = yield* headOf(root)
+            yield* writeFile(root, MANIFEST_FILE, CHANGED_MANIFEST_SOURCE)
+            yield* commitAll(root, 'change the manifest')
+            return yield* Effect.ensuring(
+              Effect.gen(function*() {
+                const unscoped = yield* planTo(root, 'plan-unscoped.json')
+                const widened = yield* planTo(root, PLAN_FILE, ['--since', base])
+                return { base, unscoped, widened }
+              }),
+              removeWorkspace(root),
+            )
+          })),
+        Then('the plan records full scope naming the manifest and schedules every unscoped mutant')((s, expect) => {
+          const scope = s.planned.widened.plan.scope
+          const full = fullScopeOf(scope)
+          const widenedIds = scheduledIds(s.planned.widened.plan)
+          const unscopedIds = scheduledIds(s.planned.unscoped.plan)
+          return expect({
+            unscopedExit: s.planned.unscoped.ran.exitCode,
+            widenedExit: s.planned.widened.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheBaseCommit: full?.base === s.planned.base,
+            headIsACommit: full !== undefined && SHA_PATTERN.test(full.head),
+            reason: full?.reason ?? '',
+            schedulesEverything: sameIds(widenedIds, unscopedIds),
+            nonEmpty: widenedIds.length > 0,
+          }).toEqual({
+            unscopedExit: 0,
+            widenedExit: 0,
+            scopeTag: 'FullScope',
+            baseIsTheBaseCommit: true,
+            headIsACommit: true,
+            reason: 'manifest or lockfile changed: package.json',
+            schedulesEverything: true,
+            nonEmpty: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A change outside every mutate pattern scopes to diff and schedules nothing',
+      Gherkin.Do.pipe(
+        Given('a repository whose only change since the base commit is a document')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+              const base = yield* headOf(root)
+              yield* writeFile(root, README_FILE, CHANGED_README_SOURCE)
+              yield* commitAll(root, 'change the readme')
+              const planned = yield* Effect.ensuring(
+                planTo(root, PLAN_FILE, ['--since', base]),
+                removeWorkspace(root),
+              )
+              return { base, planned }
+            }),
+        ),
+        Then('the plan is diff scoped and schedules no mutant anywhere')((s, expect) => {
+          const scope = s.planned.planned.plan.scope
+          const diff = diffScopeOf(scope)
+          return expect({
+            exit: s.planned.planned.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheBaseCommit: diff?.base === s.planned.base,
+            headIsACommit: diff !== undefined && SHA_PATTERN.test(diff.head),
+            scheduled: scheduledIds(s.planned.planned.plan).length,
+          }).toEqual({
+            exit: 0,
+            scopeTag: 'DiffScoped',
+            baseIsTheBaseCommit: true,
+            headIsACommit: true,
+            scheduled: 0,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A plan without a ref is unscoped and needs no git repository at all',
+      Gherkin.Do.pipe(
+        Given('a project that is not a git repository')('planned', () =>
+          Effect.gen(function*() {
+            const root = yield* cliWorkspace(workspaceFilesOf(FULL_MUTATE))
+            return yield* Effect.ensuring(planTo(root, PLAN_FILE), removeWorkspace(root))
+          })),
+        Then('the plan is unscoped and schedules every mutant')((s, expect) =>
+          expect({
+            exit: s.planned.ran.exitCode,
+            scopeTag: scopeTagOf(s.planned.plan.scope),
+            nonEmpty: scheduledIds(s.planned.plan).length > 0,
+          }).toEqual({ exit: 0, scopeTag: 'Unscoped', nonEmpty: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'An unresolvable ref fails the plan before any plan file is written',
+      Gherkin.Do.pipe(
+        Given('a repository holding a committed stryker project')(
+          'root',
+          () => gitWorkspace(workspaceFilesOf(FULL_MUTATE)),
+        ),
+        When('the plan runs since a ref the repository does not have')(
+          'ran',
+          (s) =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const ran = yield* runCli({
+                root: s.root,
+                args: ['plan', '--target-seconds', '1', '--out', PLAN_FILE, '--since', UNRESOLVED_REF],
+                mode: 'human',
+              })
+              return { ran, outExists: yield* fs.exists(path.join(s.root, PLAN_FILE)) }
+            }).pipe(Effect.ensuring(removeWorkspace(s.root))),
+        ),
+        Then('the process exits with the configuration class, names the ref and writes no plan file')((s, expect) =>
+          expect({
+            exitCode: s.ran.ran.exitCode,
+            namesRef: s.ran.ran.stderr.includes(UNRESOLVED_REF),
+            outExists: s.ran.outExists,
+          }).toEqual({ exitCode: 2, namesRef: true, outExists: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A since ref declared only in the config file scopes the plan to the diff it computes',
+      Gherkin.Do.pipe(
+        Given('a repository whose stryker config declares a since ref, with a line-restricted plan also known')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, CONFIG_SINCE_TWO))
+              yield* writeFile(root, README_FILE, CHANGED_README_SOURCE)
+              yield* commitAll(root, 'change the readme')
+              yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(root, 'change the target line')
+              const oracleRoot = yield* writeWorkspace(workspaceFilesOf(LINE_MUTATE))
+              yield* writeFile(oracleRoot, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              const fullRoot = yield* writeWorkspace(workspaceFilesOf(FULL_MUTATE))
+              yield* writeFile(fullRoot, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const scoped = yield* planTo(root, PLAN_FILE)
+                  const oracle = yield* planTo(oracleRoot, 'plan-oracle.json')
+                  const full = yield* planTo(fullRoot, 'plan-full.json')
+                  return { scoped, oracle, full }
+                }),
+                Effect.andThen(
+                  removeWorkspace(root),
+                  Effect.andThen(removeWorkspace(oracleRoot), removeWorkspace(fullRoot)),
+                ),
+              )
+            }),
+        ),
+        Then('the plan is diff scoped and schedules as many mutants as the line-restricted plan')((s, expect) => {
+          const scope = s.planned.scoped.plan.scope
+          const diff = diffScopeOf(scope)
+          const scopedIds = scheduledIds(s.planned.scoped.plan)
+          const oracleIds = scheduledIds(s.planned.oracle.plan)
+          const fullIds = scheduledIds(s.planned.full.plan)
+          return expect({
+            scopedExit: s.planned.scoped.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            headIsACommit: diff !== undefined && SHA_PATTERN.test(diff.head),
+            schedulesAsManyAsTheLineRestrictedPlan: scopedIds.length === oracleIds.length,
+            narrowerThanFull: scopedIds.length > 0 && scopedIds.length < fullIds.length,
+          }).toEqual({
+            scopedExit: 0,
+            scopeTag: 'DiffScoped',
+            headIsACommit: true,
+            schedulesAsManyAsTheLineRestrictedPlan: true,
+            narrowerThanFull: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A plan whose flag names a ref while the config declares another scopes from the flag',
+      Gherkin.Do.pipe(
+        Given('a repository whose config declares an earlier ref, with the flag naming a later one')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, CONFIG_SINCE_TWO))
+              const configBase = yield* headOf(root)
+              yield* writeFile(root, OTHER_FILE, CHANGED_OTHER_SOURCE)
+              yield* commitAll(root, 'change the other line')
+              const flagBase = yield* headOf(root)
+              yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(root, 'change the target line')
+              const oracleRoot = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+              yield* writeFile(oracleRoot, OTHER_FILE, CHANGED_OTHER_SOURCE)
+              yield* commitAll(oracleRoot, 'change the other line')
+              const oracleFlagBase = yield* headOf(oracleRoot)
+              yield* writeFile(oracleRoot, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(oracleRoot, 'change the target line')
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const scoped = yield* planTo(root, PLAN_FILE, ['--since', flagBase])
+                  const configScoped = yield* planTo(root, 'plan-config.json')
+                  const oracle = yield* planTo(oracleRoot, 'plan-oracle.json', ['--since', oracleFlagBase])
+                  return { configBase, configScoped, flagBase, oracle, oracleFlagBase, scoped }
+                }),
+                Effect.andThen(removeWorkspace(root), removeWorkspace(oracleRoot)),
+              )
+            }),
+        ),
+        Then('the plan scopes from the flag commit and schedules only what a flag-only plan schedules')((s, expect) => {
+          const scope = s.planned.scoped.plan.scope
+          const diff = diffScopeOf(scope)
+          const configDiff = diffScopeOf(s.planned.configScoped.plan.scope)
+          const oracleDiff = diffScopeOf(s.planned.oracle.plan.scope)
+          const scopedIds = scheduledIds(s.planned.scoped.plan)
+          const configIds = scheduledIds(s.planned.configScoped.plan)
+          const oracleIds = scheduledIds(s.planned.oracle.plan)
+          return expect({
+            scopedExit: s.planned.scoped.ran.exitCode,
+            configExit: s.planned.configScoped.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheFlagCommit: diff !== undefined && diff.base === s.planned.flagBase,
+            baseIsNotTheConfigCommit: diff !== undefined && diff.base !== s.planned.configBase,
+            configPlanScopesFromTheConfigCommit: configDiff !== undefined && configDiff.base === s.planned.configBase,
+            everyScopedIdIsAlsoConfigScoped: scopedIds.every((id) => configIds.includes(id)),
+            narrowerThanTheConfigScopedPlan: scopedIds.length > 0 && scopedIds.length < configIds.length,
+            schedulesAsManyAsTheFlagOnlyPlan: scopedIds.length === oracleIds.length,
+            theFlagOnlyPlanScopesFromItsOwnFlagCommit: oracleDiff !== undefined &&
+              oracleDiff.base === s.planned.oracleFlagBase,
+          }).toEqual({
+            scopedExit: 0,
+            configExit: 0,
+            scopeTag: 'DiffScoped',
+            baseIsTheFlagCommit: true,
+            baseIsNotTheConfigCommit: true,
+            configPlanScopesFromTheConfigCommit: true,
+            everyScopedIdIsAlsoConfigScoped: true,
+            narrowerThanTheConfigScopedPlan: true,
+            schedulesAsManyAsTheFlagOnlyPlan: true,
+            theFlagOnlyPlanScopesFromItsOwnFlagCommit: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A plan made from a config-file ref is refused once the repository has moved on',
+      Gherkin.Do.pipe(
+        Given('a git repository whose stryker config declares a since ref, planned at one commit')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, CONFIG_SINCE_ONE))
+              yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(root, 'change the target line')
+              const planned = yield* planTo(root, 'plan-config-since.json')
+              yield* writeFile(root, README_FILE, CHANGED_README_SOURCE)
+              yield* commitAll(root, 'move the head')
+              const movedHead = yield* headOf(root)
+              return { root, planned, movedHead }
+            }),
+        ),
+        When('the shard runs at the moved commit')(
+          'ran',
+          (s) =>
+            Effect.ensuring(
+              runShardIn(s.planned.root, 'plan-config-since.json'),
+              removeWorkspace(s.planned.root),
+            ),
+        ),
+        Then('the run exits with the configuration class and names the plan head and the moved head')((s, expect) => {
+          const scope = s.planned.planned.plan.scope
+          const diff = diffScopeOf(scope)
+          return expect({
+            exitCode: s.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            headIsACommit: diff !== undefined && SHA_PATTERN.test(diff.head),
+            planHeadDiffersFromTheMovedHead: diff !== undefined && diff.head !== s.planned.movedHead,
+            namesThePlanHead: diff !== undefined && s.ran.stderr.includes(diff.head),
+            namesTheMovedHead: s.ran.stderr.includes(s.planned.movedHead),
+          }).toEqual({
+            exitCode: 2,
+            scopeTag: 'DiffScoped',
+            headIsACommit: true,
+            planHeadDiffersFromTheMovedHead: true,
+            namesThePlanHead: true,
+            namesTheMovedHead: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A flag ref over two projects scopes the changed project to its line and an untracked file to its project',
+      Gherkin.Do.pipe(
+        Given('a repository with two projects where one project line changed and one file is untracked')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(projectFilesOf([PROJECT_A, PROJECT_B], PROJECT_MUTATE))
+              const base = yield* headOf(root)
+              yield* writeFile(root, `${PROJECT_A}/src/${PROJECT_A}.js`, CHANGED_JS_SOURCE)
+              yield* commitAll(root, 'change the first project line')
+              yield* writeFile(root, ADDED_JS_FILE, ADDED_JS_SOURCE)
+              const oracleRoot = yield* writeWorkspace(projectFilesOf([PROJECT_A], [`src/${PROJECT_A}.js:2-2`]))
+              yield* writeFile(oracleRoot, `${PROJECT_A}/src/${PROJECT_A}.js`, CHANGED_JS_SOURCE)
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const projects = `${PROJECT_A},${PROJECT_B}`
+                  const unscoped = yield* planTo(root, 'plan-unscoped.json', ['--projects', projects])
+                  const scoped = yield* planTo(root, PLAN_FILE, ['--projects', projects, '--since', base])
+                  const oracle = yield* planTo(oracleRoot, 'plan-oracle.json', ['--projects', PROJECT_A])
+                  return { base, unscoped, scoped, oracle }
+                }),
+                Effect.andThen(removeWorkspace(root), removeWorkspace(oracleRoot)),
+              )
+            }),
+        ),
+        Then('the plan scopes the changed line and the untracked file to their projects under the repository root')((
+          s,
+          expect,
+        ) => {
+          const scope = s.planned.scoped.plan.scope
+          const diff = diffScopeOf(scope)
+          const scopedA = projectMutants(s.planned.scoped.plan, PROJECT_A)
+          const unscopedA = projectMutants(s.planned.unscoped.plan, PROJECT_A)
+          const oracleA = projectMutants(s.planned.oracle.plan, PROJECT_A)
+          const scopedB = projectMutants(s.planned.scoped.plan, PROJECT_B)
+          const unscopedB = projectMutants(s.planned.unscoped.plan, PROJECT_B)
+          return expect({
+            scopedExit: s.planned.scoped.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheBaseCommit: diff?.base === s.planned.base,
+            files: diff?.files ?? [],
+            sources: diff?.sources ?? '',
+            changedProjectSchedulesAsManyAsTheLineRestrictedPlan: scopedA.length === oracleA.length,
+            changedProjectIsNarrower: scopedA.length > 0 && scopedA.length < unscopedA.length,
+            everyScheduledIdIsUnscoped: scopedA.every((id) => unscopedA.includes(id)),
+            untrackedProjectSchedulesMutants: scopedB.length > 0,
+            untrackedProjectIsNarrower: scopedB.length > 0 && scopedB.length < unscopedB.length,
+            untrackedProjectMutantsAreUnscoped: scopedB.every((id) => unscopedB.includes(id)),
+          }).toEqual({
+            scopedExit: 0,
+            scopeTag: 'DiffScoped',
+            baseIsTheBaseCommit: true,
+            files: [`${PROJECT_A}/src/${PROJECT_A}.js`, ADDED_JS_FILE],
+            sources: expect.stringMatching(SOURCE_DIGEST_PATTERN),
+            changedProjectSchedulesAsManyAsTheLineRestrictedPlan: true,
+            changedProjectIsNarrower: true,
+            everyScheduledIdIsUnscoped: true,
+            untrackedProjectSchedulesMutants: true,
+            untrackedProjectIsNarrower: true,
+            untrackedProjectMutantsAreUnscoped: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A project config since is ignored when the plan root resolved no since ref',
+      Gherkin.Do.pipe(
+        Given('a project whose config declares a since ref while its directory is not a git repository')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* cliWorkspace(projectFilesOf([PROJECT_A], PROJECT_MUTATE, CONFIG_SINCE_ONE))
+              return yield* Effect.ensuring(
+                planTo(root, PLAN_FILE, ['--projects', PROJECT_A]),
+                removeWorkspace(root),
+              )
+            }),
+        ),
+        Then('the plan stays unscoped and keeps every project mutant')((s, expect) =>
+          expect({
+            exit: s.planned.ran.exitCode,
+            scopeTag: scopeTagOf(s.planned.plan.scope),
+            scheduled: projectMutants(s.planned.plan, PROJECT_A).length > 0,
+          }).toEqual({ exit: 0, scopeTag: 'Unscoped', scheduled: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A branch that moves between planning and the shard runs exactly the planned mutants',
+      Gherkin.Do.pipe(
+        Given(
+          'a repository whose config declares a since branch at the base, with two changed source lines after it',
+        )(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, BRANCH))
+              yield* execGit(root, ['branch', BRANCH])
+              yield* writeFile(root, TARGET_FILE, FIRST_LINE_TARGET_SOURCE)
+              yield* commitAll(root, 'change the first target line')
+              const firstChange = yield* headOf(root)
+              yield* writeFile(root, TARGET_FILE, SECOND_LINE_TARGET_SOURCE)
+              yield* commitAll(root, 'change the second target line')
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const planned = yield* planTo(root, PLAN_FILE, ['--max-shards', '1'])
+                  yield* execGit(root, ['branch', '-f', BRANCH, firstChange])
+                  const ran = yield* runShardIn(root, PLAN_FILE)
+                  const reportedIds = yield* reportedIdsOf(root)
+                  return { planned, ran, reportedIds }
+                }),
+                removeWorkspace(root),
+              )
+            }),
+        ),
+        Then('the plan scopes to the diff and the shard reports exactly the mutants the plan scheduled')(
+          (s, expect) => {
+            const plannedIds = [...scheduledIds(s.planned.planned.plan)].sort()
+            return expect({
+              planExit: s.planned.planned.ran.exitCode,
+              runExit: s.planned.ran.exitCode,
+              scopeTag: scopeTagOf(s.planned.planned.plan.scope),
+              plannedCount: plannedIds.length,
+              reportedIds: [...s.planned.reportedIds].sort(),
+            }).toEqual({
+              planExit: 0,
+              runExit: 0,
+              scopeTag: 'DiffScoped',
+              plannedCount: 2,
+              reportedIds: plannedIds,
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'A run naming a plan but no shard is refused before any shard output is written',
+      Gherkin.Do.pipe(
+        Given('a repository planned from a scoped ref')('planned', () =>
+          Effect.gen(function*() {
+            const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+            const base = yield* headOf(root)
+            yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+            yield* commitAll(root, 'change the target line')
+            const planned = yield* planTo(root, PLAN_FILE, ['--since', base])
+            return { root, planned }
+          })),
+        When('stryker runs the plan without naming a shard')('observed', (s) =>
+          Effect.gen(function*() {
+            const fs = yield* FileSystem.FileSystem
+            const path = yield* Path.Path
+            const ran = yield* runCli({ root: s.planned.root, args: ['run', '--plan', PLAN_FILE], mode: 'human' })
+            const shardOutput = yield* fs.exists(path.join(s.planned.root, 'reports', 'shards'))
+            return { ran, shardOutput }
+          }).pipe(Effect.ensuring(removeWorkspace(s.planned.root)))),
+        Then('the run exits with the configuration class, names the shard flag and writes no shard output')((
+          s,
+          expect,
+        ) =>
+          expect({
+            exitCode: s.observed.ran.exitCode,
+            namesTheClass: s.observed.ran.stderr.includes('exit 2 (ConfigError)'),
+            namesTheShardFlag: s.observed.ran.stderr.includes('--shard'),
+            namesTheNextAction: s.observed.ran.stderr.includes(`stryker run --plan ${PLAN_FILE} --shard k/N`),
+            shardOutput: s.observed.shardOutput,
+          }).toEqual({
+            exitCode: 2,
+            namesTheClass: true,
+            namesTheShardFlag: true,
+            namesTheNextAction: true,
+            shardOutput: false,
+          })
+        ),
+      ),
+    )
+  })

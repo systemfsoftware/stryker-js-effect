@@ -3,6 +3,7 @@ import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { StageInput } from '../git-diff.schema.js'
 import { describedConfigErrorOf, emitPreparePhaseEntered, failConfigWith, readLoadConfig } from './load-config.js'
 import { resolveConfig } from './resolve-config.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
@@ -11,10 +12,9 @@ export type { ConfigInvocation, LoadedConfig } from './load-config.js'
 export type { ConfigReadError } from './read-config-document.js'
 export type { ValidationSchemaDocument } from './validate-options-admission.workflow.js'
 
-const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*(input: {
-  readonly cliOptions: Options.PartialStrykerOptions
-  readonly targetMutatePatterns: readonly string[] | undefined
-}) {
+const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*(
+  input: StageInput & { readonly cliOptions: Options.PartialStrykerOptions },
+) {
   const env = yield* RunEnvironment
   const raw = yield* readLoadConfig({
     cliOptions: input.cliOptions,
@@ -23,6 +23,8 @@ const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*
   return {
     ...raw,
     targetMutatePatterns: input.targetMutatePatterns,
+    plannedDiff: input.plannedDiff,
+    plannedMutantsFile: input.plannedMutantsFile,
     basePath: env.basePath,
   }
 })
@@ -34,12 +36,16 @@ export const loadConfigCell = Sandwich.named(SpanTaxonomy.Spans.loadConfig.name)
       Effect.succeed({
         options,
         targetMutatePatterns: raw.targetMutatePatterns,
+        plannedDiff: raw.plannedDiff,
+        plannedMutantsFile: raw.plannedMutantsFile,
         basePath: raw.basePath,
       }),
     ConfigFromDefaults: ({ options }, raw) =>
       Effect.succeed({
         options,
         targetMutatePatterns: raw.targetMutatePatterns,
+        plannedDiff: raw.plannedDiff,
+        plannedMutantsFile: raw.plannedMutantsFile,
         basePath: raw.basePath,
       }),
     ConfigOptionsRefused: ({ message }) => failConfigWith(describedConfigErrorOf({ message }).text),

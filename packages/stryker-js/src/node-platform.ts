@@ -206,7 +206,7 @@ export const makeNodePlatformLayer = (options: {
   Layer.mergeAll(
     nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
     nodeBase,
-    GitDiff.layer,
+    GitDiff.layer.pipe(Layer.provide(Layer.merge(nodeSpawnerLayer, nodeFsPathLayer))),
     oxcSourceParserLayer,
     nodeEmptyDirectoryLayer,
   )
