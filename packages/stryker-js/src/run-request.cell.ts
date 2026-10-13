@@ -480,6 +480,8 @@ const runScoreBreakGate = (report: GateReportDocument): Effect.Effect<void, Scor
   Effect.flatMap(
     Effect.fromResult(gateScoreBreak(GateScoreBreakCommand.make({ projects: [...projectScoresOf(report)] }))),
     (cleared) => Effect.forEach(cleared.lines, (line) => Effect.logInfo(line), { discard: true }),
+  ).pipe(
+    Effect.tapError((refused) => Effect.forEach(refused.lines, (line) => Effect.logInfo(line), { discard: true })),
   )
 
 const ownsItsRemediation = S.is(S.Union([BudgetExceeded, BudgetInputUnusable, ScoreBelowBreak]))

@@ -74,9 +74,8 @@ export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelo
   readonly code = SCORE_BREAK_CODE
   readonly exitClass = SCORE_BREAK_EXIT_CLASS
 
-  override get message(): string {
+  get lines(): ReadonlyArray<string> {
     return [
-      `stryker gate: ${this.breaches.length} of ${this.projects} project(s) scored below thresholds.break`,
       ...this.breaches.map((breach) =>
         `  ${SCORE_BREAK_CODE}: ${breach.project} scored ${breach.percentage.toFixed(2)} < break ${
           String(breach.threshold)
@@ -84,6 +83,13 @@ export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelo
       ),
       ...notesOf(this.unscored, this.unrecorded),
       SCORE_BREAK_REMEDIATION,
+    ]
+  }
+
+  override get message(): string {
+    return [
+      `stryker gate: ${this.breaches.length} of ${this.projects} project(s) scored below thresholds.break`,
+      ...this.lines,
     ].join('\n')
   }
 }

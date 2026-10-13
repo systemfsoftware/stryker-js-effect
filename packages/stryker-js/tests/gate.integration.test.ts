@@ -95,6 +95,37 @@ ${
 
 const breakLineOf = (project: string): string => `score-below-break: ${project} scored 0.00 < break ${BELOW_BREAK}`
 
+const MERGED_BREACH_PROJECTS: ReadonlyArray<string> = Array.from({ length: 32 }, (_, index) => `p${index}`)
+
+const BREAK_REMEDIATION_LINE =
+  'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
+
+const mergedBreachReportJsonOf = (projects: ReadonlyArray<string>): string => {
+  const hexId = (value: number): string => value.toString(16).padStart(16, '0')
+  const fileOf = (project: string, index: number): string =>
+    `    "${project}/src/sum.js": {
+      "source": "export const sum = (a, b) => a + b\\n",
+      "mutants": [
+        ${mutantLine(hexId(index * 2), 1, 'Killed')},
+        ${mutantLine(hexId(index * 2 + 1), 2, 'Survived')}
+      ]
+    }`
+  const mergedProjectOf = (project: string): string =>
+    `    { "project": "${project}", "thresholds": { "_tag": "Recorded", "high": 80, "low": 60, "break": 60 }, "files": ["${project}/src/sum.js"] }`
+  return `{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": 60 },
+  "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
+  "files": {
+${projects.map((project, index) => fileOf(project, index)).join(',\n')}
+  },
+  "projects": [
+${projects.map(mergedProjectOf).join(',\n')}
+  ]
+}
+`
+}
+
 const baselineJson = (survivorIds: ReadonlyArray<string>): string =>
   `{ "schemaVersion": 1, "survivors": [${survivorIds.map((id) => `"${id}"`).join(', ')}] }\n`
 
@@ -498,6 +529,26 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             namesOnlyTheNewSurvivor: namesOnlyTheNewSurvivor(s.ran.stderr),
             emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
           }).toStrictEqual({ exitCode: 1, namesOnlyTheNewSurvivor: true, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A merged report with many projects below their break reports every one of them and the next action',
+      Gherkin.Do.pipe(
+        Given('a merged report of 32 projects each scoring 50 under a break of 60')(
+          'project',
+          () => prepareProject(null, null, 'null', mergedBreachReportJsonOf(MERGED_BREACH_PROJECTS)),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 1 and stderr carries every breach line and the remediation uncut')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            missingBreaches: MERGED_BREACH_PROJECTS.filter((project) =>
+              !s.ran.stderr.includes(`score-below-break: ${project} scored 50.00 < break 60`)
+            ),
+            namesRemediation: s.ran.stderr.includes(BREAK_REMEDIATION_LINE),
+          }).toStrictEqual({ exitCode: 1, missingBreaches: [], namesRemediation: true })
         ),
       ),
     )
