@@ -3,6 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # comment-checker built from source by its own flake at release tag
+    # v0.3.6, so a release, not an unreleased commit, sets the version.
+    comment-checker = {
+      url = "github:systemfsoftware/comment-checker/v0.3.6";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Hashless pnpm store: each lockfile integrity is the fetch hash.
     # fetchPnpmDeps needs a second store-wide hash that Dependabot cannot update.
     # A package built from this workspace takes this overlay to get
@@ -32,7 +38,7 @@
     stryker-published.url = "github:systemfsoftware/stryker-js-effect/9e81669b84711a9635eaa97b17dd13efea9f0c8c";
   };
 
-  outputs = { self, nixpkgs, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -63,7 +69,7 @@
         let
           pkgs' = pkgs.extend importPnpmLock.overlays.default;
           dprint = pkgs.callPackage ./nix/dprint.nix { };
-          unwrapped = pkgs.callPackage ./nix/comment-checker.nix { };
+          unwrapped = comment-checker.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker;
           sandboxed = pkgs.callPackage ./nix/comment-checker-sandbox.nix {
             comment-checker = unwrapped;
           };
