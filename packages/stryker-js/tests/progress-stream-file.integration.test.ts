@@ -22,7 +22,8 @@ const DEFAULT_STREAM = 'reports/mutation-stream.jsonl'
 
 const JSON_REPORT = 'out/report.json'
 
-const CONFIG = `export default {
+const configOf = (streamFile: string) =>
+  `export default {
   testRunner: 'command',
   commandRunner: { command: 'true' },
   coverageAnalysis: 'off',
@@ -33,7 +34,7 @@ const CONFIG = `export default {
   incremental: true,
   ignorePatterns: [],
   incrementalFile: 'out/incremental.json',
-  progressStreamFile: '${CONFIGURED_STREAM}',
+  progressStreamFile: '${streamFile}',
   jsonReporter: { fileName: '${JSON_REPORT}' },
 }
 `
@@ -49,7 +50,9 @@ const requireBuiltBinary = Effect.gen(function*() {
   )
 }).pipe(Effect.orDie)
 
-const prepareProject = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
+const prepareProject = (
+  streamFile: string,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     yield* requireBuiltBinary
     const fs = yield* FileSystem.FileSystem
@@ -57,7 +60,7 @@ const prepareProject = (): Effect.Effect<string, never, FileSystem.FileSystem | 
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-stream-file-' }))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(root, 'package.json'), '{ "name": "stream-consumer", "type": "module" }\n')
-    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), CONFIG)
+    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), configOf(streamFile))
     yield* fs.writeFileString(path.join(root, 'src', 'math.ts'), SOURCE)
     return root
   }).pipe(Effect.orDie)
@@ -106,14 +109,14 @@ interface LastRun {
   readonly defaultStreamWritten: boolean
 }
 
-const runInOrder = (commands: ReadonlyArray<ReadonlyArray<string>>) =>
+const runInOrder = (streamFile: string, commands: ReadonlyArray<ReadonlyArray<string>>) =>
   Effect.scoped(
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const root = yield* prepareProject()
+      const root = yield* prepareProject(streamFile)
       const exitCodes = yield* Effect.forEach(commands, (args) => runStryker(root, args))
-      const stream = yield* readOptional(path.join(root, CONFIGURED_STREAM))
+      const stream = yield* readOptional(path.join(root, streamFile))
       const report = yield* readOptional(path.join(root, JSON_REPORT))
       const defaultStreamWritten = yield* fs.exists(path.join(root, DEFAULT_STREAM)).pipe(Effect.orDie)
       const run: LastRun = {
@@ -132,33 +135,38 @@ const runInOrder = (commands: ReadonlyArray<ReadonlyArray<string>>) =>
 Feature('A configured progress stream file stays out of the next run', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a real project on the host filesystem')
-  .body(({ scenario }) => {
-    scenario(
-      'An unchanged project whose config names its stream file re-runs no mutant the second time',
-      Gherkin.Do.pipe(
-        Given(
-          'a project with no ignore patterns whose config names progressStreamFile, run twice with nothing changed',
-        )('run', () => runInOrder([RUN, RUN])),
-        Then(
-          'the second run writes its stream at the configured path, reuses every reported mutant and writes no default stream',
-        )((s, expect) =>
-          expect({
-            exitCodes: s.run.exitCodes,
-            reuseReported: s.run.reuse !== undefined,
-            ran: s.run.reuse?.ran,
-            reused: s.run.reuse?.reused,
-            mutantsReported: s.run.reportedMutants > 0,
-            defaultStreamWritten: s.run.defaultStreamWritten,
-          }).toEqual({
-            exitCodes: [0, 0],
-            reuseReported: true,
-            ran: 0,
-            reused: s.run.reportedMutants,
-            mutantsReported: true,
-            defaultStreamWritten: false,
-          })
+  .body(({ scenario, scenarioOutline }) => {
+    scenarioOutline(
+      'An unchanged project whose config names its stream file as <spelling> re-runs no mutant the second time',
+      [
+        { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM },
+        { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}` },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            'a project with no ignore patterns whose config names progressStreamFile, run twice with nothing changed',
+          )('run', () => runInOrder(row.streamFile, [RUN, RUN])),
+          Then(
+            'the second run writes its stream at the configured path, reuses every reported mutant and writes no default stream',
+          )((s, expect) =>
+            expect({
+              exitCodes: s.run.exitCodes,
+              reuseReported: s.run.reuse !== undefined,
+              ran: s.run.reuse?.ran,
+              reused: s.run.reuse?.reused,
+              mutantsReported: s.run.reportedMutants > 0,
+              defaultStreamWritten: s.run.defaultStreamWritten,
+            }).toEqual({
+              exitCodes: [0, 0],
+              reuseReported: true,
+              ran: 0,
+              reused: s.run.reportedMutants,
+              mutantsReported: true,
+              defaultStreamWritten: false,
+            })
+          ),
         ),
-      ),
     )
 
     scenario(
@@ -166,15 +174,17 @@ Feature('A configured progress stream file stays out of the next run', { timeout
       Gherkin.Do.pipe(
         Given(
           'a project with no ignore patterns whose config names progressStreamFile, run, then asked for help, then run again',
-        )('run', () => runInOrder([RUN, HELP, RUN])),
-        Then('the last run reuses every reported mutant')((s, expect) =>
+        )('run', () => runInOrder(CONFIGURED_STREAM, [RUN, HELP, RUN])),
+        Then('the help left a stream at the default path, and the last run reuses every reported mutant')((s, expect) =>
           expect({
             exitCodes: s.run.exitCodes,
+            defaultStreamWritten: s.run.defaultStreamWritten,
             ran: s.run.reuse?.ran,
             reused: s.run.reuse?.reused,
             mutantsReported: s.run.reportedMutants > 0,
           }).toEqual({
             exitCodes: [0, 0, 0],
+            defaultStreamWritten: true,
             ran: 0,
             reused: s.run.reportedMutants,
             mutantsReported: true,

@@ -108,10 +108,10 @@ const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): st
   )
 
 const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
-  Boolean.match(pathService.isAbsolute(rule), {
-    onTrue: () => insideProjectOnlyRuleOf(pathService.relative(pathService.resolve(basePath), rule), rule),
-    onFalse: () => rule,
-  })
+  insideProjectOnlyRuleOf(
+    pathService.relative(pathService.resolve(basePath), pathService.resolve(basePath, rule)),
+    rule,
+  )
 
 const ignoreRulesOf = (
   options: Options.StrykerOptions,

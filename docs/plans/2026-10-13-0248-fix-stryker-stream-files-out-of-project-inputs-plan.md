@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0107-fix-configured-progress-stream-file-plan.md
+supersedes: docs/plans/2026-10-13-0216-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,9 +14,9 @@ supersedes: docs/plans/2026-10-13-0107-fix-configured-progress-stream-file-plan.
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whichever `stryker` commands ran in it before. A `progressStreamFile` set in the config file is where `stryker run` writes its stream.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0107 plan. That plan was executed in commit `65953faa`; its review showed the outcome was not met, so this plan carries the corrected contract and the earlier file is removed in the same PR (REPO-D2).
+- **Supersedes:** the 0216 plan, which superseded the 0107 plan. 0107 was executed in `65953faa` and 0216 in `3cb10de5`; each review showed the outcome was not yet met, so this plan carries the corrected contract and the earlier files are removed in the same PR (REPO-D2).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from.
-- **Open blockers:** none. OQ1 and OQ2 go to the root and do not gate this unit.
+- **Open blockers:** none. OQ1 and OQ2 go to the root and OQ3 to PR #320; none gates this unit.
 
 ---
 
@@ -62,11 +62,13 @@ Cause in code:
 - R4. A config file that cannot be read or is invalid is reported exactly as today. The stream still opens, at the flag or default path.
 - R5. A stream file written at the default path by any `stryker` command never changes the next run's inputs.
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
+- R7. A configured or flagged output path is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`).
 
 ### Acceptance Examples
 
 - AE1. Covers R1, R3. A project whose config sets `progressStreamFile: 'out/stream.jsonl'`, `ignorePatterns: []` and a JSON report at `out/report.json` is run twice with `stryker run --json`. After the second run, `out/stream.jsonl` holds a `reuse` record with `ran: 0` and `reused` equal to the mutants in `out/report.json`, and `reports/mutation-stream.jsonl` does not exist.
-- AE2. Covers R5. The same project is run, then asked for `stryker --help --json`, then run again. The last run's `reuse` record in `out/stream.jsonl` has `ran: 0` and `reused` equal to the mutants in `out/report.json`.
+- AE2. Covers R5. The same project is run, then asked for `stryker --help --json`, then run again. `reports/mutation-stream.jsonl` exists after the help, and the last run's `reuse` record in `out/stream.jsonl` has `ran: 0` and `reused` equal to the mutants in `out/report.json`.
+- AE3. Covers R7. AE1 with `progressStreamFile: './out/stream.jsonl'` holds the same way.
 
 ### Scope Boundaries
 
@@ -89,7 +91,8 @@ Cause in code:
 ### Outstanding Questions
 
 - OQ1 (for the root, outside this PR). `writeFileAtomic` (`packages/stryker-js/src/atomic-write.cell.ts:20-24`) asks for a temp file next to the target. Effect's `makeTempFile` creates a temp directory `<dir>/<prefix><hex>/` and the file inside it (`@effect/platform-node-shared` `NodeFileSystem.ts:428-437`); the rename moves the file out and leaves the empty directory, three per run. Empty directories do not reach the digest (variant E), but they pile up. Should a separate unit remove them?
-- OQ2 (for the root, outside this PR). A non-`run` command given a non-default `--progressStreamFile` writes a stream the next plain `stryker run` does not exclude. Should non-`run` commands stop writing a stream file?
+- OQ2 (for the root, outside this PR). A non-`run` command given a non-default `--progressStreamFile` writes a stream the next plain `stryker run` does not exclude, and a stream left at a previously configured path stays an input after the config moves it. Should non-`run` commands stop writing a stream file?
+- OQ3 (for PR #320, after this lands). #320 rebuilds `strykerOutputFilesOf` from option names for its help text and says "Other files under `reports/` are not ignored". After merging `main` it must keep `DEFAULT_PROGRESS_STREAM_FILE` in the list and name it in the help.
 
 ### Sources
 
@@ -103,7 +106,8 @@ Cause in code:
 
 ### Key Technical Decisions
 
-- KTD1. `stryker-outputs.ts` owns `DEFAULT_PROGRESS_STREAM_FILE`. `RunEventDrain` imports it for its initial path and its `DefaultProgressStreamFile`. `strykerOutputFilesOf` returns it next to `options.progressStreamFile`.
+- KTD1. `stryker-outputs.ts` owns `DEFAULT_PROGRESS_STREAM_FILE`. `RunEventDrain` imports it for its initial path and keeps its published `DefaultProgressStreamFile` static on it. `strykerOutputFilesOf` returns it next to `options.progressStreamFile`.
+- KTD4. `projectRelativeRuleOf` (`packages/stryker-js/src/read-project.cell.ts:110-114`) turns every Stryker-output entry into the project-relative path of `resolve(basePath, entry)`, the same normalization the drain and the reporters apply to the paths they write. Before, a relative entry reached the glob compiler verbatim, so `./out/stream.jsonl` or `out//stream.jsonl` never matched the crawled `out/stream.jsonl`. An entry outside the project keeps its old form, as absolute entries did.
 - KTD2. `readRunRequest` resolves the stream file with `streamFileNameOf`. For route tag `run` it maps `readConfig(...)`'s resolved options through `progressStreamFileName`, the existing non-empty-or-default helper; on any `ConfigReadError` it applies the same helper to the command-line options. Other routes use the command-line options, as today.
 - KTD3. The test drives the built `stryker` binary. `test-layer-selection` refuses process spawning in an integration test; the root's rule for this unit requires the built CLI, and both defects live only in the CLI's request read, which `Engine.strykerCell` and `./promises` `run()` never call. Siblings do the same (`tests/rerun-by-id.integration.test.ts`, `tests/plan-stream-location.integration.test.ts`).
 
@@ -111,7 +115,8 @@ Cause in code:
 
 - "The config file is read once per `stryker run`." It is now read twice, as `--survivors` and `--mutant` already do. The module is evaluated once; a config whose default export is a function is called twice, and a shadowed legacy config warns twice.
 - "The stream header is written before any config work." The first `stdout` line now waits for the config import. A config import that hangs now hangs before the header instead of after it.
-- "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` would no longer be an input.
+- "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` is no longer an input and is not copied into the sandbox.
+- "An output entry is matched as written." Output entries are now normalized before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
 
 ### Implementation Units
 
@@ -131,6 +136,11 @@ Cause in code:
 
 - **Goal:** R5.
 - **Files:** `packages/stryker-js/src/stryker-outputs.ts`, `packages/stryker-js/src/run-event-stream.service.ts`.
+
+#### U5. Match each output however its path is spelled
+
+- **Goal:** R7, AE3.
+- **Files:** `packages/stryker-js/src/read-project.cell.ts`.
 
 #### U4. Docs and changeset
 
@@ -158,22 +168,34 @@ Cause in code:
 | Atomic-write temp directories                                                             | learnings                | OQ1                                                                                                                                                                                                                  |
 | 18.0.0 changelog: relative stream path resolved against the working directory             | learnings                | Preserved; no action                                                                                                                                                                                                 |
 
+Round 2, report-only review of `3cb10de5`:
+
+| Finding                                                                                                  | Lens                     | Disposition                                                                      |
+| -------------------------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
+| A `./`-prefixed or doubled-slash `progressStreamFile` is written but never matched by the exclusion rule | correctness, adversarial | Fixed: U5, proven by AE3; reproduced first on the built binary (reused 0, ran 2) |
+| Scenario 2 never asserts the help left a default-path stream                                             | correctness, adversarial | Fixed: AE2 asserts it                                                            |
+| `RunEventDrain.DefaultProgressStreamFile` removed from a published class                                 | correctness              | Fixed: kept, on the shared constant                                              |
+| #320 rebuilds the list without the default path and its help says `reports/` is not ignored              | adversarial              | OQ3: #320 adapts after this lands, per the root's ordering                       |
+| A project's own file at `reports/mutation-stream.jsonl` is no longer an input or copied to the sandbox   | adversarial, correctness | Accepted: listed in Assumptions                                                  |
+| A stream left at a previously configured path stays an input                                             | correctness              | OQ2                                                                              |
+| Relative rules use `/` and would not match on Windows                                                    | correctness              | Pre-existing for every output; CI is Linux-only; no action                       |
+
 ### Verification Contract
 
-| Check          | Command                                                                                                                                       | Pass                                                   |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Failing before | U1 against `main`'s built binary; scenario 2 against `65953faa`'s                                                                             | fails as U1 states                                     |
-| Behaviour      | `vitest run tests/progress-stream-file.integration.test.ts` after building `dist`                                                             | passes                                                 |
-| Neighbours     | `vitest run tests/plan-stream-location.integration.test.ts tests/rerun-by-id.integration.test.ts tests/incremental-reuse.integration.test.ts` | pass                                                   |
-| Empty path     | a throwaway CLI run with `progressStreamFile: ''`                                                                                             | stream at the default path, records on `stdout`        |
-| Types and lint | `tsc -b`, `pnpm run lint:tsgo`, oxlint on the touched files, `dprint check`                                                                   | clean                                                  |
-| Changeset      | the `author-changesets` validator                                                                                                             | OK                                                     |
-| Review         | `ce-code-review`, report-only                                                                                                                 | every finding has a disposition                        |
-| CI             | `xd://github run_watch` on the PR head                                                                                                        | every required check green; Bench reported, not chased |
+| Check          | Command                                                                                                                                                                                | Pass                                                   |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Failing before | U1 against `main`'s built binary; scenario 2 against `65953faa`'s                                                                                                                      | fails as U1 states                                     |
+| Behaviour      | `vitest run tests/progress-stream-file.integration.test.ts` after building `dist`                                                                                                      | passes                                                 |
+| Neighbours     | `vitest run tests/plan-stream-location.integration.test.ts tests/rerun-by-id.integration.test.ts tests/incremental-reuse.integration.test.ts tests/clean-temp-dir.integration.test.ts` | pass                                                   |
+| Empty path     | a throwaway CLI run with `progressStreamFile: ''`                                                                                                                                      | stream at the default path, records on `stdout`        |
+| Types and lint | `tsc -b`, `pnpm run lint:tsgo`, oxlint on the touched files, `dprint check`                                                                                                            | clean                                                  |
+| Changeset      | the `author-changesets` validator                                                                                                                                                      | OK                                                     |
+| Review         | `ce-code-review`, report-only                                                                                                                                                          | every finding has a disposition                        |
+| CI             | `xd://github run_watch` on the PR head                                                                                                                                                 | every required check green; Bench reported, not chased |
 
 No mutation run, local or dispatched: mutation evidence for this change comes from the next nightly on `main`.
 
 ## Definition of Done
 
-- U1-U4 have landed in one PR off `main`, and every Verification Contract row holds on its head.
-- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, OQ1 and OQ2.
+- U1-U5 have landed in one PR off `main`, and every Verification Contract row holds on its head.
+- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, and OQ1-OQ3.

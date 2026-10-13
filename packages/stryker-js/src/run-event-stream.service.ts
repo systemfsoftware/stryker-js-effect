@@ -122,6 +122,8 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     }),
   )
 
+  static readonly DefaultProgressStreamFile = DEFAULT_PROGRESS_STREAM_FILE
+
   static readonly fileLayer: Layer.Layer<
     RunEventDrain,
     never,
