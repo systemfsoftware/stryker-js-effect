@@ -10,8 +10,7 @@
     "typecheck-build-mode": {},
     "npm-provenance": {
       "repositoryUrl": "`\"git+https://github.com/systemfsoftware/stryker-js-effect.git\"`"
-    },
-    "cell-architecture": {}
+    }
   },
   "ignore": ["repos/**", "**/testResources/**", "**/__fixtures__/**"]
 }
