@@ -16,8 +16,6 @@ import type { BadArgument, PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
-  type BenchEnterpriseCorpus,
-  type BenchRepoEntry,
   type BenchSide,
   FixtureManifest,
   installClosure,
@@ -31,6 +29,7 @@ import {
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
+import type { BenchEnterpriseCorpus, BenchRepoEntry } from './bench-corpus.schema.js'
 import type { BenchTarget } from './bench-target.schema.js'
 import {
   BenchSetupFailed,

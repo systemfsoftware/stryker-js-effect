@@ -3,8 +3,6 @@ import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import {
   abortedOutcomeOf,
   type BenchAbortCode,
-  type BenchCorpus,
-  BenchCorpusJson,
   type BenchCorpusName,
   BenchReport,
   BenchReportJson,
@@ -32,6 +30,7 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { type BenchCorpus, BenchCorpusJson } from './bench-corpus.schema.js'
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { BenchTarget } from './bench-target.schema.js'
 import type { LegClock } from './leg-clock.schema.js'
