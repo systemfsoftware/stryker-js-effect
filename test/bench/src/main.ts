@@ -155,7 +155,7 @@ const reportOf = (
   env: Pick<BenchEnv, 'baseSha' | 'headSha' | 'ref'>,
   leg: LegTime,
   outcome: BenchReportOutcome,
-  runs: ReadonlyArray<BenchRun>,
+  runs: ReadonlyArray<BenchReportRun>,
   setupSteps: ReadonlyArray<SetupStep>,
 ): BenchReport =>
   BenchReport.make({
@@ -165,7 +165,7 @@ const reportOf = (
     ref: env.ref,
     leg,
     outcome,
-    runs: reportRunsOf(runs),
+    runs: [...runs],
     setupSteps: [...setupSteps],
   })
 
@@ -244,7 +244,7 @@ const bench = (env: BenchEnv) =>
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
     const allSetupSteps = [...setupSteps, ...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps]
-    return reportOf(env, yield* legOf(env), result.outcome, result.runs, allSetupSteps)
+    return reportOf(env, yield* legOf(env), result.outcome, reportRunsOf(result.runs), allSetupSteps)
   }).pipe(
     Effect.catchTag('BenchOrchestrationFailed', (failure) => abortedReport(env, failure.code, failure.reason)),
     Effect.catchDefect((defect) => abortedReport(env, 'defect', Cause.pretty(Cause.die(defect)))),
@@ -261,19 +261,16 @@ const writeReport = (env: BenchEnv, report: BenchReport) =>
   }).pipe(
     Effect.catch((failure) =>
       Effect.succeed(
-        BenchReport.make({
-          schemaVersion: report.schemaVersion,
-          baseSha: report.baseSha,
-          headSha: report.headSha,
-          ref: report.ref,
-          leg: report.leg,
-          outcome: abortedOutcomeOf(
+        reportOf(
+          report,
+          report.leg,
+          abortedOutcomeOf(
             'report-unwritable',
             `the bench report could not be written or read back: ${failure.message}`,
           ),
-          runs: report.runs,
-          setupSteps: report.setupSteps,
-        }),
+          report.runs,
+          report.setupSteps,
+        ),
       )
     ),
   )
