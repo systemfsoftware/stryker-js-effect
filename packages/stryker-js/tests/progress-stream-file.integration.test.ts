@@ -66,6 +66,10 @@ const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `te
 
 const LONG_STREAM_RECORD = `${JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', note: 'x'.repeat(5000) })}\n`
 
+const OVERSIZED_STREAM_RECORD = `${
+  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', note: 'x'.repeat(1_100_000) })
+}\n`
+
 const caseSwapped = (name: string) =>
   name.split('').map((char) => char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()).join('')
 
@@ -404,44 +408,81 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         ),
     )
 
-    scenario(
-      'A config naming an existing project file leaves that file intact, and the run still streams on stdout',
-      Gherkin.Do.pipe(
-        Given('a project whose config names one of its own files as the stream file')(
-          'project',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* prepareProject(configNaming(PROJECT_NOTES))
-              yield* fs.writeFileString(path.join(root, PROJECT_NOTES), NOTES).pipe(Effect.orDie)
-              return root
-            }),
+    scenarioOutline(
+      'A config naming an existing project file <starting> leaves that file intact, and the run still streams on stdout',
+      [
+        { starting: 'with text', notes: NOTES },
+        { starting: 'with a blank line', notes: `\n${NOTES}` },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a project whose config names one of its own files as the stream file')(
+            'project',
+            () =>
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const path = yield* Path.Path
+                const root = yield* prepareProject(configNaming(PROJECT_NOTES))
+                yield* fs.writeFileString(path.join(root, PROJECT_NOTES), row.notes).pipe(Effect.orDie)
+                return root
+              }),
+          ),
+          When('the project is run')('run', (s) => invoke(s.project, RUN)),
+          When('the named file is read')(
+            'notes',
+            (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, PROJECT_NOTES))),
+          ),
+          Then('the file keeps its content, stdout carries the verdict, and stderr names the file failure once')(
+            (s, expect) => {
+              const events = eventsOf(s.run.stdout)
+              return expect({
+                exitCode: s.run.exitCode,
+                notes: Option.getOrUndefined(s.notes),
+                endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
+                fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+              }).toEqual({ exitCode: 0, notes: row.notes, endsWithVerdict: true, fileFailuresLogged: 1 })
+            },
+          ),
         ),
-        When('the project is run')('run', (s) => invoke(s.project, RUN)),
-        When('the named file is read')(
-          'notes',
-          (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, PROJECT_NOTES))),
-        ),
-        Then('the file keeps its content, stdout carries the verdict, and stderr names the file failure once')(
-          (s, expect) => {
-            const events = eventsOf(s.run.stdout)
-            return expect({
-              exitCode: s.run.exitCode,
-              notes: Option.getOrUndefined(s.notes),
-              endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
-              fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
-            }).toEqual({ exitCode: 0, notes: NOTES, endsWithVerdict: true, fileFailuresLogged: 1 })
-          },
-        ),
-      ),
     )
 
     scenarioOutline(
-      'A project file whose path differs from the default stream path only by case stays a project input, with <beside> beside the project',
+      'A project file whose path differs from the default stream path only by case stays a project input, with <staged>',
       [
-        { beside: 'nothing', siblingCased: false },
-        { beside: "a directory named the project's case-swapped name", siblingCased: true },
+        { staged: 'nothing else', stage: () => Effect.void },
+        {
+          staged: "a directory beside the project named the project's case-swapped name",
+          stage: (root: string) =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const sibling = path.join(path.dirname(root), caseSwapped(path.basename(root)))
+              yield* Effect.acquireRelease(
+                fs.makeDirectory(sibling).pipe(Effect.orDie),
+                () => fs.remove(sibling, { recursive: true }).pipe(Effect.ignore),
+              )
+            }),
+        },
+        {
+          staged: 'a second directory in the project named rEPORTS',
+          stage: (root: string) =>
+            Effect.flatMap(
+              Path.Path,
+              (path) =>
+                Effect.flatMap(FileSystem.FileSystem, (fs) =>
+                  fs.makeDirectory(path.join(root, caseSwapped('Reports'))).pipe(Effect.orDie)),
+            ),
+        },
+        {
+          staged: "a dangling .git link, which sorts first and cannot be stat'ed",
+          stage: (root: string) =>
+            Effect.flatMap(
+              Path.Path,
+              (path) =>
+                Effect.flatMap(FileSystem.FileSystem, (fs) =>
+                  fs.symlink(path.join(root, 'missing-target'), path.join(root, '.git')).pipe(Effect.orDie)),
+            ),
+        },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -454,14 +495,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
                 const root = yield* prepareProject(CASED_DEFAULT_CONFIG)
                 yield* fs.makeDirectory(path.join(root, 'Reports'), { recursive: true }).pipe(Effect.orDie)
                 yield* fs.writeFileString(path.join(root, CASED_DEFAULT_STREAM), '{}\n').pipe(Effect.orDie)
-                const sibling = path.join(path.dirname(root), caseSwapped(path.basename(root)))
-                yield* Effect.when(
-                  Effect.acquireRelease(
-                    fs.makeDirectory(sibling).pipe(Effect.orDie),
-                    () => fs.remove(sibling, { recursive: true }).pipe(Effect.ignore),
-                  ),
-                  Effect.succeed(row.siblingCased),
-                )
+                yield* row.stage(root)
                 return root
               }),
           ),
@@ -473,6 +507,40 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             }).toEqual({ exitCode: 0, mutantsTested: true })
           ),
         ),
+    )
+
+    scenario(
+      'A stream file whose first record is longer than 1 MiB is kept, and the run still streams on stdout',
+      Gherkin.Do.pipe(
+        Given('a project whose configured stream file starts with a stream record longer than 1 MiB')(
+          'project',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareProject(configNaming(CONFIGURED_STREAM))
+              yield* fs.makeDirectory(path.join(root, path.dirname(CONFIGURED_STREAM)), { recursive: true }).pipe(
+                Effect.orDie,
+              )
+              yield* fs.writeFileString(path.join(root, CONFIGURED_STREAM), OVERSIZED_STREAM_RECORD).pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        When('the stream file is read')(
+          'stream',
+          (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
+        ),
+        Then('the file keeps its content, stdout carries the verdict, and stderr names the file failure once')(
+          (s, expect) =>
+            expect({
+              exitCode: s.run.exitCode,
+              kept: Option.contains(s.stream, OVERSIZED_STREAM_RECORD),
+              endsWithVerdict: S.is(RunEvent.VerdictReached)(eventsOf(s.run.stdout).at(-1)),
+              fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+            }).toEqual({ exitCode: 0, kept: true, endsWithVerdict: true, fileFailuresLogged: 1 }),
+        ),
+      ),
     )
 
     scenario(

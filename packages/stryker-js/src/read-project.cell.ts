@@ -8,13 +8,14 @@ import * as Equivalence from 'effect/Equivalence'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import { badArgument } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 
+import { admitCaseProbe, CaseProbeCommand } from './admit-case-probe.workflow.js'
+import { admitCaseSensitivity, CaseSensitivityCommand, CaseToldApart } from './admit-case-sensitivity.workflow.js'
 import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './admit-discovered-entry.workflow.js'
 import {
   admitIncrementalReport,
@@ -131,35 +132,35 @@ interface EntryRules {
   readonly outputCaseSensitive: boolean
 }
 
-const swapCase = (name: string) =>
-  name.split('').map((char) =>
-    Boolean.match(char === char.toLowerCase(), {
-      onTrue: () => char.toUpperCase(),
-      onFalse: () => char.toLowerCase(),
-    })
-  ).join('')
+const identityOf = (info: FileSystem.File.Info) => ({ dev: info.dev, ino: info.ino })
 
-const swapsCaseCleanly = (name: string) => Boolean.every([swapCase(name) !== name, swapCase(swapCase(name)) === name])
-
-const distinctFiles = (one: FileSystem.File.Info, other: FileSystem.File.Info) =>
-  Boolean.some([
-    one.dev !== other.dev,
-    Option.getOrElse(Option.zipWith(one.ino, other.ino, (a, b) => a !== b), () => false),
+const probeOf = (fs: FileSystem.FileSystem, pathService: Path.Path, root: string) =>
+(
+  pair: { readonly name: string; readonly swapped: string },
+) =>
+  Effect.all([
+    fs.stat(pathService.join(root, pair.name)),
+    fs.stat(pathService.join(root, pair.swapped)).pipe(Effect.option),
   ])
-
-const caseTellsApart = (fs: FileSystem.FileSystem, file: string, swapped: string) =>
-  Effect.all([fs.stat(file), fs.stat(swapped).pipe(Effect.option)]).pipe(
-    Effect.map(([info, other]) => Option.match(other, { onNone: () => true, onSome: (o) => distinctFiles(info, o) })),
-  )
+    .pipe(
+      Effect.map(([own, swapped]) => ({ own: identityOf(own), swapped: Option.map(swapped, identityOf) })),
+      Effect.option,
+    )
 
 const caseSensitiveAt = (fs: FileSystem.FileSystem, pathService: Path.Path, basePath: string) => {
   const root = pathService.resolve(basePath)
   return fs.readDirectory(root).pipe(
-    Effect.map((names) => Arr.findFirst(Arr.sort(names, Order.String), swapsCaseCleanly)),
-    Effect.flatMap(Option.match({
-      onNone: () => Effect.succeed(false),
-      onSome: (name) => caseTellsApart(fs, pathService.join(root, name), pathService.join(root, swapCase(name))),
-    })),
+    Effect.flatMap((names) => Effect.fromResult(admitCaseProbe(CaseProbeCommand.make({ names })))),
+    Effect.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag('NoCaseToProbe', () => Effect.succeed([])),
+        Match.tag('CaseProbePairs', ({ pairs }) =>
+          Effect.map(Effect.forEach(pairs, probeOf(fs, pathService, root)), Arr.getSomes)),
+        Match.exhaustive,
+      )
+    ),
+    Effect.flatMap((probes) => Effect.fromResult(admitCaseSensitivity(CaseSensitivityCommand.make({ probes })))),
+    Effect.map(S.is(CaseToldApart)),
     Effect.orElseSucceed(() => false),
   )
 }

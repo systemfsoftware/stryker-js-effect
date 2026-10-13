@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Boolean } from 'effect'
+import { Array as Arr, Boolean, String as Str } from 'effect'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -9,7 +9,7 @@ const StreamOverwriteTypeId = Symbol.for('@systemfsoftware/stryker-js/StreamOver
 type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
 
 const startsWithRunEvent = (text: string) =>
-  Option.isSome(S.decodeOption(StreamFileFirstLine)(text.split('\n', 1).join('').trim()))
+  Option.isSome(S.decodeOption(StreamFileFirstLine)(Arr.headNonEmpty(Str.split(text, '\n')).trim()))
 
 export class StreamOverwriteCommand extends S.TaggedClass<StreamOverwriteCommand>()('StreamOverwriteCommand', {
   file: S.String,

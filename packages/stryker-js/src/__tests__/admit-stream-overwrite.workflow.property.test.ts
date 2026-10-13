@@ -96,6 +96,16 @@ describe('admitStreamOverwrite', () => {
   )
 
   it.prop(
+    '∀c_RegularFileStartingWithABlankLine_≡Refused',
+    { of: [commandArb], subject: admitStreamOverwrite },
+    (subject, [command]) =>
+      refused(
+        subject,
+        StreamOverwriteCommand.make({ file: command.file, regularFile: true, leadingText: `\n${command.leadingText}` }),
+      ),
+  )
+
+  it.prop(
     '∀c_NoRegularFile_≡AllowedWhateverItsText',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>

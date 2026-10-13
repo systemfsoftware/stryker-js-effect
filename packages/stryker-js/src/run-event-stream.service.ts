@@ -1,4 +1,5 @@
 import * as Boolean from 'effect/Boolean'
+import * as ByteSize from 'effect/ByteSize'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
@@ -164,13 +165,13 @@ const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (
         ),
     }))
 
-const firstLineOf = (fs: FileSystem.FileSystem, fileName: string) =>
-  fs.stream(fileName).pipe(
+const LEADING_TEXT_LIMIT = ByteSize.mebibytes(1)
+
+const leadingTextOf = (fs: FileSystem.FileSystem, fileName: string) =>
+  fs.stream(fileName, { bytesToRead: LEADING_TEXT_LIMIT }).pipe(
     Stream.decodeText,
-    Stream.splitLines,
-    Stream.take(1),
-    Stream.runHead,
-    Effect.map(Option.getOrElse(() => '')),
+    Stream.takeUntil((text) => text.includes('\n')),
+    Stream.runFold(() => '', (leading, text) => `${leading}${text}`),
   )
 
 const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
@@ -179,7 +180,7 @@ const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
     Effect.map(Option.exists((info) => info.type === 'File')),
     Effect.flatMap((regularFile) =>
       Boolean.match(regularFile, {
-        onTrue: () => firstLineOf(fs, fileName),
+        onTrue: () => leadingTextOf(fs, fileName),
         onFalse: () => Effect.succeed(''),
       }).pipe(
         Effect.map((leadingText) => StreamOverwriteCommand.make({ file: fileName, regularFile, leadingText })),
