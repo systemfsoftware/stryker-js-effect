@@ -11,6 +11,7 @@ const segmentsArb = Arbitrary.array(Arbitrary.schema(S.Literals(['a', 'b', 'benc
   maxLength: 4,
 })
 
+const tailArb = Arbitrary.array(Arbitrary.schema(S.Literals(['a', 'b', 'pkg', 'src'])), { maxLength: 3 })
 const entriesArb = Arbitrary.array(Arbitrary.schema(S.Literals(['bench-a', 'bench-b', 'bench-runs', 'bench-work'])), {
   maxLength: 4,
 })
@@ -22,7 +23,7 @@ const relative = (segments: ReadonlyArray<string>): string => segments.length ==
 describe('planRunPath', () => {
   it.prop(
     '∀rpi_TwoSidesWithTheSameLayoutUnderDifferentHomes_≡IdenticalRunPathCwdAndCli',
-    { of: [segmentsArb, segmentsArb, segmentsArb, segmentsArb, segmentsArb, entriesArb], subject: planRunPath },
+    { of: [segmentsArb, segmentsArb, segmentsArb, tailArb, tailArb, entriesArb], subject: planRunPath },
     (subject, [temp, homeA, homeB, cwdTail, cliTail, entries]) => {
       const runnerTemp = absolute(temp)
       const planOf = (side: 'A' | 'B', home: ReadonlyArray<string>) => {

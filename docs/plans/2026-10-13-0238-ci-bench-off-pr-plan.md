@@ -6,7 +6,7 @@ topic: bench-off-pr
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-12-2154-ci-bench-off-pr-plan.md
+supersedes: docs/plans/2026-10-13-0223-ci-bench-off-pr-plan.md
 ---
 
 # Bench Off The PR Path - Plan
@@ -25,7 +25,7 @@ supersedes: docs/plans/2026-10-12-2154-ci-bench-off-pr-plan.md
     - `bench-report.schema.ts`, `bench-summary.schema.ts` and `render-bench-report.workflow.ts` carry additions that a pre-existing declaration in the same file consumes: `BenchReport.leg`, `RenderedFields`, `NEXT_ACTION`, `BenchSummary.regression`, and `renderBenchReport`.
     - `bench-run.schema.ts` and `read-bench-run.workflow.ts` delete the `timeout` failure code and `RunExit`.
     - `summarize-bench.workflow.ts` adds the 10 ms floor, which rescaled the pre-existing `∀abk` law onto a 10 ms grid.
-    - The four law files follow their modules.
+    - Four law files: those of `read-bench-run`, `render-bench-report` and `summarize-bench` follow their modules. `read-bench-run`'s laws and `covering-test-files`' laws (whose module is unchanged) also hold the laws re-homed from the deleted `bench-decisions.integration.test.ts`. A law stays beside the module it tests, and root's 2026-10-12 amendment requires those behaviours not be lost. Moving them to `test/bench` would test another package's internals.
 
     `mod.ts` is unchanged from main.
   - Commit `0db0ffa8` on this branch is titled `test(e2e-core)`. Rewriting it needs a force push, which the execution profile never uses. Main squash-merges under the PR title `ci(bench)!`, so that subject never reaches main.
@@ -188,7 +188,7 @@ Not caches: `workload-digest.service.ts` (proves both sides ran one workload; sk
 - U1. **Workflow trigger, sides and caps.** Files: `.github/workflows/bench.yml`. Push-main + dispatch trigger, `bench-${{ github.sha }}` concurrency without cancel, every `timeout-minutes: 60`, `JOB_STARTED_AT` first step, deadline step deleted, side A = first parent and side B = `github.sha` as worktrees, harness installed and timed in the checkout, `BENCH_TURBO_CACHE_DIR` and `BENCH_REF` passed, uploads on `always()`. Covers R1-R5, R8, R12. Verification: AE1 by reading the head's `bench.yml`; AE7 by dispatch.
 - U2. **Report schema and deadline removal.** Files: `test/e2e-core/src/bench-report.schema.ts`, `bench-run.schema.ts` and `read-bench-run.workflow.ts`; in `test/bench/src`, `measure-leg.workflow.ts` and `leg-clock.schema.ts` (both new), `main.ts` and `run-bench.service.ts`; plus the matching `__tests__` laws. Remove the R6 shapes; move the schema to `2.0`; put `LegTime` in the report. Covers R6-R8. Tests: the `measure-leg` law (elapsed time versus negative clock skew -> `LegClockBehind`, which the shell maps to `LegNotMeasured`); the `read-bench-run` laws lose their `timed-out` cases.
 - U3. **Regression block.** Files: `bench-summary.schema.ts`, `summarize-bench.workflow.ts`, `render-bench-report.workflow.ts` and their laws. Covers R9, R10, KD5. Tests: `total`-decides, phase-only regression is notice, 10 ms floor (AE3), main vs non-main next action, wall time line independent of exit (AE4).
-- U4. **Fixed run path.** Files: `test/bench/src/run-path.schema.ts`, `plan-run-path.workflow.ts` and `settle-run-path.workflow.ts` (all new), `run-bench.service.ts`, `prepare-side.service.ts` (relative plugin URLs), `prepared-side.ts`; plus the `bench-report.schema.ts` abort codes in e2e-core. Covers R11 and R12. Tests: `plan-run-path` and `settle-run-path` laws in `test/bench/src/__tests__` (occupied, move failed, unrestored with and without a run failure).
+- U4. **Fixed run path.** Files: `test/bench/src/run-path.schema.ts`, `plan-run-path.workflow.ts` and `settle-run-path.workflow.ts` (all new), `run-bench.service.ts`, `prepare-side.service.ts` (relative plugin URLs), `prepared-side.ts`; plus the `bench-report.schema.ts` abort codes in e2e-core. A cwd or CLI outside its side's tree is a bench bug, so it aborts as `defect`, not `run-path-move-failed`. Covers R11 and R12. Tests: `plan-run-path` and `settle-run-path` laws in `test/bench/src/__tests__` (occupied, move failed, unrestored with and without a run failure; a cwd equal to the tree, as on the enterprise leg).
 - U6. **Bench test lane.** Files: in `test/bench`, `package.json` (a `test` script, `lint:tsgo` over `tsconfig.test.json`, devDependencies `@systemfsoftware/effect-cell-types`, `@systemfsoftware/effect-schema-law`, `@systemfsoftware/vitest`, `@systemfsoftware/vitest-config`, `fast-check` and `vitest`), `vitest.config.ts` (same shape as `test/checker-parity`, with `inSourceSchemaLaws()`), `tsconfig.test.json`, and `tsconfig.json`/`tsconfig.app.json` references; plus `pnpm-lock.yaml`. There is no `stryker.config.ts`: the mutation lane's projects are hard-coded in `mutation.yml:36` (Stream K), so an unenrolled config would never run.
 - U5. **Docs.** `test/bench/README.md`, `test/bench/package.json` description. Covers R13.
 
