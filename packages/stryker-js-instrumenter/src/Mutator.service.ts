@@ -1397,6 +1397,13 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  *
  * Naming each mutator here costs one line when a mutator is added and makes
  * that line a compile-checked import instead of a runtime effect.
+ *
+ * Every stock mutator is default-tier: the stock registry declares no opt-in
+ * entries, so `stockRegistry.optIn` is empty. Opt-in is a tier only a plugin
+ * catalog declares for its own entries; a stock name placed in a run's
+ * `mutator.optInMutations` is refused before instrumentation as a config
+ * failure (`NotOptInTier`), because naming a default-tier entry as opt-in
+ * would silently select nothing.
  */
 export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
@@ -1478,9 +1485,12 @@ export interface MutatorSelection {
  * of the defaults and removes none. Selection walks the registry's declared
  * order, not the order the run listed its names in, so a mutant's identity
  * never depends on how a config happened to spell the list; a name listed
- * twice selects its entry once. An unknown name selects nothing here —
- * `instrument` refuses it before any file is parsed, because a typo that
- * silently enables nothing removes mutants and raises the score.
+ * twice selects its entry once. A name the loaded catalogs do not declare
+ * opt-in selects nothing here; the refusal lives in `decodeMutatorSelection`
+ * (packages/stryker-js/src/decode-mutator-selection.workflow.ts), which runs
+ * before instrumentation and fails the run for an unknown or default-tier
+ * name, because a typo that silently enables nothing removes mutants and
+ * raises the score.
  *
  * Pure: a registry and a run's names in, entries and names out.
  */
