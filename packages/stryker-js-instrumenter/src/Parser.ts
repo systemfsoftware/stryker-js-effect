@@ -17,7 +17,6 @@ import {
 import { lineStartsOf, positionAt } from './Location.js'
 import type { LineStarts } from './Location.schema.js'
 import { ParseFailed } from './Parser.schema.js'
-export { ParseFailed }
 
 export interface ParserOptions {}
 
