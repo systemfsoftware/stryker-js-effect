@@ -6,9 +6,12 @@ topic: dissolve-e2e-core
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan
 execution: code
+supersedes: docs/plans/2026-10-13-0218-refactor-dissolve-e2e-core-plan.md
 ---
 
 # Dissolve test/e2e-core - Plan
+
+Supersedes plan 0218, whose PR A unit had already started. The review of PR A (run `20261013-084434-c89dc2ab`) changed three things. D4: the lockfile test now reads the corpus from `mutation.yml`. A1: the unit carries a `CONST-W3` declaration for its workflow edits. PR A: the budget-baseline cost is stated. Everything else is unchanged.
 
 ## Goal Capsule
 
@@ -76,7 +79,7 @@ Review status: **accepted by the root** (plan review after the 04:08 refresh). T
 - D1. **The bench imports the shared install modules from the e2e harness.** `catalog-resolution.ts` and `install-closure.{schema,workflow}.ts` are the only modules both lanes import (P6). They move to `test/e2e/src/Harness/`, and `@systemfsoftware/stryker-e2e` gains a source-only `exports` map for them, which `test/bench` imports. Rejected: a third package (the grab-bag again); a copy in each lane (two sources of the install rules); the bench owning them (the bake is the e2e harness's job; the bench only reuses the install plan).
 - D2. **The bench corpus entry `test/e2e-core` (`test/bench/corpus.json:14`) is re-pointed to `test/bench`.** The new entry mutates `src/summarize-bench.workflow.ts` and runs its property test, the same workload shape as today (one workflow under its laws). The first bench run after D reports that comparison as `workload changed`, not a verdict, because its subject changes. Timing (review correction 4): D2 lands before the speed baseline that follows #316 freezes the corpus, or PR D records it as a reviewed corpus change. Rejected: re-pointing to `test/e2e`, whose vitest config would put container journeys in the bench's path.
 - D3. **E2E-1 is reworded, not dropped.** Today `test/e2e` MUST NOT declare a `test` script (`test/e2e/AGENTS.md:19`), and the rule's gate is `test/e2e-core/tests/status-closure.integration.test.ts`. After the cut, `test/e2e`'s `test` runs only the in-process suites (`src/__tests__`, `in-process/`) under their own vitest config; container journeys stay under `test:e2e`. The purpose holds: no container journey in `pnpm test`, `check:ci` or the macOS matrix. Whether a repo-checks guard also refuses a `test` script in `test/e2e` is [unverified] (a text search of `nix/` and `scripts/` on `main` found none, which does not rule out a check phrased differently); The root's ruling: PR D checks the guards first and asks the root before touching any such guard (GATE1).
-- D4. **`MUTATED_PROJECTS` drops `test/e2e-core` in PR A, in the same commit as `mutation.yml:36`** (correction 1).
+- D4. **The lockfile test stops keeping its own copy of the corpus.** In PR A, `lockfile-closure-digest.integration.test.ts` reads the project list from `mutation.yml`'s `env.PROJECTS` instead of the hard-coded `MUTATED_PROJECTS` (correction 1), so dropping `test/e2e-core` from `:36` drops it from the scenarios too, and a later edit to the corpus cannot leave the "every mutated project" scenarios checking a different list (review finding of run `20261013-084434-c89dc2ab`).
 - D5. **The run-event stream decoder becomes a contract codec, not a workflow.** `RunEventStream` in `stryker-js-cli-contract` decodes a whole stdout text to `ReadonlyArray<RunEvent>`: blank lines skipped, the first undecodable line refused with its 1-based number. It encodes as one `RunEventWireLine` per event. A codec keeps the published package off `@systemfsoftware/effect-cell-types`: its dependencies are `@systemfsoftware/stryker-js-plugin-interface` and `effect` only (P11). Rejected: moving `decodeStream` as a `Workflow.make`, which adds that dependency to a published contract.
 
 - D6. **The three fixture schemas become harness files, not moved `*.schema.ts`.** `tests/__fixtures__/npm-closure.schema.ts`, `placement-failure.schema.ts` and `placement-slice.schema.ts` exist today. A `git mv` would add three `*.schema.ts` under a test directory, which is `tests-own-no-schemas`' trigger (`:5`). PR D folds each into the fixture file that uses it, as a `*.fixture.ts` that does not export them as domain types (rule 3, `:17`), and the suites keep their names and verdicts. Rejected: a byte-for-byte move (re-adds the rule's trigger in this stream's own diff); promoting them to production schemas (they model harness inputs, not product concepts). If the root rules the move must stay byte-for-byte, D6 becomes a follow-up unit after PR D.
@@ -187,12 +190,14 @@ One stack on `main` (OP13b), layered A, C, B, D: B, C and D each edit `test/e2e-
 
 ### PR A: Mutation grades the product only
 
-- A1. Drop `test/e2e-core` from `mutation.yml:36`, `:43`, `:64` and `:118`; from `kill-matrix.yml:9`, `:15` and `:82`; and from `MUTATED_PROJECTS` at `lockfile-closure-digest.integration.test.ts:29-34`, in one commit (corrections 1 and 4).
+- A1. Drop `test/e2e-core` from `mutation.yml:36`, `:43`, `:64` and `:118`, and from `kill-matrix.yml:9`, `:15` and `:82`; the lockfile test reads `mutation.yml`'s `PROJECTS` in place of `MUTATED_PROJECTS` (D4). One commit (corrections 1 and 4).
+- `CONST-W3` declaration: `AGENTS.md:7` marks `.github/workflows/` read-only, and `CONST-E9` treats CI checks as a judgment surface. PR A edits two workflow files anyway, because root assigned it this change by accepting this plan (D4, PR A). The edit only removes a project from the corpus that is being deleted. No threshold, baseline, or check is changed. The commit and the PR body repeat this declaration.
 - Evidence (pure configuration, so no new test, per ce-work's no-test exception; the replacement verification is named):
-  - the live-lockfile scenario (`lockfile-closure-digest.integration.test.ts:510-520`) and the committed-fixture lockfile scenarios pass with three projects;
+  - the live-lockfile scenario and the committed-fixture lockfile scenarios pass with the three projects that `mutation.yml` now lists;
   - CI runs no workflow lint (no `actionlint` or equivalent in `flake.nix`, `nix/`, `.github`, `scripts`, `package.json` or the hooks), so both edited workflows are parsed with the repo's own `yaml` package in a throwaway check: the three project lists are equal, and the two build cache keys (`mutation.yml:118`, `kill-matrix.yml:82`) stay byte-identical, so the kill matrix still restores the mutation lane's build;
   - `stryker plan` is not run locally: it instruments every project and opens checker pools (`plan-request.cell.ts:23-24,260`), which is too close to a local mutation run. The real-behavior proof is the first `main` Mutation run after merge: its `shard-plan` artifact names only the three product projects.
-- Cost, stated in the PR: `INCREMENTAL_REPORTS` is the cache path list, and a cache entry's version is a hash of that list, so the first `main` Mutation run after merge cannot restore the previous incremental reports and re-verifies every mutant once. Later runs reuse again.
+- Cost, stated in the PR: `INCREMENTAL_REPORTS` is the cache path list, and a cache entry's version is a hash of that list (`actions/toolkit` `cacheUtils.ts` `getCacheVersion`), so the first `main` Mutation run after merge cannot restore the previous incremental reports and re-verifies every mutant once. Later runs reuse again.
+- Budget, stated in the PR: `.stryker/budget-baseline.json` (561.078 s) was measured with four projects in the corpus, and it stays unchanged, because a baseline is a judgment surface (`CONST-E9`). With fewer projects the gate is looser by the removed project's share of the slowest shard, so the baseline's owner decides whether to re-measure it.
 - Not here: the package's own `mutation` script and `stryker.config.ts`, which go with the package in D.
 
 ### PR B: bench code into `test/bench`
