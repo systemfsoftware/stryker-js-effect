@@ -75,7 +75,7 @@ import {
   type HeldSubsumedPlan,
   type MutationTestPlan,
 } from './mutation-test-plan.cell.js'
-import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
+import { inPlannedOrder, settledBeforeTestsOf, toReportedMutant } from './mutation-test-plan.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
@@ -333,8 +333,7 @@ const announceMutationTestPlan = Effect.fnUntraced(function*(basis: TestBasis, p
   yield* Queue.offer(
     yield* RunEvents,
     RunEvent.PlanKnown.make({
-      total: plan.plansForReporter.length + plan.earlyResults.length + plan.heldSubsumed.length +
-        plan.heldGuards.length,
+      total: plan.plansForReporter.length + settledBeforeTestsOf(plan),
       shardPlan: null,
     }),
   )

@@ -28,7 +28,7 @@ import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { optionalField } from './incremental-reuse.js'
-import { sandboxFilesOf } from './mutation-test-plan.js'
+import { plannedTotalOf, sandboxFilesOf } from './mutation-test-plan.js'
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
   [...testResults].reduce((acc, test) => acc + test.timeSpentMs, 0)
@@ -321,14 +321,12 @@ export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPl
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
   const sortedPlans = sortedRunPlans(keptRunPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
-  const plannedTotal = sortedPlans.length + earlyResults.length + heldSubsumed.length + heldGuards.length +
-    input.rememberedCount
   return {
     runPlans: sortedPlans,
     earlyResults,
     heldSubsumed,
     heldGuards,
-    plannedTotal,
+    plannedTotal: plannedTotalOf({ plansForReporter, earlyResults, heldSubsumed, heldGuards }, input.rememberedCount),
     plansForReporter,
   } satisfies MutationTestPlan
 })

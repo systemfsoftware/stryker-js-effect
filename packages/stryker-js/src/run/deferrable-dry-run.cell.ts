@@ -21,7 +21,7 @@ import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import { acquireCheckers, asMutationTestError, reuseAndPlan, settleMutants } from './mutant-settlement.js'
 import type { MutationTestPlan } from './mutation-test-plan.cell.js'
-import { partitionPlannable, reportDroppedMutants } from './mutation-test-plan.js'
+import { partitionPlannable, reportDroppedMutants, settledBeforeTestsOf } from './mutation-test-plan.js'
 import { mutationTestCell, type MutationTestDone } from './mutation-test.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
@@ -47,10 +47,7 @@ const settledWithoutTests = (
   plan: MutationTestPlan,
 ): Effect.Effect<Option.Option<CheckedPlans<never>>, StageError | CheckerCrash, PhaseClock> =>
   Option.match(
-    Option.filter(
-      checkerHandle,
-      () => [plan.earlyResults.length, plan.heldSubsumed.length, plan.heldGuards.length].every((count) => count === 0),
-    ),
+    Option.filter(checkerHandle, () => settledBeforeTestsOf(plan) === 0),
     {
       onNone: () => Effect.succeedNone,
       onSome: (handle) =>
