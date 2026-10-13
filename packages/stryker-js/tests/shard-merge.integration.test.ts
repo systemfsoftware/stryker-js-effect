@@ -376,19 +376,34 @@ interface GateBreakOutcome {
   readonly gate: ExecOutcome
 }
 
-const mergeAndGate = (
+const runShardsMergeAndGate = (
   fixture: Fixture,
-): Effect.Effect<GateBreakOutcome, never, Scope.Scope | ChildProcessSpawner.ChildProcessSpawner> =>
+  options: {
+    readonly outs: readonly [string, string]
+    readonly beforeMerge?: (context: {
+      readonly root: string
+      readonly outs: readonly [string, string]
+    }) => Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>
+  },
+): Effect.Effect<
+  GateBreakOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
   Effect.gen(function*() {
     const { root } = fixture
-    const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/break-1'])
-    const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/break-2'])
+    const { outs, beforeMerge } = options
+    const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', outs[0]])
+    const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', outs[1]])
+    if (beforeMerge !== undefined) {
+      yield* beforeMerge({ root, outs })
+    }
     const merged = yield* spawnCli(root, [
       'merge',
       '--plan',
       'plan.json',
-      'reports/break-1',
-      'reports/break-2',
+      outs[0],
+      outs[1],
       '--out',
       'reports/mutation',
     ])
@@ -399,6 +414,14 @@ const mergeAndGate = (
     const gate = yield* spawnCli(root, ['gate'])
     return { shardExitCodes: [first.exitCode, second.exitCode], gate }
   })
+
+const mergeAndGate = (
+  fixture: Fixture,
+): Effect.Effect<
+  GateBreakOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> => runShardsMergeAndGate(fixture, { outs: ['reports/break-1', 'reports/break-2'] })
 
 const stripVerdictLines = (file: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
@@ -417,28 +440,17 @@ const mergeVerdictlessAndGate = (
   never,
   FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
 > =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    const { root } = fixture
-    const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/nv-1'])
-    const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/nv-2'])
-    yield* stripVerdictLines(path.join(root, 'reports', 'nv-1', 'mutation-stream.jsonl'))
-    yield* stripVerdictLines(path.join(root, 'reports', 'nv-2', 'mutation-stream.jsonl'))
-    const merged = yield* spawnCli(root, [
-      'merge',
-      '--plan',
-      'plan.json',
-      'reports/nv-1',
-      'reports/nv-2',
-      '--out',
-      'reports/mutation',
-    ])
-    yield* Effect.when(
-      Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.output}`)),
-      Effect.succeed(merged.exitCode !== 0),
-    )
-    const gate = yield* spawnCli(root, ['gate'])
-    return { shardExitCodes: [first.exitCode, second.exitCode], gate }
+  runShardsMergeAndGate(fixture, {
+    outs: ['reports/nv-1', 'reports/nv-2'],
+    beforeMerge: ({ root, outs }) =>
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        yield* Effect.forEach(
+          outs,
+          (out) => stripVerdictLines(path.join(root, out, 'mutation-stream.jsonl')),
+          { discard: true },
+        )
+      }),
   })
 
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
