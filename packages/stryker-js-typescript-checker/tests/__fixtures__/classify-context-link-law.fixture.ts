@@ -58,3 +58,46 @@ export const LISTED_LINKS: Record<ListedLink, LinkSpec> = {
   },
   'parameter-initializer': { kind: SyntaxKind.Parameter, slot: 'initializer', outcomes: DECLARED_OR_UNENFORCED },
 }
+
+export const ListedOutcome = S.Literals(['climb', 'climb-function', 'declared', 'call-argument', 'unenforced'])
+export type ListedOutcome = typeof ListedOutcome.Type
+
+export const ListedOperator = S.Literals(['equals', 'nullish', 'or', 'and', 'unknown'])
+export type ListedOperator = typeof ListedOperator.Type
+
+export interface OperatorPolicy {
+  readonly operator: SyntaxKind
+  readonly reaching: ReadonlyArray<string>
+  readonly reached: ListedOutcome
+  readonly unreached: ListedOutcome
+}
+
+export const OPERATOR_POLICIES: Record<ListedOperator, OperatorPolicy> = {
+  equals: { operator: SyntaxKind.EqualsToken, reaching: [], reached: 'declared', unreached: 'declared' },
+  nullish: {
+    operator: SyntaxKind.QuestionQuestionToken,
+    reaching: ['unknown', 'nullish'],
+    reached: 'climb',
+    unreached: 'unenforced',
+  },
+  or: {
+    operator: SyntaxKind.BarBarToken,
+    reaching: ['unknown', 'nullish', 'primitive', 'falsy-literal'],
+    reached: 'climb',
+    unreached: 'unenforced',
+  },
+  and: {
+    operator: SyntaxKind.AmpersandAmpersandToken,
+    reaching: ['unknown', 'primitive', 'truthy-literal', 'always-truthy'],
+    reached: 'climb',
+    unreached: 'unenforced',
+  },
+  unknown: { operator: SyntaxKind.Unknown, reaching: [], reached: 'unenforced', unreached: 'unenforced' },
+}
+
+export const RETURN_TARGET_OUTCOMES: Readonly<Record<string, ListedOutcome>> = {
+  annotated: 'declared',
+  'unannotated-expression': 'climb-function',
+  'unannotated-declaration': 'unenforced',
+  none: 'unenforced',
+}

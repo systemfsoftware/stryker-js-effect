@@ -126,27 +126,35 @@ const initializerOf: LinkRule = (command) => Boolean.match(command.annotated, { 
 
 const assertedOf: LinkRule = (command) => Boolean.match(command.constAssertion, { onTrue: climb, onFalse: unenforced })
 
-const ALLOW_LIST: ReadonlyMap<SyntaxKind, Partial<Record<ContextSlot, LinkRule>>> = new Map([
-  [SyntaxKind.ParenthesizedExpression, { operand: climb }],
-  [SyntaxKind.ArrayLiteralExpression, { element: climb }],
-  [SyntaxKind.ObjectLiteralExpression, { member: climb }],
-  [SyntaxKind.PropertyAssignment, { value: climb }],
-  [SyntaxKind.ConditionalExpression, { branch: climb }],
-  [SyntaxKind.BinaryExpression, { right: rightOperandOf }],
-  [SyntaxKind.AsExpression, { operand: assertedOf }],
-  [SyntaxKind.SatisfiesExpression, { operand: declared }],
-  [SyntaxKind.CallExpression, { argument: callArgument }],
-  [SyntaxKind.NewExpression, { argument: callArgument }],
-  [SyntaxKind.ArrowFunction, { body: returnedOf(climb) }],
-  [SyntaxKind.ReturnStatement, { operand: returnedOf(climbFunction) }],
-  [SyntaxKind.VariableDeclaration, { initializer: initializerOf }],
-  [SyntaxKind.PropertyDeclaration, { initializer: initializerOf }],
-  [SyntaxKind.Parameter, { initializer: initializerOf }],
-])
+type SlotRules = Partial<Record<ContextSlot, LinkRule>>
+
+const ALLOW_LIST = {
+  [SyntaxKind.ParenthesizedExpression]: { operand: climb },
+  [SyntaxKind.ArrayLiteralExpression]: { element: climb },
+  [SyntaxKind.ObjectLiteralExpression]: { member: climb },
+  [SyntaxKind.PropertyAssignment]: { value: climb },
+  [SyntaxKind.ConditionalExpression]: { branch: climb },
+  [SyntaxKind.BinaryExpression]: { right: rightOperandOf },
+  [SyntaxKind.AsExpression]: { operand: assertedOf },
+  [SyntaxKind.SatisfiesExpression]: { operand: declared },
+  [SyntaxKind.CallExpression]: { argument: callArgument },
+  [SyntaxKind.NewExpression]: { argument: callArgument },
+  [SyntaxKind.ArrowFunction]: { body: returnedOf(climb) },
+  [SyntaxKind.ReturnStatement]: { operand: returnedOf(climbFunction) },
+  [SyntaxKind.VariableDeclaration]: { initializer: initializerOf },
+  [SyntaxKind.PropertyDeclaration]: { initializer: initializerOf },
+  [SyntaxKind.Parameter]: { initializer: initializerOf },
+} satisfies Readonly<Partial<Record<SyntaxKind, SlotRules>>>
+
+export type ContextParentKind = keyof typeof ALLOW_LIST
+
+const isContextParentKind = (kind: SyntaxKind): kind is ContextParentKind => Object.hasOwn(ALLOW_LIST, kind)
+
+const rulesOf = (kind: ContextParentKind): SlotRules => ALLOW_LIST[kind]
 
 const ruleOf = (command: ClassifyContextLinkCommand): Option.Option<LinkRule> =>
   Option.flatMap(
-    Option.fromUndefinedOr(ALLOW_LIST.get(command.parentKind)),
+    Option.map(Option.filter(Option.some(command.parentKind), isContextParentKind), rulesOf),
     (rules) => Option.fromUndefinedOr(rules[command.slot]),
   )
 

@@ -34,7 +34,12 @@ import {
 } from 'typescript/unstable/ast/is'
 import { type Type, TypeFlags } from 'typescript/unstable/async'
 
-import type { ContextSlot, LeftOperandMember, ReturnTarget } from './classify-context-link.workflow.js'
+import type {
+  ContextParentKind,
+  ContextSlot,
+  LeftOperandMember,
+  ReturnTarget,
+} from './classify-context-link.workflow.js'
 
 export const isCallLike = (parent: Node): parent is CallExpression | NewExpression =>
   isCallExpression(parent) || isNewExpression(parent)
@@ -97,26 +102,54 @@ const slotWhen = <N extends Node>(
 
 const slotIf = (filled: boolean, slot: ContextSlot, otherwise: ContextSlot): ContextSlot => filled ? slot : otherwise
 
-const SLOT_READERS: ReadonlyArray<SlotReader> = [
-  slotWhen(isCallLike, (call, node) => slotIf(isArgumentOf(call, node), 'argument', 'callee')),
-  slotWhen(isBinaryExpression, (binary, node) => slotIf(binary.right === node, 'right', 'left')),
-  slotWhen(
+const operandReader: SlotReader = slotWhen(
+  isOperandParent,
+  (parent, node) => slotIf(parent.expression === node, 'operand', 'other'),
+)
+
+const callReader: SlotReader = slotWhen(
+  isCallLike,
+  (call, node) => slotIf(isArgumentOf(call, node), 'argument', 'callee'),
+)
+
+const initializerReader: SlotReader = slotWhen(
+  isInitializedDeclaration,
+  (declaration, node) => slotIf(declaration.initializer === node, 'initializer', 'other'),
+)
+
+const SLOT_READERS: Record<ContextParentKind, SlotReader> = {
+  [SyntaxKind.ParenthesizedExpression]: operandReader,
+  [SyntaxKind.ArrayLiteralExpression]: slotWhen(isArrayLiteralExpression, (): ContextSlot => 'element'),
+  [SyntaxKind.ObjectLiteralExpression]: slotWhen(isObjectLiteralExpression, (): ContextSlot => 'member'),
+  [SyntaxKind.PropertyAssignment]: slotWhen(
+    isPropertyAssignment,
+    (property, node) => slotIf(property.initializer === node, 'value', 'name'),
+  ),
+  [SyntaxKind.ConditionalExpression]: slotWhen(
     isConditionalExpression,
     (conditional, node) => slotIf(conditional.condition === node, 'condition', 'branch'),
   ),
-  slotWhen(isPropertyAssignment, (property, node) => slotIf(property.initializer === node, 'value', 'name')),
-  slotWhen(isArrowFunction, (fn, node) => slotIf(fn.body === node, 'body', 'other')),
-  slotWhen(
-    isInitializedDeclaration,
-    (declaration, node) => slotIf(declaration.initializer === node, 'initializer', 'other'),
+  [SyntaxKind.BinaryExpression]: slotWhen(
+    isBinaryExpression,
+    (binary, node) => slotIf(binary.right === node, 'right', 'left'),
   ),
-  slotWhen(isArrayLiteralExpression, (): ContextSlot => 'element'),
-  slotWhen(isObjectLiteralExpression, (): ContextSlot => 'member'),
-  slotWhen(isOperandParent, (parent, node) => slotIf(parent.expression === node, 'operand', 'other')),
-]
+  [SyntaxKind.AsExpression]: operandReader,
+  [SyntaxKind.SatisfiesExpression]: operandReader,
+  [SyntaxKind.CallExpression]: callReader,
+  [SyntaxKind.NewExpression]: callReader,
+  [SyntaxKind.ArrowFunction]: slotWhen(isArrowFunction, (fn, node) => slotIf(fn.body === node, 'body', 'other')),
+  [SyntaxKind.ReturnStatement]: operandReader,
+  [SyntaxKind.VariableDeclaration]: initializerReader,
+  [SyntaxKind.PropertyDeclaration]: initializerReader,
+  [SyntaxKind.Parameter]: initializerReader,
+}
+
+const isContextParentKind = (kind: SyntaxKind): kind is ContextParentKind => Object.hasOwn(SLOT_READERS, kind)
 
 const slotIn = (parent: Node, node: Node): ContextSlot =>
-  Option.getOrElse(Arr.findFirst(SLOT_READERS, (read) => read(parent, node)), (): ContextSlot => 'other')
+  isContextParentKind(parent.kind)
+    ? Option.getOrElse(SLOT_READERS[parent.kind](parent, node), (): ContextSlot => 'other')
+    : 'other'
 
 export const slotOf = (node: Node): ContextSlot =>
   Option.match(Option.fromUndefinedOr(node.parent), {
