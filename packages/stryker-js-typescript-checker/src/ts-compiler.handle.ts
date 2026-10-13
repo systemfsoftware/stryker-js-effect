@@ -3,7 +3,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, type Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Duration from 'effect/Duration'
@@ -1801,7 +1801,7 @@ const splicedContentOf = (file: ScriptFile, mutant: Checker.CheckerMutantWire): 
   )
 
 interface TceEntry {
-  readonly key: string
+  readonly key: Mutant.MutantId
   readonly content: string
   readonly site: string
 }
@@ -1902,10 +1902,7 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   tsconfigFile: string,
   entries: ReadonlyArray<Outcome>,
 ): Effect.fn.Return<ReadonlyArray<Outcome>, CompilerFailed> {
-  const passedIds = HashSet.fromIterable(
-    Arr.map(Arr.filter(entries, (entry) => isVerdictPassed(entry.check)), (entry) => entry.check.id),
-  )
-  const passedEntries = Arr.filter(entries, (entry) => HashSet.has(passedIds, entry.check.id))
+  const passedEntries = Arr.filter(entries, (entry) => isVerdictPassed(entry.check))
   const fileNames = Arr.dedupe(Arr.map(passedEntries, (entry) => resolveFileName(rt, entry.mutant.fileName)))
   const perFile = yield* Effect.forEach(
     fileNames,
