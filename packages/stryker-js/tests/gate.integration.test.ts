@@ -297,6 +297,41 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
     )
 
     scenario(
+      'A run that is over the committed budget baseline and below its break fails on the budget before the break',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose survivors are all committed, whose committed budget baseline is 3 seconds and whose report scores 0 under a break of 50',
+        )(
+          'project',
+          () =>
+            prepareProject(
+              baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]),
+              budgetBaselineJson(3),
+              BELOW_BREAK,
+            ),
+        ),
+        When('stryker gates against both baselines')(
+          'ran',
+          (s) =>
+            runGate(s.project.root, 'human', [
+              '--baseline',
+              COMMITTED_BASELINE,
+              '--budget-baseline',
+              COMMITTED_BUDGET_BASELINE,
+            ]),
+        ),
+        Then('the process exits 1 naming the budget and no break verdict')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesBaseline: s.ran.stderr.includes('3.00'),
+            namesActual: s.ran.stderr.includes('4.00'),
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+          }).toStrictEqual({ exitCode: 1, namesBaseline: true, namesActual: true, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
       'A run within the committed budget baseline plus tolerance exits 0',
       Gherkin.Do.pipe(
         Given('a project whose survivors are all committed and whose committed budget baseline is 4 seconds')(
