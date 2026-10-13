@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
-supersedes: docs/plans/2026-10-13-0115-fix-report-json-exact-keys-plan.md
+supersedes: docs/plans/2026-10-13-0135-fix-report-json-exact-keys-plan.md
 ---
 
 # Read every report key exactly on Node 24, and refuse file keys no file can have - Plan
@@ -47,7 +47,7 @@ The upstream `mutation-testing-report-schema` 3.7.2 declares no `propertyNames` 
 ### Requirements
 
 - R1. Both report codecs decode every object key exactly, after any earlier parse in the process. The encoded side stays a JSON string.
-- R2. A `files` key that is empty or holds NUL fails decode at that key's path, so `stryker audit` refuses the report with `matrix-undecodable`. The entry is never silently dropped.
+- R2. A `files` key that is empty or holds NUL fails at that key's path, on decode and on encode, so `stryker audit` refuses the report with `matrix-undecodable`. The entry is never silently dropped.
 - R3. Malformed text and valid JSON that is not a report fail with a decode issue, as they do on main.
 
 ### Acceptance Examples
@@ -64,25 +64,26 @@ The upstream `mutation-testing-report-schema` 3.7.2 declares no `propertyNames` 
 
 ### Key Technical Decisions
 
-- KTD1. Decode by key offset, in `audit.schema.ts`. The text is parsed once unchanged first, so malformed and non-object text keep their issue. Each key token is then replaced with its offset in the text, and the result is parsed. Each key token is decoded on its own as a bare JSON string. Objects are rebuilt through `Effect.forEach`, and the decode issue passes through unchanged. This is the decode #306 shipped after review.
+- KTD1. Decode by key offset, in `audit.schema.ts`. The text is parsed once unchanged first, so malformed and non-object text keep their issue. Each key token is then replaced with its offset in the text, and the result is parsed. Each key token is decoded on its own as a bare JSON string. Objects are rebuilt through `Effect.forEach`, and the decode issue passes through unchanged. An object key with no matching key token fails the decode instead of keeping its offset as the key. Otherwise this is the decode #306 shipped after review.
 - KTD2. Each export is `S.String.annotate(JSON_TEXT).pipe(S.decodeTo(S.Unknown, exactKeyJson), S.decodeTo(Report, SchemaTransformation.passthrough({ strict: false })))`. The report schema validates once, as `Schema.fromJsonString` does internally with its `Transformation<unknown, string>`. The chain stays `S.`-rooted, so schema discovery generates its laws.
-- KTD3. `ReportFilePath = S.String.pipe(S.decodeTo(S.String.check(S.isPattern(/^[^\0]+$/u))))`. A refined key schema narrows which properties a `Record` selects ("Checks on string … key schemas narrow which properties are selected", `effect/Schema` `Record`), so it silently drops a bad entry. The CLI smoke of the first version showed exactly that. A transformed key selects on its encoded `S.String` and then fails the bad key at its path.
+- KTD3. Both `files` records keep `S.String` keys and carry one record-level check, `keyedByFilePath`, which returns `{ path: [key], issue }` for each bad key. A key schema cannot refuse in both directions. A refined key narrows which properties a `Record` selects ("Checks on string … key schemas narrow which properties are selected", `effect/Schema` `Record`), so it silently drops a bad entry. A key transformed from `S.String` refuses on decode, but encode selects by the refined type side and still drops the entry. A record check runs on both sides and points its issue at the key.
 
 ### Implementation Units
 
 - U1. `packages/stryker-js/src/audit.schema.ts`: KTD1-KTD3, plus two in-source laws:
-  - `∀k_ReportFilePathRefusal_≡BothReportsKeepExactlyTheNonEmptyKeysWithoutNul`: decodes each drawn key, plus `""`, NUL, tab, backslash and plain boundaries, through both JSON codecs. A key reads back exactly if it is valid and is refused otherwise.
+  - `∀k_ReportFilePathRefusal_≡BothReportsKeepExactlyTheNonEmptyKeysWithoutNul`: takes each drawn key, plus `""`, NUL, tab, backslash and plain boundaries, through both JSON codecs in both directions. A valid key reads back exactly and encodes; an invalid one is refused both ways. Its oracle is written independently of `keyedByFilePath`.
   - `∀p_ReportJsonKeys_≡ReadAnEscapedKeyExactlyAfterAParseOfItsBackslashTwin`: AE1.
 - U2. A changeset: patch `@systemfsoftware/stryker-js`.
+- U3. `packages/stryker-js/README.md` Known issues: `stryker audit` reads its reports' keys exactly; other report reads in the same process can still see a substituted key.
 
 ### Test Admission
 
-| Test                                    | Layer                                          | Verdict                                                                                                                 |
-| --------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Generated `∀x_*_=x` / `∀x_*Enc_=x` laws | Schema codec laws                              | Existing, unchanged                                                                                                     |
-| `ReportFilePath` refusal law            | Schema boundary (R2), through both codecs      | Admitted. It pins refuse-versus-skip, which KTD3's first version got wrong, and it kills a mutant that drops the check. |
-| nodejs/node#63785 law                   | Known-bug regression, in-process               | Admitted. It is the only test that primes V8, and it is refuted on main's codecs.                                       |
-| CLI scenario for AE2                    | Spawns a process; same path as the refusal law | Refused. Run once as a throwaway smoke.                                                                                 |
+| Test                                    | Layer                                          | Verdict                                                                                                                                         |
+| --------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generated `∀x_*_=x` / `∀x_*Enc_=x` laws | Schema codec laws                              | Existing, unchanged                                                                                                                             |
+| `ReportFilePath` refusal law            | Schema boundary (R2), through both codecs      | Admitted. It pins refuse-versus-skip in both directions, which both earlier KTD3 designs got wrong, and it kills a mutant that drops the check. |
+| nodejs/node#63785 law                   | Known-bug regression, in-process               | Admitted. It is the only test that primes V8, and it is refuted on main's codecs.                                                               |
+| CLI scenario for AE2                    | Spawns a process; same path as the refusal law | Refused. Run once as a throwaway smoke.                                                                                                         |
 
 ### Verification Contract
 

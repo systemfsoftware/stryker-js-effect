@@ -253,7 +253,7 @@ console.log(`Mutation score: ${verdict.score}%`)
 
 ## Known issues
 
-On Node 24.x (and 26.x up to at least 26.7.0), V8's `JSON.parse` can return the wrong key in a long-lived process. After the process has parsed an object key ending in an escaped backslash, a later key at the same key position that ends in an escape can come back substituted. This affects reading Stryker's report JSON in the same process. See [nodejs/node#63785](https://github.com/nodejs/node/issues/63785) and the unmerged backport [nodejs/node#66542](https://github.com/nodejs/node/pull/66542).
+On Node 24.x (and 26.x up to at least 26.7.0), V8's `JSON.parse` can return the wrong key in a long-lived process. After the process has parsed an object key ending in an escaped backslash, a later key at the same key position that ends in an escape can come back substituted. `stryker audit` reads its reports' keys exactly despite this; other reads of Stryker's report JSON in the same process can still see a substituted key. See [nodejs/node#63785](https://github.com/nodejs/node/issues/63785) and the unmerged backport [nodejs/node#66542](https://github.com/nodejs/node/pull/66542).
 
 Re-check and remove this entry once a Node 24 release carries the #66542 backport.
 

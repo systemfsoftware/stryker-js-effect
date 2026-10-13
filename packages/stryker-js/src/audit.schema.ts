@@ -6,6 +6,7 @@ import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
+import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const AuditSchemaVersion = S.Literal('1')
@@ -22,17 +23,23 @@ const isJsonArray = (value: S.Json): value is ReadonlyArray<S.Json> => Arr.isArr
 
 const isJsonObject = (value: S.Json): value is S.JsonObject => Match.record(value)
 
+const keyAtOffset = (
+  keyAt: Record.ReadonlyRecord<string, string>,
+  offset: string,
+): Effect.Effect<string, S.SchemaError> =>
+  Effect.fromOption(
+    Record.get(keyAt, offset),
+    () => new S.SchemaError(new SchemaIssue.InvalidValue({ message: `no key token at offset ${offset}` })),
+  )
+
 const rekeyedBy = (keyAt: Record.ReadonlyRecord<string, string>) => {
-  const rekeyedObject = (object: S.JsonObject): Effect.Effect<S.JsonObject> =>
+  const rekeyedObject = (object: S.JsonObject): Effect.Effect<S.JsonObject, S.SchemaError> =>
     Effect.map(
       Effect.forEach(Object.entries(object), ([offset, member]) =>
-        Effect.map(
-          rekeyed(member),
-          (value) => [Option.getOrElse(Record.get(keyAt, offset), () => offset), value] as const,
-        )),
+        Effect.zip(keyAtOffset(keyAt, offset), rekeyed(member))),
       Record.fromEntries,
     )
-  const rekeyed = (value: S.Json): Effect.Effect<S.Json> =>
+  const rekeyed = (value: S.Json): Effect.Effect<S.Json, S.SchemaError> =>
     Match.value(value).pipe(
       Match.when(isJsonArray, (items) => Effect.forEach(items, rekeyed)),
       Match.when(isJsonObject, rekeyedObject),
@@ -84,15 +91,20 @@ const exactKeyJson = {
 
 const JSON_TEXT = { expected: 'a string that will be decoded as JSON', contentMediaType: 'application/json' }
 
-const ReportFilePath = S.String.pipe(
-  S.decodeTo(S.String.check(S.isPattern(/^[^\0]+$/u, { expected: 'a non-empty file path without NUL' }))),
+const isFilePath = (key: string): boolean => key.length > 0 && !key.includes('\u0000')
+
+const keyedByFilePath = S.makeFilter((files: { readonly [key: string]: object }) =>
+  Arr.filter(Object.keys(files), (key) => !isFilePath(key)).map((key) => ({
+    path: [key],
+    issue: 'Expected a non-empty file path without NUL',
+  }))
 )
 
 export const KillMatrixReport = S.Struct({
   projectRoot: S.String,
   mutantSetPolicy: Options.MutantSetPolicy,
   files: S.Record(
-    ReportFilePath,
+    S.String,
     S.Struct({
       source: S.String,
       mutants: S.Array(S.Struct({
@@ -101,7 +113,7 @@ export const KillMatrixReport = S.Struct({
         killedBy: S.String.pipe(S.Array, S.optionalKey),
       })),
     }),
-  ),
+  ).check(keyedByFilePath),
   testFiles: S.Record(S.String, S.Struct({ tests: S.Array(S.Struct({ id: S.String })) })),
 })
 export type KillMatrixReport = typeof KillMatrixReport.Type
@@ -112,7 +124,7 @@ export const KillMatrixReportJson = S.String.annotate(JSON_TEXT).pipe(
 
 export const CountedReport = S.Struct({
   files: S.Record(
-    ReportFilePath,
+    S.String,
     S.Struct({
       mutants: S.Array(S.Struct({
         id: S.String,
@@ -121,7 +133,7 @@ export const CountedReport = S.Struct({
         testsCompleted: Count.pipe(S.optionalKey),
       })),
     }),
-  ),
+  ).check(keyedByFilePath),
   costs: S.Record(S.String, S.Struct({ actualMs: S.NullOr(S.Finite) })).pipe(S.optionalKey),
 })
 export type CountedReport = typeof CountedReport.Type
@@ -416,17 +428,29 @@ if (import.meta.vitest !== void 0) {
 
   const sameRead = Option.makeEquivalence(sameKeys)
 
-  const isFilePath = (key: string): boolean => key.length > 0 && !key.includes('\u0000')
+  const namesAFile = (key: string): boolean => key !== '' && key.indexOf('\u0000') === -1
+
+  const keysEncoded = (key: string): ReadonlyArray<boolean> => [
+    Option.isSome(S.encodeOption(CountedReportJson)({ files: filesOf([key], { mutants: [] }) })),
+    Option.isSome(
+      S.encodeOption(KillMatrixReportJson)({
+        projectRoot: '',
+        mutantSetPolicy: 'full',
+        files: filesOf([key], { source: '', mutants: [] }),
+        testFiles: {},
+      }),
+    ),
+  ]
 
   it.prop(
     '∀k_ReportFilePathRefusal_≡BothReportsKeepExactlyTheNonEmptyKeysWithoutNul',
-    { of: [S.String], subject: (key: string) => keysReadBack([key]) },
+    { of: [S.String], subject: (key: string) => ({ reads: keysReadBack([key]), encoded: keysEncoded(key) }) },
     (subject, [drawn]) =>
-      Arr.every(
-        Arr.prepend(filePathBoundaries, drawn),
-        (key) =>
-          Arr.every(subject(key), (read) => sameRead(read, Option.filter(Option.some([key]), () => isFilePath(key)))),
-      ),
+      Arr.every(Arr.prepend(filePathBoundaries, drawn), (key) => {
+        const { reads, encoded } = subject(key)
+        return Arr.every(reads, (read) => sameRead(read, Option.filter(Option.some([key]), () => namesAFile(key)))) &&
+          Arr.every(encoded, (isEncoded) => isEncoded === namesAFile(key))
+      }),
   )
 
   const leadOf = (prefix: string): string => `nodejs-63785/${prefix}`
