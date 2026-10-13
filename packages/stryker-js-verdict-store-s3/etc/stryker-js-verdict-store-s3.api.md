@@ -5,28 +5,14 @@
 ```ts
 
 import * as Layer from 'effect/Layer';
+import { S3VerdictStoreOptions } from '@systemfsoftware/stryker-js/verdict-store';
 import { VerdictStore } from '@systemfsoftware/stryker-js/verdict-store';
 import { VerdictStoreUnavailable } from '@systemfsoftware/stryker-js/verdict-store';
 
 // @public (undocumented)
 export const layer: (options: S3VerdictStoreOptions) => Layer.Layer<VerdictStore, VerdictStoreUnavailable>;
 
-// @public (undocumented)
-export interface S3VerdictStoreOptions {
-    // (undocumented)
-    readonly bucket: string;
-    // (undocumented)
-    readonly connectionTimeoutMs?: number | undefined;
-    readonly endpoint?: string | undefined;
-    // (undocumented)
-    readonly forcePathStyle?: boolean | undefined;
-    // (undocumented)
-    readonly prefix: string;
-    // (undocumented)
-    readonly region?: string | undefined;
-    // (undocumented)
-    readonly requestTimeoutMs?: number | undefined;
-}
+export { S3VerdictStoreOptions }
 
 // (No @packageDocumentation comment for this package)
 

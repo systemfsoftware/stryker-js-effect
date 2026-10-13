@@ -10,6 +10,7 @@ import {
 import {
   EntryAbsent,
   makeVerdictStore,
+  type S3VerdictStoreOptions,
   VerdictBlobFailed,
   type VerdictBlobs,
   VerdictStore,
@@ -21,17 +22,6 @@ import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Stream from 'effect/Stream'
-
-export interface S3VerdictStoreOptions {
-  readonly bucket: string
-  readonly prefix: string
-  readonly region?: string | undefined
-  /** An S3-compatible endpoint. Must be https unless its host is loopback or the microsandbox host gateway. */
-  readonly endpoint?: string | undefined
-  readonly forcePathStyle?: boolean | undefined
-  readonly connectionTimeoutMs?: number | undefined
-  readonly requestTimeoutMs?: number | undefined
-}
 
 const PLAIN_HTTP_HOSTS: ReadonlyArray<string> = ['localhost', '127.0.0.1', '[::1]', 'host.microsandbox.internal']
 

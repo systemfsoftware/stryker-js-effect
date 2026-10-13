@@ -7,7 +7,7 @@ import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import type * as Scope from 'effect/Scope'
 
-import { fsVerdictStoreLayer } from '../verdict-store/fs-verdict-store.layer.js'
+import { fsVerdictStoreLayer } from '../verdict-store/fs-verdict-store.js'
 import { importS3VerdictStoreLayer } from '../verdict-store/s3-verdict-store.js'
 import type { VerdictStoreUnavailable } from '../verdict-store/VerdictStore.schema.js'
 import { VerdictStore, type VerdictStoreShape } from '../verdict-store/VerdictStore.service.js'

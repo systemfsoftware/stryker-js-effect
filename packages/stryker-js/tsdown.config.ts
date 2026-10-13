@@ -33,7 +33,7 @@ export default defineConfig([
       events: './src/events/mod.ts',
       'verdict-store': './src/verdict-store/mod.ts',
       'verdict-store/laws': './src/verdict-store/laws.ts',
-      'verdict-store/fs': './src/verdict-store/fs-verdict-store.layer.ts',
+      'verdict-store/fs': './src/verdict-store/fs-verdict-store.ts',
       'verdict-store/memory': './src/verdict-store/memory-verdict-store.ts',
     },
     dts: true,

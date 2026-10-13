@@ -339,6 +339,44 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
+    '∀ekos_TestedEntryAndKilledByLists_≡PriorKilledByIsExactlyTheDeduplicatedKilledByOfTheKilledEntriesSharingTheCurrentClosureNewestFirst',
+    {
+      of: [TestedEntrySchema, S.NonEmptyArray(S.String), S.NonEmptyArray(S.String), S.Array(S.String)],
+      subject: incrementalDiff,
+    },
+    (subject, [tested, killedBy, otherKilledBy, staleKilledBy]) => {
+      const settled = survivorOf(tested)
+      const current = currentOf(settled)
+      const currentClosure = settled.components.closureDigest
+      const staleClosure = drifted(currentClosure)
+      const withStaleEngine = (entry: TestedEntry): TestedEntry => ({
+        ...entry,
+        components: { ...entry.components, engineDigest: drifted(entry.components.engineDigest) },
+      })
+      const killedAt = (settledAt: number, closureDigest: string, ids: ReadonlyArray<string>): TestedEntry =>
+        withStaleEngine({
+          ...settled,
+          components: { ...settled.components, closureDigest },
+          settledAt,
+          status: 'Killed',
+          killedBy: [...ids],
+        })
+      const newestCurrentKilledBy = [...killedBy, ...otherKilledBy]
+      const entries = [
+        readable(withStaleEngine({ ...settled, settledAt: settled.settledAt + 6 })),
+        readable(withStaleEngine({ ...settled, status: 'NoCoverage', settledAt: settled.settledAt + 5 })),
+        readable(killedAt(settled.settledAt + 4, currentClosure, newestCurrentKilledBy)),
+        readable(killedAt(settled.settledAt + 3, staleClosure, staleKilledBy)),
+        readable(killedAt(settled.settledAt + 2, currentClosure, otherKilledBy)),
+      ]
+      const decision = onlyDecision(subject(commandOf([lookupOf(current, entries)])))
+      const expected = Arr.dedupe([...newestCurrentKilledBy, ...otherKilledBy])
+      return decision !== undefined && S.is(MutantToRun)(decision) && decision.refusal === 'semanticsChanged' &&
+        JSON.stringify(decision.priorKilledBy) === JSON.stringify(expected)
+    },
+  )
+
+  it.prop(
     '∀e_Entry_≡AHitLimitTimeoutIsRememberedOnFirstSight',
     { of: [TestedEntrySchema], subject: incrementalDiff },
     (subject, [tested]) => {

@@ -41,6 +41,7 @@ const silentEndpointLayer = Layer.effect(
 )
 
 const optionsAt = (url: string): S3VerdictStoreOptions => ({
+  kind: 's3',
   bucket: BUCKET,
   prefix: PREFIX,
   region: 'us-east-1',

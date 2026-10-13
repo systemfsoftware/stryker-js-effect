@@ -47,4 +47,4 @@ export {
 } from './VerdictStore.schema.js'
 export type { GetOutcome, ListedEntry, ListOutcome, PutOutcome } from './VerdictStore.schema.js'
 export { VerdictStore } from './VerdictStore.service.js'
-export type { VerdictStoreShape } from './VerdictStore.service.js'
+export type { S3VerdictStoreOptions, VerdictStoreShape } from './VerdictStore.service.js'
