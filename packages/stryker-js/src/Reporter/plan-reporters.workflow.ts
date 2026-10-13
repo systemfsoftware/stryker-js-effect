@@ -6,17 +6,13 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
-import { HumanReporterSchema, ProgressReporterSchema, StreamReporterSchema } from '../reporter-name.schema.js'
+import { HumanStreamRole, MachineStreamRole } from './reporter-role.schema.js'
 
 const ReporterPlanTypeId = Symbol.for('@systemfsoftware/stryker-js/ReporterPlanDecision')
 type ReporterPlanTypeId = typeof ReporterPlanTypeId
 
-const STREAM_REPORTER = StreamReporterSchema.literal
-const HUMAN_REPORTER = HumanReporterSchema.literal
-const STDOUT_REPORTERS: Readonly<Record<string, true>> = {
-  [HumanReporterSchema.literal]: true,
-  [ProgressReporterSchema.literal]: true,
-}
+const STREAM_REPORTER = MachineStreamRole.literal
+const HUMAN_REPORTER = HumanStreamRole.literal
 
 const asHumanReporter = (name: string): string =>
   Boolean.match(name === STREAM_REPORTER, { onTrue: () => HUMAN_REPORTER, onFalse: () => name })
@@ -25,8 +21,8 @@ const humanReportersFrom = (configured: readonly string[]): readonly string[] =>
   ...Array.dedupe(configured.map(asHumanReporter)),
 ]
 
-const machineReportersFrom = (configured: readonly string[]): readonly string[] => {
-  const permitted = configured.filter((name) => STDOUT_REPORTERS[name] !== true)
+const machineReportersFrom = (configured: readonly string[], stdout: readonly string[]): readonly string[] => {
+  const permitted = configured.filter((name) => !stdout.includes(name))
   return Boolean.match(permitted.includes(STREAM_REPORTER), {
     onTrue: () => permitted,
     onFalse: () => [...permitted, STREAM_REPORTER],
@@ -35,6 +31,7 @@ const machineReportersFrom = (configured: readonly string[]): readonly string[] 
 
 export class ReporterPlanCommand extends S.TaggedClass<ReporterPlanCommand>()('ReporterPlanCommand', {
   configured: S.Array(S.String),
+  stdout: S.Array(S.String),
   mode: OutputMode.OutputMode,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
@@ -66,7 +63,9 @@ export const planReporters = Workflow.make({
       Match.when('human', () =>
         Result.succeed(HumanReporters.make({ reporters: [...humanReportersFrom(command.configured)] }))),
       Match.when('machine', () =>
-        Result.succeed(MachineReporters.make({ reporters: [...machineReportersFrom(command.configured)] }))),
+        Result.succeed(
+          MachineReporters.make({ reporters: [...machineReportersFrom(command.configured, command.stdout)] }),
+        )),
       Match.exhaustive,
     ),
 })
