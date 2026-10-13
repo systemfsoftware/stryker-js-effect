@@ -910,6 +910,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.sandbox.remove_empty_parent",
+    "name": "stryker.sandbox.remove_empty_parent",
+    "attributes": {}
+  },
+  {
     "id": "stryker.sandbox.remove_temp_dir",
     "name": "stryker.sandbox.remove_temp_dir",
     "attributes": {}

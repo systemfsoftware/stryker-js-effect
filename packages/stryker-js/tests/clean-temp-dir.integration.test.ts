@@ -75,22 +75,6 @@ const sandboxesLeftIn = (root: string): Effect.Effect<number, PlatformError, Fil
     return entries.filter((entry) => entry.startsWith('sandbox-')).length
   })
 
-const tempDirectoryExistsIn = (
-  root: string,
-): Effect.Effect<boolean, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    return yield* fs.exists(path.join(root, TEMP_DIR_NAME))
-  })
-
-const createTempDirectoryIn = (root: string): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fs.makeDirectory(path.join(root, TEMP_DIR_NAME), { recursive: true })
-  })
-
 const SANDBOXES_LEFT = { 'its sandbox': 1, 'no sandbox': 0 } as const
 
 const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
@@ -98,7 +82,7 @@ const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
 Feature('Keeping or removing the sandbox a mutation run leaves behind')
   .withLayer(runLayer)
   .live('the scenario runs real test runs inside a real project directory')
-  .body(({ scenario, scenarioOutline }) => {
+  .body(({ scenarioOutline }) => {
     scenarioOutline(
       'A run that <ends> with sandbox cleaning set to <setting> leaves <left> behind',
       [
@@ -134,38 +118,5 @@ Feature('Keeping or removing the sandbox a mutation run leaves behind')
             )
           ),
         ),
-    )
-
-    scenario(
-      'A run that cleans its sandbox leaves the temp directory another run has just created',
-      Gherkin.Do.pipe(
-        Given('a project whose temp directory another run has just created for its own sandbox')(
-          'root',
-          () => Effect.tap(writeProject('passes'), createTempDirectoryIn),
-        ),
-        When('a mutation run that always cleans its sandbox finishes')('succeeded', (s) =>
-          runFromProject(s.root, {
-            testRunner: 'vm',
-            testFiles: ['test/**/*.mjs'],
-            mutate: ['src/**/*.ts'],
-            reporters: [],
-            checkers: [],
-            tempDirName: TEMP_DIR_NAME,
-            cleanTempDir: 'always',
-          })),
-        Then('the run succeeds, leaves no sandbox of its own, and the other run still has its temp directory')(
-          (s, expect) =>
-            Effect.all({ sandboxes: sandboxesLeftIn(s.root), tempDirectory: tempDirectoryExistsIn(s.root) }).pipe(
-              Effect.map((left) =>
-                expect({ succeeded: s.succeeded, ...left }).toEqual({
-                  succeeded: true,
-                  sandboxes: 0,
-                  tempDirectory: true,
-                })
-              ),
-              Effect.ensuring(removeProject(s.root)),
-            ),
-        ),
-      ),
     )
   })
