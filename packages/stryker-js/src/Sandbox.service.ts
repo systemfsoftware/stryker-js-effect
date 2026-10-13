@@ -29,29 +29,12 @@ const removesTempDir = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTe
       ),
   })
 
-const removeEmptyParentDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxRemoveEmptyParent.name)(function*(
-  parent: string,
-  fs: FileSystem.FileSystem,
-): Effect.fn.Return<void, PlatformError> {
-  const siblings = yield* fs.readDirectory(parent)
-  yield* Boolean.match(siblings.length === 0, {
-    onTrue: () => fs.remove(parent, { recursive: true, force: true }),
-    onFalse: () => Effect.void,
-  })
-})
-
 const removeTempDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxRemoveTempDir.name)(function*(
   tmp: string,
-  parent: string,
   fs: FileSystem.FileSystem,
 ): Effect.fn.Return<void, PlatformError> {
   yield* Effect.logDebug(`Deleting stryker temp directory ${tmp}`)
   yield* fs.remove(tmp, { recursive: true, force: true })
-  const parentExists = yield* fs.exists(parent)
-  yield* Boolean.match(parentExists, {
-    onTrue: () => removeEmptyParentDirectory(parent, fs),
-    onFalse: () => Effect.void,
-  })
 })
 
 const makeTemporaryDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxMakeTempDir.name)(function*(
@@ -73,7 +56,7 @@ const makeTemporaryDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxMakeTempDir.n
 
   yield* Effect.addFinalizer((exit) =>
     Boolean.match(removesTempDir(exit, options.cleanTempDir), {
-      onTrue: () => removeTempDirectory(tmp, parent, fs),
+      onTrue: () => removeTempDirectory(tmp, fs),
       onFalse: () => Effect.logDebug(`Keeping stryker temp directory ${tmp}`),
     }).pipe(Effect.orDie)
   )
