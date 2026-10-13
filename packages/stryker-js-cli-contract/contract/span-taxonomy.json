@@ -327,6 +327,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.mutationReporting.judgeScore",
+    "name": "stryker.mutationReporting.judgeScore",
+    "attributes": {}
+  },
+  {
     "id": "stryker.mutationReporting.manifestVersion",
     "name": "stryker.mutationReporting.manifestVersion",
     "attributes": {}
@@ -561,6 +566,11 @@
   {
     "id": "stryker.report.progress.consumeEvent",
     "name": "stryker.report.progress.consumeEvent",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.sarif",
+    "name": "stryker.report.sarif",
     "attributes": {}
   },
   {
