@@ -1,20 +1,21 @@
 ---
-title: Mutant Quality (Unit C) - Plan
+title: Mutant Quality (Unit C) - Plan v2 (corrected contract)
 type: feat
-date: 2026-10-09
+date: 2026-10-13
 topic: mutant-quality
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md
 ---
 
-# Mutant Quality (Unit C) - Plan
+# Mutant Quality (Unit C) - Plan v2 (corrected contract)
 
 ## Goal Capsule
 
 - **Objective:** A stryker-js-effect user gets fewer, better mutants by default. A run or plan scoped to a git diff mutates only changed lines. Arid code and equivalent mutants are not tested, and each is reported as Ignored with the rule that removed it. Effect code gets mutants that model real error-handling, concurrency, and validation bugs.
 - **Means:** Close the gap between what origin/main `1e1de6d05` already ships (diff scope for `run`, arid rules, mutant-set policy, TCE, opt-in concurrency mutators) and the Unit C Done list, as one `gh stack` of eight layers (KTD15). Nothing that already works is rebuilt.
-- **Authority:** `.omp-brief/unit-c-contract.md` (the Unit C contract) is binding, then the supervisor rulings in `.omp-brief/rulings-brainstorm.md`. `CONSTITUTION.md` outranks this plan (CONST-1). The prior plans `docs/plans/2026-09-29-0427-feat-state-of-the-art-mutation-testing-plan.md` (R20-R27) and `docs/plans/2026-09-23-1903-feat-effect-concurrency-mutators-plan.md` are context. Where this plan departs from them, the departure is a Key Decision or KTD below.
+- **Authority:** `.omp-brief/unit-c-contract.md` (the Unit C contract) is binding, then the supervisor rulings in `.omp-brief/rulings-brainstorm.md`. `CONSTITUTION.md` outranks this plan (CONST-1). The prior plans `docs/plans/2026-09-29-0427-feat-state-of-the-art-mutation-testing-plan.md` (R20-R27) and `docs/plans/2026-09-23-1903-feat-effect-concurrency-mutators-plan.md` are context. Where this plan departs from them, the departure is a Key Decision or KTD below. This v2 supersedes `docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md` wholesale; implementation had started (L1 merged as #262), so the corrections are a new contract, not an in-place edit. It changes two things. R9, KTD7 and U6's Approach now state the shipped `Effect.fn` rule (every non-function argument is arid; the function boundary protects the body), per L3 review finding 1. R22, KD8, the U6/U7/U9/U13/U14 verifications and the Mutation evidence row now read mutation evidence only from a nightly or manually dispatched main Mutation run, per the 2026-10-12 mutation law. Every other requirement, decision, unit and test is carried unchanged.
 - **Execution profile:** Deep. Each layer is one PR, implemented by `ce-work`, reviewed report-only, and merged bottom-up by the operator. No agent merges.
 - **Stop conditions:** Stop and report instead of shipping when any of these holds. A layer cannot be green on its exact head. A requirement can only be met by loosening a CONSTITUTION article. The e2e guest cannot run `git` without changing another fixture's bake key (Risk RK1).
 
@@ -72,7 +73,7 @@ Of the 8626 mutants on main, nearly half (4136) are CompileError. 1035 survived,
 **Arid-node suppression (Done 2)**
 
 - R8. Arid rules resolve the callee through the file's imports of `effect` modules, as `EffectCall.ts` does. An aliased namespace is suppressed, and a local object that merely shares the name `Effect` is not.
-- R9. The span-name argument of `Effect.fn(name, options?)` is arid under `arid-telemetry` (Google A-A 5 Tracing). The function body passed to `Effect.fn` is never arid by this rule.
+- R9. Every non-function argument of `Effect.fn` is arid under `arid-telemetry` (Google A-A 5 Tracing), whatever form the span name takes (string, template literal or member expression). The function body passed to `Effect.fn` is never arid by this rule: the function boundary protects it.
 - R10. A covered condition's mutants are Ignored as `arid-uncovered-block` (Google A-A 7) only when the block it guards is unexecuted and still yields at least one scored NoCoverage mutant in the same run. If the block yields none (empty, all arid, or all culled), the condition's mutants are kept. The decision comes from the current run's dry-run coverage, is never served from reuse, and is off under `mutantSetPolicy: 'full'` (KD6).
 - R11. Each new rule is a pure Workflow (CONST-P1, CONST-P2; pack: cell-architecture, pure-decision-workflows.md). Each has properties for both directions, the suppressed shape and the kept shape (CONST-T14). `mutantSetPolicy: 'full'` keeps everything, per SOTA R26.
 
@@ -95,7 +96,7 @@ Of the 8626 mutants on main, nearly half (4136) are CompileError. 1035 survived,
 **Delivery (Done 5)**
 
 - R21. The work ships as one `gh stack` on trunk `main` (OP13b). R6-R7 form the bottom layer, because every other layer's evidence (R22) is counted by rule id. Each Done item then lands as at least one layer above it. Each layer is green on its exact head with its new tests running in CI, and carries a changeset (BREAK-1: `major`, or `minor` while 0.x, for the wire and default-set breaks).
-- R22. Each PR body reports before/after mutant counts by status and by Ignored rule id from the first main Mutation run after merge, and fixture counts from the e2e lane, plus the PR number, head SHA, CI run URLs, and the review findings. The Unit C contract asks for this evidence.
+- R22. Each PR body reports before/after mutant counts by status and by Ignored rule id from the first nightly or manually dispatched main Mutation run after merge (mutation never runs on push or on pull requests), and fixture counts from the e2e lane, plus the PR number, head SHA, CI run URLs, and the review findings. The Unit C contract asks for this evidence.
 
 ### Test admission
 
@@ -116,7 +117,7 @@ Every test this plan proposes was run through the test-layer-selection gate, whi
 - KD5. **Error-message literals stay mutated.** (session-settled: user-directed — chosen over suppressing the 293 mutants around `get message()` getters: no evidence source classes them as unproductive.) Google's literal-bearing heuristics are logging, monitoring, tracing, and print (A-A 1/3/5, A-D 5), and messages are output a test can assert on.
 - KD6. **Uncovered-block suppression keeps the gap in the score.** (session-settled: user-directed — chosen over declaring Done 2's uncovered-only bullet met by the existing NoCoverage class, and over a separate non-scoring class: the guard keeps CONST-T3 intact.) The block's own NoCoverage mutants keep the test gap in the score; only the duplicate signal from its condition is removed. Governs R10.
 - KD7. **Evidence counts come from both CI and the e2e lane.** (session-settled: user-directed — chosen over dogfood-only counts: the dogfood globs see almost no Effect or arid sites.) Governs R22.
-- KD8. **In-process tests run locally; `test/e2e` runs in CI.** (session-settled: user-directed — chosen over CI-only for every engine-on-fixture suite.) Banned locally: running stryker against this repo's own packages, hand-applied mutants, and per-mutant red/green sweeps.
+- KD8. **In-process tests run locally; `test/e2e` runs in CI.** (session-settled: user-directed — chosen over CI-only for every engine-on-fixture suite.) Banned locally: running stryker against this repo's own packages, hand-applied mutants, per-mutant red/green sweeps, and citing local mutation evidence. Mutation evidence comes only from the reports of a nightly or manually dispatched main Mutation run.
 - KD9. **CI wiring of diff scope is out of Unit C.** (session-settled: user-directed — chosen over a human-applied PR Mutation workflow change inside this unit: `.github/workflows/` is read-only for agents.) Done 1 is met by the CLI and the e2e.
 - KD10. **Only sound Appendix A heuristics with non-zero yield are adopted.** (session-settled: user-directed — chosen over adopting every sound TypeScript-applicable heuristic: zero-yield rules add code without culling anything.) A-A 20 is the only one (Done-3 yield table). A-A 21 and A-A 23 are unsound or style rules and are not adopted. Governs R23.
 
@@ -177,7 +178,7 @@ Method: site patterns matched over the 156 source texts carried in run #416's in
 - KTD4. **HEAD comes from the `GitDiff` service, and the stale check runs once per shard.** `GitDiffResult` gains `head`, read with `git rev-parse HEAD` in the same service. `runShard` compares the leaf's HEAD with the plan's before it spawns any child and fails with a dedicated stale-plan `ConfigError` (CONST-D2; pack: cell-architecture, four-channel-contracts.md). `Unscoped` plans skip the check, so planning without `--since` still needs no git. A shallow clone with no merge-base keeps today's `GitRefUnresolved` failure. Governs R2.
 - KTD5. **Scope stays out of the run-inputs digest.** Base, HEAD, and scope are plan-document metadata, so a diff-scoped run reuses verdicts exactly as a full run does (`docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md`). This is what makes R4 hold across shard counts.
 - KTD6. **Arid callees resolve through `EffectCall`'s import table.** Frames carry the resolved module and export instead of identifier text, so `import * as E` matches and a shadowing local does not. `console` and `Date` are globals; their rules match only when the identifier has no local binding. Governs R8.
-- KTD7. **`Effect.fn` attaches the arid frame to its arguments only when the first is a string.** `Effect.fn('name', options)` makes the name and options arid. `Effect.fn(function* () {})` and the body in `Effect.fn('name')(function* () {})` stay mutated, because the body is an argument of the outer call, whose callee is not a member expression. Governs R9.
+- KTD7. **Every non-function argument of `Effect.fn` is arid; the body is protected by the function boundary.** `Effect.fn('name', options)` makes the name and options arid, and so does a span name written as a template literal or `Spans.x.name`. `Effect.fn(function* () {})` and the body in `Effect.fn('name')(function* () {})` stay mutated, because the arid walk stops at a function boundary. Governs R9.
 - KTD8. **Uncovered-block suppression is split between the instrumenter and test planning, and a guard group never straddles shards.** The instrumenter records, per `if` consequent block, the ids of the condition's mutants and of the block's mutants, including the BlockStatement mutant. Test planning decides from this run's coverage: the BlockStatement mutant has no covering test and is not static, at least one block mutant is decided NoCoverage, and the condition mutant is covered. Under `coverageAnalysis` other than `perTest` no mutant is decided NoCoverage, so the rule is inert there. The shard planner bins mutants one at a time (`plan-shards.workflow.ts:179-180`), and a leaf sees checker and coverage decisions only for the mutants it holds, so the planner places each guard group (condition mutants plus block mutants) as one unit; otherwise the verdict would depend on `--max-shards`. Records carrying `arid-uncovered-block` are refused by reuse and re-decided, per supervisor ruling Q1 in `.omp-brief/rulings-brainstorm.md` ("never served from reuse"). Governs R10.
 - KTD9. **Instrumenter equivalence refusals are properties over generated replacement pairs.** The generators produce sequence expressions, parenthesised object literals in arrow bodies, and string literals differing only inside quotes, and assert `MutantKept`. If a property fails on main, the fix lands in the same unit. Governs R12.
 - KTD10. **The collection-size rule lives in the TS checker.** Soundness needs the receiver's type, and only the checker has a type-checker (`getTypeAtLocation`, `isArrayType`, `isTupleType` in `typescript` 7.0.2's `unstable/async` API). The handle gathers facts (operator, literal, receiver kind, sibling constants at the site), and a pure workflow decides, following `classify-tce.workflow.ts`. Without the checker plugin the rule is inert. The rule id is `constant-collection-size`, so its yield is counted apart from TCE. Governs R23.
@@ -384,7 +385,7 @@ flowchart TB
 - **Layer:** L3 (PR 3).
 - **Dependencies:** U1 (evidence by rule id).
 - **Files:** `packages/stryker-js-instrumenter/src/arid-code.workflow.ts`, `packages/stryker-js-instrumenter/src/Transformer.service.ts`, `packages/stryker-js-instrumenter/src/EffectCall.ts` (import table reuse only), `packages/stryker-js-instrumenter/src/__tests__/arid-code.workflow.property.test.ts`, `packages/stryker-js-instrumenter/tests/instrumenter.integration.test.ts`, `.changeset/*.md`.
-- **Approach:** extend the arid callee fact with the resolved module and export (or an unshadowed-global marker), switch each rule's matcher to it, and add `fn` to `arid-telemetry` with the string-first guard.
+- **Approach:** extend the arid callee fact with the resolved module and export (or an unshadowed-global marker), switch each rule's matcher to it, and add `fn` to `arid-telemetry` covering every non-function argument; the function boundary protects the body.
 - **Patterns to follow:** `EffectCall.ts` import table and shadowing rules; existing `∀c_CommandAndFrame_≡…` properties. CONST-P1, CONST-P2, CONST-T14; pack: cell-architecture, pure-decision-workflows.md.
 - **Test scenarios:**
   - AE4: `import * as E from 'effect/Effect'` with `E.logInfo('x')` Ignores `'x'` as `arid-logging`.
@@ -394,7 +395,7 @@ flowchart TB
   - `Effect.fn('handle', { attributes: { a: 1 } })` Ignores the name and options mutants as `arid-telemetry`.
   - Refusal: `Effect.fn(function* () { return a + b })` and `Effect.fn('n')(function* () { return a + b })` keep the ArithmeticOperator mutant.
   - Property: a frame whose callee resolves to no `effect` module and no unshadowed global is never suppressed; under `full` every frame is kept.
-- **Verification:** properties and the instrumenter integration suite pass; run #416's evidence query counts per-rule Ignored mutants after merge (R22).
+- **Verification:** properties and the instrumenter integration suite pass; the first nightly or manually dispatched main Mutation run after merge counts per-rule Ignored mutants with run #416's evidence query (R22).
 
 ### U7. `arid-uncovered-block`
 
@@ -419,7 +420,7 @@ flowchart TB
   - A second run with the incremental record re-decides the condition mutants instead of reusing them.
   - Property: no condition mutant is suppressed unless some mutant of its block is decided NoCoverage in the same command.
   - Property (planner): for any mutant set with guard groups and any `maxShards` or `targetSeconds`, every guard group's ids land in exactly one shard, and the id union still equals the input set (R4).
-- **Verification:** properties and the engine-on-fixture suite pass; the merged report on the next main run shows per-rule counts for `arid-uncovered-block` (R22).
+- **Verification:** properties and the engine-on-fixture suite pass; the merged report on the next nightly or manually dispatched main Mutation run shows per-rule counts for `arid-uncovered-block` (R22).
 
 ### U8. Equivalence refusal properties
 
@@ -456,7 +457,7 @@ flowchart TB
   - Refusal: comparison with `1` is kept.
   - Refusal: no `true` sibling at the site, or the sibling is itself Ignored, keeps the mutant.
   - Property: any fact set where the receiver is not a known collection or no kept sibling has the constant yields kept.
-- **Verification:** checker properties and integration suite pass; the next main run's merged report counts `constant-collection-size` near the 25 measured on run #416 (R22).
+- **Verification:** checker properties and integration suite pass; the next nightly or manually dispatched main Mutation run's merged report counts `constant-collection-size` near the 25 measured on run #416 (R22).
 
 ### U10. Concurrency mutators default, stock opt-in registry emptied
 
@@ -523,7 +524,7 @@ flowchart TB
   - `isBetween({ minimum: 1, maximum: 9 })` yields two mutants, one per exclusivity flag.
   - `isMinLength(2)` becomes `isMinLength(2 + 1)`, and a test decoding a length-2 value kills it.
   - Refusal: a local function named `isGreaterThan` yields no mutant.
-- **Verification:** integration and behaviour suites pass; the next main run shows mutants at the six dogfood bound sites (R22): on run #416's mutated sources, 3 `isGreaterThanOrEqualTo`, 2 `isBetween`, and 1 `isGreaterThan` call. The PR body reports the mutant count found there.
+- **Verification:** integration and behaviour suites pass; the next nightly or manually dispatched main Mutation run shows mutants at the six dogfood bound sites (R22): on run #416's mutated sources, 3 `isGreaterThanOrEqualTo`, 2 `isBetween`, and 1 `isGreaterThan` call. The PR body reports the mutant count found there.
 
 ### U14. Refinement-removal mutator and ignorer refusal
 
@@ -539,7 +540,7 @@ flowchart TB
   - `S.Number.check(S.isInt())` becomes `S.Number`, and a test decoding `1.5` kills it.
   - R20 refusal: the ignorer keeps both new mutators' mutants on `S.Number.check(S.isGreaterThan(0, { title: 't' }))`, while it still ignores mutants inside the annotation object.
   - Refusal: a non-Schema `.check(...)` method on a local object yields no mutant.
-- **Verification:** integration, behaviour, and ignorer suites pass; the next main run shows mutants at the dogfood `check` sites (R22).
+- **Verification:** integration, behaviour, and ignorer suites pass; the next nightly or manually dispatched main Mutation run shows mutants at the dogfood `check` sites (R22).
 
 ---
 
@@ -557,9 +558,9 @@ flowchart TB
 | REPO-D2 single plan file                                     | `pnpm gate:repo`                                                                                                                                                        | L1 (this plan file)                                              |
 | DEL1 removals                                                | `git grep -nI -e '<removed identifier>' -- . ':!*.lock'` returns nothing                                                                                                | L1 (`REMEMBERED_REASON`), L6 (`optInMutators`, `StockOptInName`) |
 | E2E journeys                                                 | CI e2e lane only (KD8)                                                                                                                                                  | L2, and L6-L8 for annotation updates                             |
-| Mutation evidence                                            | first main Mutation run after each merge; merged `mutation-report-<run>` artifact, counted by status and by Ignored rule id                                             | every layer (R22)                                                |
+| Mutation evidence                                            | the first nightly or manually dispatched main Mutation run after each merge; merged `mutation-report-<run>` artifact, counted by status and by Ignored rule id          | every layer (R22)                                                |
 
-No layer runs stryker against this repository's packages locally, applies mutants by hand, or sweeps mutants red/green (KD8).
+No layer runs stryker against this repository's packages locally, applies mutants by hand, sweeps mutants red/green, or cites local mutation evidence (KD8).
 
 ---
 
