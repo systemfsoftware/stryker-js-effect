@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -89,7 +89,7 @@ const verdictsOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<str
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker
       return yield* checker.check([...wires])
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
     return Object.fromEntries(
       rows.map((row) => [
         row.id,
@@ -511,7 +511,7 @@ const bodyVerdictsOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<R
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker
       return yield* checker.check([...wires])
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
     return Object.fromEntries(
       rows.map((row) => [
         row.id,

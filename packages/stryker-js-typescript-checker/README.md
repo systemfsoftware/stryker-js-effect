@@ -41,10 +41,15 @@ export default defineConfig({
 The default entry is the worker plugin Stryker loads from `plugins`, and that is all a normal setup needs. Tooling that drives the compiler itself — for example an oracle that instruments a project and hands the mutants to the real checker — can import the in-process runtime from the `./runtime` subpath instead:
 
 ```ts
-import { CheckerRuntime, nodes, TypeScriptCompiler } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import {
+  CheckerRuntime,
+  nodes,
+  TypeScriptCheckerRuntime,
+  TypeScriptCompiler,
+} from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 ```
 
-It publishes the runtime Layer (`CheckerRuntime.layer(options)`), its `CheckerRuntimeShape` type, the `TypeScriptCompiler` service tag and the `nodes` program-graph accessor. Everything else stays behind the worker entry.
+It publishes the `CheckerRuntime` service tag and its `CheckerRuntimeShape` type, the TypeScript-backed implementation as the `TypeScriptCheckerRuntime` namespace (`TypeScriptCheckerRuntime.layer(options)` builds the runtime Layer, and `TypeScriptCheckerRuntime.make(compiler)` builds the checker service it holds), the `TypeScriptCompiler` service tag, the `nodes` program-graph accessor, and the `TSCompiler` type both `make` and `nodes` take. Everything else stays behind the worker entry.
 
 `CheckerRuntimeShape` carries three members:
 
