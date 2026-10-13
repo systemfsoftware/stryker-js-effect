@@ -16,6 +16,7 @@ export const GuardSiteSchema = S.Struct({
   test: Mutant.Location,
   block: Mutant.Location,
   alternate: S.optional(Mutant.Location),
+  nestedFunctionBodies: S.Array(Mutant.Location),
 })
 export type GuardSite = typeof GuardSiteSchema.Type
 
@@ -66,6 +67,12 @@ const atOrBefore = Order.isLessThanOrEqualTo(positionOrder)
 const contains = (outer: Mutant.Location, inner: Mutant.Location): boolean =>
   [atOrBefore(outer.start, inner.start), atOrBefore(inner.end, outer.end)].every(Boolean)
 
+const insideAny = (spans: readonly Mutant.Location[], location: Mutant.Location): boolean =>
+  spans.some((span) => contains(span, location))
+
+const ownsFrom = (site: ResolvedSite, location: Mutant.Location): boolean =>
+  [contains(site.test, location), !insideAny(site.nestedFunctionBodies, location)].every(Boolean)
+
 const spanSizeOrder: Order.Order<Mutant.Location> = Order.combine(
   Order.mapInput(Order.Number, (location: Mutant.Location) => location.end.line - location.start.line),
   Order.mapInput(Order.Number, (location: Mutant.Location) => location.end.column - location.start.column),
@@ -78,6 +85,7 @@ const testOrder: Order.Order<Mutant.Location> = Order.combine(
 
 interface ResolvedSite {
   readonly test: Mutant.Location
+  readonly nestedFunctionBodies: readonly Mutant.Location[]
   readonly guard: Mutant.Guard
 }
 
@@ -135,6 +143,7 @@ const resolvedSites = (command: GuardRelationCommand): readonly ResolvedSite[] =
         }),
         ({ blockMutantId, alternateMutantId }): ResolvedSite => ({
           test: site.test,
+          nestedFunctionBodies: site.nestedFunctionBodies,
           guard: {
             block: blockMutantId,
             inside: insideOf(site.block, blockMutantId, command.mutants),
@@ -151,7 +160,7 @@ const ownerOf = (sites: readonly ResolvedSite[], location: Mutant.Location): Opt
     sites,
     Option.none<ResolvedSite>(),
     (best, site) =>
-      Bool.match(contains(site.test, location), {
+      Bool.match(ownsFrom(site, location), {
         onTrue: () =>
           Option.match(best, {
             onNone: () => Option.some(site),

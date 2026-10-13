@@ -1891,6 +1891,51 @@ if (c) {
     )
 
     scenario(
+      'A mutant inside a function nested in a condition carries no guard',
+      Gherkin.Do.pipe(
+        Given('an if whose condition calls a callback that holds an if')(
+          'source',
+          () =>
+            Effect.succeed(`if (xs.some((x) => {
+  if (x) {
+    f(1)
+  }
+  return x
+})) {
+  g(2)
+}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-callback-body.ts', source),
+        ),
+        Then(
+          'the callback body and the inner block carry no guard while each condition names its own block',
+        )(({ result }: { result: Instrument.InstrumentResult }, expect) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const blocks = result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement')
+          const blockAt = (line: number) => blocks.find((mutant) => mutant.location.start.line === line)
+          const guardBlocksOn = (line: number) =>
+            conditions.filter((mutant) => mutant.location.start.line === line).map((mutant) => mutant.guard?.block)
+          const guardedFlags = (line: number) =>
+            blocks.filter((mutant) => mutant.location.start.line === line).map((mutant) => mutant.guard !== undefined)
+          return expect({
+            callbackBodyBlocks: guardedFlags(1),
+            innerBlocks: guardedFlags(2),
+            innerConditionGuards: guardBlocksOn(2),
+            outerConditionGuards: guardBlocksOn(1),
+          }).toEqual({
+            callbackBodyBlocks: [false],
+            innerBlocks: [false],
+            innerConditionGuards: [blockAt(2)?.id, blockAt(2)?.id],
+            outerConditionGuards: [blockAt(6)?.id, blockAt(6)?.id],
+          })
+        }),
+      ),
+    )
+
+    scenario(
       'An if whose consequent is not a block or is an empty block yields no guard',
       Gherkin.Do.pipe(
         Given('a bare consequent if and an empty-block if')(

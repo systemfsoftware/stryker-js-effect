@@ -34,7 +34,7 @@ const idAt = (command: Command, index: number, fallback: string): Mutant.MutantI
 const probeOf = (command: Command): Command =>
   GuardRelationCommand.make({
     policy: 'default',
-    sites: [{ test: TEST_LOC, block: BLOCK_LOC }],
+    sites: [{ test: TEST_LOC, block: BLOCK_LOC, nestedFunctionBodies: [] }],
     mutants: [
       { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: BLOCK_LOC },
       { id: idAt(command, 1, '00000000000000c2'), mutatorName: 'StringLiteral', location: INSIDE_LOC },
@@ -52,14 +52,15 @@ const INNER_TEST_LOC = located(1, 10, 1, 14)
 const INNER_COND_LOC = located(1, 10, 1, 13)
 const INNER_BLOCK_LOC = located(1, 16, 1, 25)
 const OUTER_BLOCK_LOC = located(2, 1, 4, 1)
+const NESTED_BODY_LOC = located(1, 9, 1, 26)
 
 const callbackInConditionProbeOf = (command: Command): Command => {
   const at = (location: Mutant.Location) => shifted(location, lineShiftOf(command))
   return GuardRelationCommand.make({
     policy: 'default',
     sites: [
-      { test: at(OUTER_TEST_LOC), block: at(OUTER_BLOCK_LOC) },
-      { test: at(INNER_TEST_LOC), block: at(INNER_BLOCK_LOC) },
+      { test: at(OUTER_TEST_LOC), block: at(OUTER_BLOCK_LOC), nestedFunctionBodies: [at(NESTED_BODY_LOC)] },
+      { test: at(INNER_TEST_LOC), block: at(INNER_BLOCK_LOC), nestedFunctionBodies: [] },
     ],
     mutants: [
       { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: at(OUTER_BLOCK_LOC) },
@@ -75,7 +76,7 @@ const elseProbeOf = (command: Command, elseHasBlockMutant: boolean): Command => 
   const at = (location: Mutant.Location) => shifted(location, lineShiftOf(command))
   return GuardRelationCommand.make({
     policy: 'default',
-    sites: [{ test: at(TEST_LOC), block: at(BLOCK_LOC), alternate: at(ELSE_LOC) }],
+    sites: [{ test: at(TEST_LOC), block: at(BLOCK_LOC), alternate: at(ELSE_LOC), nestedFunctionBodies: [] }],
     mutants: [
       { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: at(BLOCK_LOC) },
       { id: idAt(command, 2, '00000000000000d3'), mutatorName: 'ConditionalExpression', location: at(COND_LOC) },
@@ -258,6 +259,19 @@ describe('guardRelation', () => {
       const [, inner, condition] = probe.mutants
       return inner !== undefined && condition !== undefined &&
         Option.exists(guardOf(decisionsOf(subject(probe)), condition.id), (guard) => guard.block === inner.id)
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡AMutantInsideANestedFunctionBodyOfATestIsNeverGuardedByThatSite',
+    { of: [GuardRelationCommand], subject: guardRelation },
+    (subject, [command]) => {
+      const probe = callbackInConditionProbeOf(command)
+      const [, inner, condition] = probe.mutants
+      const decisions = decisionsOf(subject(probe))
+      return inner !== undefined && condition !== undefined &&
+        Option.isNone(guardOf(decisions, inner.id)) &&
+        Option.exists(guardOf(decisions, condition.id), (guard) => guard.block === inner.id)
     },
   )
 

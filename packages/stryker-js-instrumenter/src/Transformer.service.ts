@@ -82,8 +82,8 @@ import {
 } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
-import { lineStartsOf, locationOf, positionAt, shiftedLocation } from './Location.js'
-import type { LineStarts, ScriptOrigin, Span } from './Location.schema.js'
+import { lineStartsOf, locationOf, positionAt } from './Location.js'
+import { type LineStarts, type ScriptOrigin, shiftedLocation, type Span } from './Location.schema.js'
 import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.js'
 import {
   applyMutant,
@@ -1098,6 +1098,13 @@ const alternateSpanOf = (statement: IfStatement): Option.Option<Option.Option<Sp
     onSome: (alternate) => Option.map(spanOfOption(alternate), Option.some),
   })
 
+const nestedFunctionBodySpansOf = (root: Node): readonly Span[] =>
+  childNodes(root).flatMap((child) =>
+    isFunctionLike(child.node)
+      ? Option.toArray(Option.flatMap(Option.fromNullishOr(child.node.body), spanOfOption))
+      : nestedFunctionBodySpansOf(child.node)
+  )
+
 const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option<GuardSite> =>
   Option.flatMap(
     Option.filter(Option.some(frame.node), (node): node is IfStatement => node.type === 'IfStatement'),
@@ -1115,6 +1122,7 @@ const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option
               const locate = (span: Span) => shiftedLocation(locationOf(context.lineStarts, span), context.offset)
               return {
                 test: locate(spans.test),
+                nestedFunctionBodies: nestedFunctionBodySpansOf(statement.test).map(locate),
                 block: locate(spans.block),
                 ...Option.match(spans.alternate, {
                   onNone: () => ({}),
