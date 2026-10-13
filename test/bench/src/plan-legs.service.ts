@@ -8,7 +8,7 @@ import type * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchCorpusJson } from './bench-corpus.schema.js'
-import { type LegSelection, type NoBenchBase, TurboAffectedJson } from './bench-plan.schema.js'
+import { type LegSelection, type NoBenchBase, TurboAffectedPaths } from './bench-plan.schema.js'
 import { runChecked, runCommand } from './command.service.js'
 import { ENGINE_BUILD_DIRS } from './engine-dirs.js'
 import { BenchSetupFailed } from './prepare-side.schema.js'
@@ -83,13 +83,12 @@ const affectedPathsSince = (input: PlanLegsInput, base: string) =>
       cwd: input.repoRoot,
     })),
     Effect.flatMap((outcome) =>
-      S.decodeEffect(TurboAffectedJson)(outcome.stdout).pipe(
+      S.decodeEffect(TurboAffectedPaths)(outcome.stdout).pipe(
         Effect.mapError((error) =>
           setupFailed(STEP_AFFECTED, `turbo printed no affected-packages JSON: ${error.message}`)
         ),
       )
     ),
-    Effect.map((affected) => Arr.map(affected.data.affectedPackages.items, (item) => item.path)),
   )
 
 const corpusEntries = (input: PlanLegsInput) =>
