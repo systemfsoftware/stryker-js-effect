@@ -508,7 +508,8 @@ const returnTargetOf = (parent: Node): ReturnTarget =>
   Option.match(returnFunctionOf(parent), { onNone: (): ReturnTarget => 'none', onSome: functionTargetOf })
 
 const MEMBER_FLAGS: ReadonlyArray<readonly [TypeFlags, LeftOperandMember]> = [
-  [TypeFlags.Any | TypeFlags.Unknown, 'unconstrained'],
+  [TypeFlags.Any, 'any'],
+  [TypeFlags.Unknown, 'unknown'],
   [TypeFlags.Undefined | TypeFlags.Null | TypeFlags.Void, 'nullish'],
   [TypeFlags.String | TypeFlags.Number | TypeFlags.BigInt, 'primitive'],
   [TypeFlags.Object | TypeFlags.NonPrimitive | TypeFlags.ESSymbol | TypeFlags.UniqueESSymbol, 'always-truthy'],

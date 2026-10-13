@@ -26,7 +26,8 @@ export const ContextSlot = S.Literals([
 export type ContextSlot = typeof ContextSlot.Type
 
 export const LeftOperandMember = S.Literals([
-  'unconstrained',
+  'any',
+  'unknown',
   'nullish',
   'primitive',
   'falsy-literal',
@@ -90,11 +91,11 @@ const unenforced = (): ContextLink => LinkUnenforced.make({})
 
 const RIGHT_OPERAND_RULES: ReadonlyMap<SyntaxKind, LinkRule> = new Map([
   [SyntaxKind.EqualsToken, declared],
-  [SyntaxKind.QuestionQuestionToken, reachingWhenLeftIs(['unconstrained', 'nullish'])],
-  [SyntaxKind.BarBarToken, reachingWhenLeftIs(['unconstrained', 'nullish', 'primitive', 'falsy-literal'])],
+  [SyntaxKind.QuestionQuestionToken, reachingWhenLeftIs(['unknown', 'nullish'])],
+  [SyntaxKind.BarBarToken, reachingWhenLeftIs(['unknown', 'nullish', 'primitive', 'falsy-literal'])],
   [
     SyntaxKind.AmpersandAmpersandToken,
-    reachingWhenLeftIs(['unconstrained', 'primitive', 'truthy-literal', 'always-truthy']),
+    reachingWhenLeftIs(['unknown', 'primitive', 'truthy-literal', 'always-truthy']),
   ],
 ])
 

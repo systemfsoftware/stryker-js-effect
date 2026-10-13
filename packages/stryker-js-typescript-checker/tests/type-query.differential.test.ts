@@ -237,6 +237,14 @@ const LINK_SITES: ReadonlyArray<readonly [Site, string, Expected]> = [
   [{ siteId: 'or-maybe-falsy', line: 43, text: `'o'` }, '0', ENFORCED],
   [{ siteId: 'and-never-truthy', line: 45, text: 'true' }, '0', NOT_ENFORCED],
   [{ siteId: 'and-maybe-truthy', line: 47, text: 'true' }, '0', ENFORCED],
+  [{ siteId: 'any-or', line: 49, text: "'a'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'any-nullish', line: 50, text: "'b'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'any-and', line: 51, text: "'c'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'async-return', line: 53, text: '41' }, '""', ENFORCED],
+  [{ siteId: 'generator-return', line: 54, text: '42' }, '""', ENFORCED],
+  [{ siteId: 'predicate-return', line: 55, text: "typeof x === 'string'" }, '""', ENFORCED],
+  [{ siteId: 'spread-sibling', line: 56, text: '44' }, '""', ENFORCED],
+  [{ siteId: 'new-argument', line: 58, text: '45' }, '""', ENFORCED],
 ]
 
 const LINK_CASES: ReadonlyArray<LinkCase> = LINK_SITES.map(([site, candidate, expected], index) => ({

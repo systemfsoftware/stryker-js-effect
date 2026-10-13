@@ -11,7 +11,7 @@ export const asserted = "a" as 'a' | 'b'
 export const lazy = id(() => 'x')
 export const letters: ReadonlyArray<'a' | 'b'> = ['a']
 export const pair: readonly [string, boolean] = ['k', true] as const
-/* oxlint-disable typescript/no-non-null-assertion, typescript/no-unnecessary-condition, typescript/strict-boolean-expressions, unicorn/no-useless-spread */
+/* oxlint-disable effecttsgo/async-function, typescript/no-non-null-assertion, typescript/no-unnecessary-condition, typescript/strict-boolean-expressions, unicorn/no-useless-spread */
 declare const maybe: string | undefined
 export const nonNull: string = maybe!
 export const paren: number = (21)
@@ -45,3 +45,14 @@ declare const off: false
 export const andDrop: false = off && true
 declare const on: boolean
 export const andKeep: boolean = on && true
+declare const anyv: any
+export const anyOr: string = anyv || 'a'
+export const anyNullish: string = anyv ?? 'b'
+export const anyAnd: string = anyv && 'c'
+// @effect-diagnostics-next-line asyncFunction:off
+export async function asyncReturn(): Promise<number> { return 41 }
+export function* generatorReturn(): Generator<number, number> { yield 0; return 42 }
+export function isText(x: unknown): x is string { return typeof x === 'string' }
+export const sibling: { readonly a: number } = { ...{}, a: 44 }
+declare class Box { constructor(n: number) }
+export const boxed = new Box(45)
