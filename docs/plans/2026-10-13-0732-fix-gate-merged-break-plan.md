@@ -5,12 +5,12 @@ status: active
 date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-13-0325-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-13-0602-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
 
-This revision corrects only the unrecorded-thresholds shape: the shipped contract is a tagged union (`Recorded | Unrecorded`), never `null` (full-path review run 20261013-051057-2f111cb4, findings 4 and 5).
+This revision corrects R1-R3 and U1 to the shipped gate mechanism, which compares each project's score to its recorded break inline instead of through `classifyExit` (full-path review run 20261013-061137-3bcdcd0e, finding 5).
 
 ## Goal Capsule
 
@@ -30,9 +30,9 @@ The merged report never carries the configured break. Merge rebuilds each projec
 
 ### Requirements
 
-- R1. `stryker gate` judges every project in the finished report against that project's own `thresholds.break`. The score is the total mutation score: `Report.metricsFromMutants(mutants).mutationScore`, which is the score the unsharded path passes to `classifyExit` (`mutation-reporting.service.ts:741`).
-- R2. The verdict comes from `classifyExit`. A score below break fails. A score equal to break passes. A null break gives no verdict. An `Unscored` project gives no verdict (ruling B). When an `Unscored` project has a break set, the gate logs an info line naming the project.
-- R3. A failure uses the existing reason code `score-below-break` (`Mutant.RunFailureCode`); no new code is added. The output starts with a counts-first summary line. Each failing project then gets one line with its label, score and break. A last line gives the next action: kill the survivors the report lists, or lower `thresholds.break` (null disables the verdict). The exit class is `VerdictFail` (exit 1).
+- R1. `stryker gate` judges every project in the finished report against that project's own `thresholds.break`. The score is the total mutation score: `Report.metricsFromMutants(mutants).mutationScore`, the same score the unsharded path passes to `mutationVerdictCell` (`mutation-reporting.service.ts:882`).
+- R2. The decision compares each project's `Report.MutationScore` to its recorded break with the same `percentage < threshold` rule as `judge-mutation-score.workflow.ts:86`, kept inline because a decision body may not call an imported workflow. A score below break fails. A score equal to break passes. A null break gives no verdict. An `Unscored` project gives no verdict (ruling B). When an `Unscored` project has a break set, the gate logs an info line naming the project.
+- R3. A failure uses the existing reason code `score-below-break` (`Mutant.RunFailureCode`); no new code is added. On failure each breach line, the notes and the next action are logged on stderr by `runScoreBreakGate` (`run-request.cell.ts:479`), and the bounded exit summary carries the counts line. Each failing project then gets one line with its label, score and break. A last line gives the next action: kill the survivors the report lists, or lower `thresholds.break` (null disables the verdict). The exit class is `VerdictFail` (exit 1).
 - R4. `stryker merge` writes each project's thresholds and its file keys into the merged report as `projects`, so the gate needs no config read (ruling A). Files outside every listed project, which is every file of an unsharded run's report, are judged as one project `.` with the report's top-level thresholds.
 - R5. The `--baseline` and `--budget-baseline` verdicts are unchanged. The gate runs the baseline check, then the budget check, then the break check, and the first failure decides the exit. Under `--update-baseline` or `--update-budget-baseline` the baselines are written first and the break check still runs: updating a baseline does not accept a low score.
 - R6. Changeset: `@systemfsoftware/stryker-js` major, because a gate that passed today now fails. Migration: raise the score, set each project's own `thresholds.break` to its current score, or set it to `null`. The README rows for `stryker gate` and exit code 1 say the gate judges each project against the break in its own config, in one statement.
@@ -67,7 +67,7 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 
 ## Implementation
 
-- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project goes through `classifyExit`.
+- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project's verdict comes from `isBelowItsBreak` (`packages/stryker-js/src/gate-score-break.workflow.ts:111`).
 - U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: MergedProjectThresholds, files }`, where `MergedProjectThresholds = Recorded VerdictThresholds | Unrecorded`; `shard-merge.ts` writes the `Unrecorded` variant when no shard stream of the project has a `verdict` line.
 - U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: the cell passes thresholds through and logs the decision's `lines`.
 - U4 (landed `e581c9fa0`). A2, READMEs, changeset.
