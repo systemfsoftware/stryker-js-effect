@@ -40,6 +40,8 @@ const OTHER_SOURCE = [
   '',
 ].join('\n')
 
+const CHANGED_OTHER_SOURCE = OTHER_SOURCE.replace('return tripled - 1', 'return tripled + 1')
+
 const README_SOURCE = '# readme\n'
 
 const CHANGED_README_SOURCE = '# readme changed\n'
@@ -465,6 +467,73 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
             headIsACommit: true,
             schedulesAsManyAsTheLineRestrictedPlan: true,
             narrowerThanFull: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A plan whose flag names a ref while the config declares another scopes from the flag',
+      Gherkin.Do.pipe(
+        Given('a repository whose config declares an earlier ref, with the flag naming a later one')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, CONFIG_SINCE_TWO))
+              const configBase = yield* headOf(root)
+              yield* writeFile(root, OTHER_FILE, CHANGED_OTHER_SOURCE)
+              yield* commitAll(root, 'change the other line')
+              const flagBase = yield* headOf(root)
+              yield* writeFile(root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(root, 'change the target line')
+              const oracleRoot = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE))
+              yield* writeFile(oracleRoot, OTHER_FILE, CHANGED_OTHER_SOURCE)
+              yield* commitAll(oracleRoot, 'change the other line')
+              const oracleFlagBase = yield* headOf(oracleRoot)
+              yield* writeFile(oracleRoot, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(oracleRoot, 'change the target line')
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const scoped = yield* planTo(root, PLAN_FILE, ['--since', flagBase])
+                  const configScoped = yield* planTo(root, 'plan-config.json')
+                  const oracle = yield* planTo(oracleRoot, 'plan-oracle.json', ['--since', oracleFlagBase])
+                  return { configBase, configScoped, flagBase, oracle, oracleFlagBase, scoped }
+                }),
+                Effect.andThen(removeWorkspace(root), removeWorkspace(oracleRoot)),
+              )
+            }),
+        ),
+        Then('the plan scopes from the flag commit and schedules only what a flag-only plan schedules')((s, expect) => {
+          const scope = s.planned.scoped.plan.scope
+          const diff = diffScopeOf(scope)
+          const configDiff = diffScopeOf(s.planned.configScoped.plan.scope)
+          const oracleDiff = diffScopeOf(s.planned.oracle.plan.scope)
+          const scopedIds = scheduledIds(s.planned.scoped.plan)
+          const configIds = scheduledIds(s.planned.configScoped.plan)
+          const oracleIds = scheduledIds(s.planned.oracle.plan)
+          return expect({
+            scopedExit: s.planned.scoped.ran.exitCode,
+            configExit: s.planned.configScoped.ran.exitCode,
+            scopeTag: scopeTagOf(scope),
+            baseIsTheFlagCommit: diff !== undefined && diff.base === s.planned.flagBase,
+            baseIsNotTheConfigCommit: diff !== undefined && diff.base !== s.planned.configBase,
+            configPlanScopesFromTheConfigCommit: configDiff !== undefined && configDiff.base === s.planned.configBase,
+            everyScopedIdIsAlsoConfigScoped: scopedIds.every((id) => configIds.includes(id)),
+            narrowerThanTheConfigScopedPlan: scopedIds.length > 0 && scopedIds.length < configIds.length,
+            schedulesAsManyAsTheFlagOnlyPlan: scopedIds.length === oracleIds.length,
+            theFlagOnlyPlanScopesFromItsOwnFlagCommit: oracleDiff !== undefined &&
+              oracleDiff.base === s.planned.oracleFlagBase,
+          }).toEqual({
+            scopedExit: 0,
+            configExit: 0,
+            scopeTag: 'DiffScoped',
+            baseIsTheFlagCommit: true,
+            baseIsNotTheConfigCommit: true,
+            configPlanScopesFromTheConfigCommit: true,
+            everyScopedIdIsAlsoConfigScoped: true,
+            narrowerThanTheConfigScopedPlan: true,
+            schedulesAsManyAsTheFlagOnlyPlan: true,
+            theFlagOnlyPlanScopesFromItsOwnFlagCommit: true,
           })
         }),
       ),
