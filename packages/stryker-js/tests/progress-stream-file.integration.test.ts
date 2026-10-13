@@ -1,8 +1,9 @@
-import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -22,8 +23,10 @@ const DEFAULT_STREAM = 'reports/mutation-stream.jsonl'
 
 const JSON_REPORT = 'out/report.json'
 
-const configOf = (streamFile: string) =>
-  `export default {
+const CONFIG_FILE = 'stryker.config.mjs'
+
+const settingsOf = (streamFile: string) =>
+  `{
   testRunner: 'command',
   commandRunner: { command: 'true' },
   coverageAnalysis: 'off',
@@ -36,10 +39,26 @@ const configOf = (streamFile: string) =>
   incrementalFile: 'out/incremental.json',
   progressStreamFile: '${streamFile}',
   jsonReporter: { fileName: '${JSON_REPORT}' },
+}`
+
+const configNaming = (streamFile: string) => `export default ${settingsOf(streamFile)}\n`
+
+const FIRST_ANSWER = 'out/first.jsonl'
+
+const FACTORY_CONFIG = `let calls = 0
+export default () => {
+  calls += 1
+  return ${settingsOf('__STREAM__')}
 }
-`
+`.replace("'__STREAM__'", `calls === 1 ? '${FIRST_ANSWER}' : 'out/later.jsonl'`)
+
+const THROWING_CONFIG = "throw new Error('the config cannot be loaded')\n"
 
 const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
+
+const RUN = ['run', '--json']
+
+const HELP = ['--help', '--json']
 
 const requireBuiltBinary = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
@@ -51,7 +70,7 @@ const requireBuiltBinary = Effect.gen(function*() {
 }).pipe(Effect.orDie)
 
 const prepareProject = (
-  streamFile: string,
+  config: string,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     yield* requireBuiltBinary
@@ -60,25 +79,29 @@ const prepareProject = (
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-stream-file-' }))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(root, 'package.json'), '{ "name": "stream-consumer", "type": "module" }\n')
-    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), configOf(streamFile))
+    yield* fs.writeFileString(path.join(root, CONFIG_FILE), config)
     yield* fs.writeFileString(path.join(root, 'src', 'math.ts'), SOURCE)
     return root
   }).pipe(Effect.orDie)
 
-const RUN = ['run', '--json']
+interface Invocation {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly defaultStreamPresent: boolean
+}
 
-const HELP = ['--help', '--json']
-
-const runStryker = (
-  cwd: string,
+const invoke = (
+  root: string,
   args: ReadonlyArray<string>,
-): Effect.Effect<number, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<Invocation, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
         ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, ...args], {
-          cwd,
+          cwd: root,
           stdin: 'ignore',
           stdout: 'pipe',
           stderr: 'pipe',
@@ -86,53 +109,57 @@ const runStryker = (
           extendEnv: true,
         }),
       )
-      yield* handle.stdout.pipe(Stream.runDrain, Effect.forkScoped)
+      const stdout = yield* handle.stdout.pipe(Stream.decodeText, Stream.mkString, Effect.forkScoped)
       yield* handle.stderr.pipe(Stream.runDrain, Effect.forkScoped)
-      return Number(yield* handle.exitCode)
+      const exitCode = Number(yield* handle.exitCode)
+      const printed = yield* Fiber.join(stdout)
+      const defaultStreamPresent = yield* fs.exists(path.join(root, DEFAULT_STREAM))
+      const invocation: Invocation = { exitCode, stdout: printed, defaultStreamPresent }
+      return invocation
     }),
   ).pipe(Effect.orDie)
 
 const decodeReport = S.decodeOption(S.fromJsonString(Report.MutationTestResult))
 
-const reuseOf = (stream: string): RunEvent.ReuseReported | undefined =>
-  stream.split('\n')
-    .flatMap((line) => Option.toArray(S.decodeOption(RunEvent.RunEventWireLine)(line.trim())))
-    .find((event) => S.is(RunEvent.ReuseReported)(event))
+const eventsOf = (text: string): ReadonlyArray<RunEvent.RunEvent> =>
+  text.split('\n').flatMap((line) => Option.toArray(S.decodeOption(RunEvent.RunEventWireLine)(line.trim())))
 
 const readOptional = (file: string): Effect.Effect<Option.Option<string>, never, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file).pipe(Effect.option))
 
-interface LastRun {
-  readonly exitCodes: readonly number[]
+interface LeftBehind {
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly reportedMutants: number
-  readonly defaultStreamWritten: boolean
 }
 
-const runInOrder = (streamFile: string, commands: ReadonlyArray<ReadonlyArray<string>>) =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const root = yield* prepareProject(streamFile)
-      const exitCodes = yield* Effect.forEach(commands, (args) => runStryker(root, args))
-      const stream = yield* readOptional(path.join(root, streamFile))
-      const report = yield* readOptional(path.join(root, JSON_REPORT))
-      const defaultStreamWritten = yield* fs.exists(path.join(root, DEFAULT_STREAM)).pipe(Effect.orDie)
-      const run: LastRun = {
-        exitCodes,
-        reuse: Option.getOrUndefined(Option.map(stream, reuseOf)),
-        reportedMutants: Option.match(Option.flatMap(report, decodeReport), {
-          onNone: () => 0,
-          onSome: (decoded) => Object.values(decoded.files).reduce((total, file) => total + file.mutants.length, 0),
-        }),
-        defaultStreamWritten,
-      }
-      return run
-    }),
-  )
+const leftBehind = (
+  root: string,
+  streamFile: string,
+): Effect.Effect<LeftBehind, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const stream = yield* readOptional(path.join(root, streamFile))
+    const report = yield* readOptional(path.join(root, JSON_REPORT))
+    const left: LeftBehind = {
+      reuse: Option.getOrUndefined(
+        Option.map(stream, (text) => eventsOf(text).find((event) => S.is(RunEvent.ReuseReported)(event))),
+      ),
+      reportedMutants: Option.match(Option.flatMap(report, decodeReport), {
+        onNone: () => 0,
+        onSome: (decoded) => Object.values(decoded.files).reduce((total, file) => total + file.mutants.length, 0),
+      }),
+    }
+    return left
+  })
 
-Feature('A configured progress stream file stays out of the next run', { timeout: 180_000 })
+const reusedEveryMutant = (left: LeftBehind) => ({
+  ran: left.reuse?.ran,
+  reusedEveryReportedMutant: left.reportedMutants > 0 && left.reuse?.reused === left.reportedMutants,
+})
+
+const EVERY_MUTANT_REUSED = { ran: 0, reusedEveryReportedMutant: true }
+
+Feature('A stream file Stryker writes stays out of the next run', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a real project on the host filesystem')
   .body(({ scenario, scenarioOutline }) => {
@@ -141,30 +168,24 @@ Feature('A configured progress stream file stays out of the next run', { timeout
       [
         { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM },
         { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}` },
+        { spelling: 'a path with a doubled slash', streamFile: 'out//stream.jsonl' },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
-          Given(
-            'a project with no ignore patterns whose config names progressStreamFile, run twice with nothing changed',
-          )('run', () => runInOrder(row.streamFile, [RUN, RUN])),
-          Then(
-            'the second run writes its stream at the configured path, reuses every reported mutant and writes no default stream',
-          )((s, expect) =>
-            expect({
-              exitCodes: s.run.exitCodes,
-              reuseReported: s.run.reuse !== undefined,
-              ran: s.run.reuse?.ran,
-              reused: s.run.reuse?.reused,
-              mutantsReported: s.run.reportedMutants > 0,
-              defaultStreamWritten: s.run.defaultStreamWritten,
-            }).toEqual({
-              exitCodes: [0, 0],
-              reuseReported: true,
-              ran: 0,
-              reused: s.run.reportedMutants,
-              mutantsReported: true,
-              defaultStreamWritten: false,
-            })
+          Given('a project with no ignore patterns whose config names its stream file')(
+            'project',
+            () => prepareProject(configNaming(row.streamFile)),
+          ),
+          When('the project is run')('first', (s) => invoke(s.project, RUN)),
+          When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
+          When('the files the second run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
+          Then('the stream is at the configured path, every reported mutant is reused, and no default stream exists')(
+            (s, expect) =>
+              expect({
+                exitCodes: [s.first.exitCode, s.second.exitCode],
+                ...reusedEveryMutant(s.left),
+                defaultStreamPresent: s.second.defaultStreamPresent,
+              }).toEqual({ exitCodes: [0, 0], ...EVERY_MUTANT_REUSED, defaultStreamPresent: false }),
           ),
         ),
     )
@@ -172,23 +193,117 @@ Feature('A configured progress stream file stays out of the next run', { timeout
     scenario(
       'A run after another stryker command in the same project still re-runs no mutant',
       Gherkin.Do.pipe(
-        Given(
-          'a project with no ignore patterns whose config names progressStreamFile, run, then asked for help, then run again',
-        )('run', () => runInOrder(CONFIGURED_STREAM, [RUN, HELP, RUN])),
-        Then('the help left a stream at the default path, and the last run reuses every reported mutant')((s, expect) =>
+        Given('a project with no ignore patterns whose config names its stream file')(
+          'project',
+          () => prepareProject(configNaming(CONFIGURED_STREAM)),
+        ),
+        When('the project is run')('first', (s) => invoke(s.project, RUN)),
+        When('stryker is asked for help in the project')('help', (s) => invoke(s.project, HELP)),
+        When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
+        When('the files the last run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
+        Then('the help left a stream at the default path, and the last run reuses every reported mutant')(
+          (s, expect) =>
+            expect({
+              exitCodes: [s.first.exitCode, s.help.exitCode, s.second.exitCode],
+              defaultStreamPresent: [
+                s.first.defaultStreamPresent,
+                s.help.defaultStreamPresent,
+                s.second.defaultStreamPresent,
+              ],
+              ...reusedEveryMutant(s.left),
+            }).toEqual({
+              exitCodes: [0, 0, 0],
+              defaultStreamPresent: [false, true, true],
+              ...EVERY_MUTANT_REUSED,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A config whose stream file is empty streams to the default path and re-runs no mutant the second time',
+      Gherkin.Do.pipe(
+        Given('a project with no ignore patterns whose config names an empty stream file')(
+          'project',
+          () => prepareProject(configNaming('')),
+        ),
+        When('the project is run')('first', (s) => invoke(s.project, RUN)),
+        When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
+        When('the files the second run left are read')('left', (s) => leftBehind(s.project, DEFAULT_STREAM)),
+        Then('the stream is at the default path and every reported mutant is reused')((s, expect) =>
           expect({
-            exitCodes: s.run.exitCodes,
-            defaultStreamWritten: s.run.defaultStreamWritten,
-            ran: s.run.reuse?.ran,
-            reused: s.run.reuse?.reused,
-            mutantsReported: s.run.reportedMutants > 0,
-          }).toEqual({
-            exitCodes: [0, 0, 0],
-            defaultStreamWritten: true,
-            ran: 0,
-            reused: s.run.reportedMutants,
-            mutantsReported: true,
-          })
+            exitCodes: [s.first.exitCode, s.second.exitCode],
+            streamedOnStdout: eventsOf(s.second.stdout).length > 0,
+            ...reusedEveryMutant(s.left),
+          }).toEqual({ exitCodes: [0, 0], streamedOnStdout: true, ...EVERY_MUTANT_REUSED })
+        ),
+      ),
+    )
+
+    scenario(
+      'The --progressStreamFile flag wins over the stream file the config names',
+      Gherkin.Do.pipe(
+        Given('a project with no ignore patterns whose config names its stream file')(
+          'project',
+          () => prepareProject(configNaming(CONFIGURED_STREAM)),
+        ),
+        When('the project is run naming another stream file on the command line')(
+          'first',
+          (s) => invoke(s.project, [...RUN, '--progressStreamFile', 'out/flag.jsonl']),
+        ),
+        When('the same run is repeated with nothing changed')(
+          'second',
+          (s) => invoke(s.project, [...RUN, '--progressStreamFile', 'out/flag.jsonl']),
+        ),
+        When('the files the second run left are read')('left', (s) =>
+          Effect.all({
+            flagged: leftBehind(s.project, 'out/flag.jsonl'),
+            configured: Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
+          })),
+        Then('the stream is at the flag path, not the configured one, and every reported mutant is reused')(
+          (s, expect) =>
+            expect({
+              exitCodes: [s.first.exitCode, s.second.exitCode],
+              configuredStreamWritten: Option.isSome(s.left.configured),
+              ...reusedEveryMutant(s.left.flagged),
+            }).toEqual({ exitCodes: [0, 0], configuredStreamWritten: false, ...EVERY_MUTANT_REUSED }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A config that names a different stream file each time it is asked still re-runs no mutant the second time',
+      Gherkin.Do.pipe(
+        Given('a project with no ignore patterns whose config function answers one stream file, then another')(
+          'project',
+          () => prepareProject(FACTORY_CONFIG),
+        ),
+        When('the project is run')('first', (s) => invoke(s.project, RUN)),
+        When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
+        When('the files the second run left are read')('left', (s) => leftBehind(s.project, FIRST_ANSWER)),
+        Then('the stream is at the first answer and every reported mutant is reused')((s, expect) =>
+          expect({
+            exitCodes: [s.first.exitCode, s.second.exitCode],
+            ...reusedEveryMutant(s.left),
+          }).toEqual({ exitCodes: [0, 0], ...EVERY_MUTANT_REUSED })
+        ),
+      ),
+    )
+
+    scenario(
+      'A config that cannot be loaded is refused and the stream still opens at the default path',
+      Gherkin.Do.pipe(
+        Given('a project whose config throws while it is loaded')('project', () => prepareProject(THROWING_CONFIG)),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        Then('the run exits with a config error naming the config file, and the stream is at the default path')(
+          (s, expect) => {
+            const failure = eventsOf(s.run.stdout).find((event) => S.is(RunEvent.RunFailed)(event))
+            return expect({
+              exitCode: s.run.exitCode,
+              namesTheConfigFile: failure?.error.includes(CONFIG_FILE),
+              defaultStreamPresent: s.run.defaultStreamPresent,
+            }).toEqual({ exitCode: 2, namesTheConfigFile: true, defaultStreamPresent: true })
+          },
         ),
       ),
     )

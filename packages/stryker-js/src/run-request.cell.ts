@@ -138,36 +138,51 @@ const progressStreamFileName = (options: Options.PartialStrykerOptions): string 
     () => DEFAULT_PROGRESS_STREAM_FILE,
   )
 
-const flaggedStreamFileOf = (invocation: CliInvocation): Effect.Effect<string> =>
-  Effect.succeed(progressStreamFileName(invocation.options))
+interface StreamedRequest {
+  readonly fileName: string
+  readonly options: Options.PartialStrykerOptions
+}
 
-const streamFileNameOf = (invocation: CliInvocation): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+const flaggedRequestOf = (invocation: CliInvocation): StreamedRequest => ({
+  fileName: progressStreamFileName(invocation.options),
+  options: invocation.options,
+})
+
+const pinnedRequestOf = (invocation: CliInvocation, fileName: string): StreamedRequest => ({
+  fileName,
+  options: { ...invocation.options, progressStreamFile: fileName },
+})
+
+const streamedRequestOf = (
+  invocation: CliInvocation,
+): Effect.Effect<StreamedRequest, never, FileSystem.FileSystem | Path.Path> =>
   Match.value(invocation.route.route).pipe(
     Match.tag(
       'run',
       () =>
         readConfig(invocation.options, { command: 'run', mode: invocation.environment.mode.mode }).pipe(
           Effect.map(progressStreamFileName),
-          Effect.catch(() => flaggedStreamFileOf(invocation)),
+          Effect.orElseSucceed(() => progressStreamFileName(invocation.options)),
+          Effect.map((fileName) => pinnedRequestOf(invocation, fileName)),
         ),
     ),
-    Match.orElse(() => flaggedStreamFileOf(invocation)),
+    Match.orElse(() => Effect.succeed(flaggedRequestOf(invocation))),
   )
 
 const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
 ): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
   const drain = yield* RunEventDrain
-  const fileName = yield* streamFileNameOf(invocation)
+  const request = yield* streamedRequestOf(invocation)
   yield* drain.setProgressStreamFile(
-    invocation.environment.pathService.resolve(invocation.environment.basePath, fileName),
+    invocation.environment.pathService.resolve(invocation.environment.basePath, request.fileName),
   )
   yield* invocation.environment.stream.open
   return {
     _tag: invocation.route._tag,
     route: invocation.route.route,
     environment: invocation.environment,
-    options: invocation.options,
+    options: request.options,
   }
 })
 

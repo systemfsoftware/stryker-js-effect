@@ -107,9 +107,21 @@ const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): st
     () => absoluteFallback,
   )
 
+const slashedRuleOf = (pathService: Path.Path, relative: string, rule: string): string => {
+  const slashed = relative.split(pathService.sep).join('/')
+  return Boolean.match(rule.endsWith('/') && slashed.length > 0, {
+    onTrue: () => `${slashed}/`,
+    onFalse: () => slashed,
+  })
+}
+
 const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
   insideProjectOnlyRuleOf(
-    pathService.relative(pathService.resolve(basePath), pathService.resolve(basePath, rule)),
+    slashedRuleOf(
+      pathService,
+      pathService.relative(pathService.resolve(basePath), pathService.resolve(basePath, rule)),
+      rule,
+    ),
     rule,
   )
 
