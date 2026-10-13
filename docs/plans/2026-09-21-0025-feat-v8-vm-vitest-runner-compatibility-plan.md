@@ -127,7 +127,7 @@ Stryker's V8 runner compiles all test files into a single Node VM script that ex
 
 ### Assumptions
 
-- The `@effect/vitest` registration variants the adapter must mirror are stable at `4.0.0-rc.116` (the workspace catalog pinned that release exactly when this plan was written; it now ranges `^4.0.0`, and `@effect/vitest` is no longer installed); the upstream [`packages/vitest` source at `effect@4.0.0-rc.116`](https://github.com/Effect-TS/effect/tree/d62dd0d65252e5d3635538f0e41adc7c08aa9beb/packages/vitest) is the semantic reference. Verified per-variant by U2 fixtures.
+- The `@effect/vitest` registration variants the adapter must mirror are stable at `4.0.0-rc.116` (the workspace catalog pinned that release exactly when this plan was written; it now ranges `^4.0.0`, and `@effect/vitest` is no longer installed, so U2 re-reads the semantics at the version it installs before relying on them); the upstream [`packages/vitest` source at `effect@4.0.0-rc.116`](https://github.com/Effect-TS/effect/tree/d62dd0d65252e5d3635538f0e41adc7c08aa9beb/packages/vitest) is the semantic reference. Verified per-variant by U2 fixtures.
 - Gherkin harness composition (real own symbols plus harness `@effect/vitest` surface) preserves `makeFeature` wiring; the dormant internal import of real `@effect/vitest` inside the real gherkin package is never driven. Verified by U3's wrapper-chain regression.
 - `module.register()` and native type-stripping behave identically on the Node 22.18 engine floor (spike ran on 24.20; 22.18 first shipped both unflagged). Verified once on CI's oldest-engine job (U5).
 - Top-level await in test files is out of scope; if a run hangs on an unevaluated graph it hits the drain timeout with a named error.

@@ -107,7 +107,7 @@ A consuming repository wants CI to fail when its concurrency tests stop catching
 - `MutatorOptions` and the Stryker `mutator` block gain only `optInMutations`.
 - Method-form calls on a semaphore value (`sem.withPermits(1)`) are not Effect calls under R1 and are out of scope.
 - `modifyEffect`, `updateEffect`, and other `SynchronizedRef` effectful variants are not listed in R6 and are out of scope.
-- The replacements call effect 4 APIs (`onExitIf`, `onErrorIf`, the `Semaphore` module, and `Cause.reasons`), matching the version this repository pins. Code on effect 3.x is not supported, and such a repository must not opt in.
+- The replacements call effect 4 APIs (`onExitIf`, `onErrorIf`, the `Semaphore` module, and `Cause.reasons`), matching the effect 4 line this repository pins (`4.0.0-rc.116` when this plan was written; `pnpm-lock.yaml` now locks `effect@4.0.0`). Code on effect 3.x is not supported, and such a repository must not opt in.
 - The mutation dogfood stays on `catalog:stryker`. Nothing is retargeted to `workspace:^`.
 
 ### Sources / Research
