@@ -16,7 +16,7 @@ const workerTelemetryConfig: Config.Config<WorkerTelemetryConfig> = Config.all({
 export class WorkerTelemetry extends Context.Service<WorkerTelemetry, WorkerTelemetryConfig>()(
   '@systemfsoftware/stryker-js-plugin-runtime/worker-telemetry.service/WorkerTelemetry',
 ) {
-  static readonly layer: Layer.Layer<WorkerTelemetry, Config.ConfigError> = Layer.effect(
+  static readonly layerConfig: Layer.Layer<WorkerTelemetry, Config.ConfigError> = Layer.effect(
     WorkerTelemetry,
     Config.map(workerTelemetryConfig, WorkerTelemetry.of),
   )
