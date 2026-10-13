@@ -32,7 +32,7 @@ Chosen option: "Workflow files only", because Ryan ruled on 2026-10-12 that a mu
 
 The three dogfood `stryker.config.ts` files this record covers, in `packages/stryker-js`, `packages/stryker-js-vitest-runner` and `packages/stryker-js-typescript-checker`, select `src/**/*.workflow.ts` and no `*.schema.ts` glob. A project with no workflow file deletes its config instead of keeping a mutate set that selects nothing. The project's ignorers stay, because they act on the mutants that the selected files contain. `@systemfsoftware/stryker-ignorer-effect-schema-declarations` still matched 744 of those mutants in workflow files on `25120175`: tagged-class tags and fields, symbol descriptions, tagged-struct tags, class identities, and generation and check annotations.
 
-`test/e2e-core/stryker.config.ts` is not covered by this record and still names `src/**/*.schema.ts`, so Mutation's fourth project, `test/e2e-core`, keeps grading schema files until Stream D's dissolution of `test/e2e-core` removes that test tooling from Mutation.
+`test/e2e-core/stryker.config.ts` is not covered by this record and still names `src/**/*.schema.ts`. Since #337, `test/e2e-core` is in neither Mutation's nor the kill matrix's project list, so no dogfood run grades it. Stream D's dissolution of `test/e2e-core` removes the config.
 
 ### Consequences
 
