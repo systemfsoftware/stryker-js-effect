@@ -27,6 +27,7 @@ import * as Stream from 'effect/Stream'
 
 import { abortRunPath, AbortRunPathCommand } from './abort-run-path.workflow.js'
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
+import { tailOf } from './command.js'
 import { planRunPath, PlanRunPathCommand } from './plan-run-path.workflow.js'
 import type { PreparedSide } from './prepared-side.js'
 import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
@@ -65,10 +66,6 @@ type BenchPlatform =
   | Crypto.Crypto
 
 const slug = (value: string): string => value.replace(/[^A-Za-z0-9._-]+/g, '-')
-
-const STDERR_TAIL_CHARS = 4096
-
-const tailOf = (text: string): string => text.slice(-STDERR_TAIL_CHARS)
 
 interface CliExit {
   readonly exitCode: number

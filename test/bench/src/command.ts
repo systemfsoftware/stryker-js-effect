@@ -21,12 +21,12 @@ export interface CommandOutcome {
   readonly stderr: string
 }
 
-const STDERR_TAIL_CHARS = 4000
+const STDERR_TAIL_CHARS = 4096
+
+export const tailOf = (text: string): string => text.slice(-STDERR_TAIL_CHARS)
 
 const failed = (step: string, detail: string, cause?: PlatformError): BenchSetupFailed =>
   cause === undefined ? BenchSetupFailed.make({ step, detail }) : BenchSetupFailed.make({ step, detail, cause })
-
-const tailOf = (outcome: CommandOutcome): string => `${outcome.stdout}${outcome.stderr}`.slice(-STDERR_TAIL_CHARS)
 
 export const runCommand = (
   command: ShellCommand,
@@ -52,9 +52,7 @@ export const runCommand = (
           Effect.all([Ref.get(stdout), Ref.get(stderr)]),
           ([out, err]) =>
             Console.error(
-              `bench setup interrupted: ${command.argv.join(' ')}\n--- output tail ---\n${
-                `${out}${err}`.slice(-STDERR_TAIL_CHARS)
-              }`,
+              `bench setup interrupted: ${command.argv.join(' ')}\n--- output tail ---\n${tailOf(`${out}${err}`)}`,
             ),
         )
       ),
@@ -68,5 +66,5 @@ export const runChecked = (
   Effect.filterOrFail(
     runCommand(command),
     (outcome) => outcome.exitCode === 0,
-    (outcome) => failed(command.step, `exited ${outcome.exitCode}\n${tailOf(outcome)}`),
+    (outcome) => failed(command.step, `exited ${outcome.exitCode}\n${tailOf(`${outcome.stdout}${outcome.stderr}`)}`),
   )
