@@ -3,8 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # The release manifest (`nix/release-hashes.json`) rides in this input, so
-    # Dependabot's bump of it is also the version and digest bump.
+    # comment-checker built from source by its own flake at the locked commit,
+    # so Dependabot's bump of this input is the version bump.
     comment-checker = {
       url = "github:systemfsoftware/comment-checker";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -69,9 +69,7 @@
         let
           pkgs' = pkgs.extend importPnpmLock.overlays.default;
           dprint = pkgs.callPackage ./nix/dprint.nix { };
-          unwrapped = pkgs.callPackage ./nix/comment-checker.nix {
-            hashes = "${comment-checker}/nix/release-hashes.json";
-          };
+          unwrapped = comment-checker.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker;
           sandboxed = pkgs.callPackage ./nix/comment-checker-sandbox.nix {
             comment-checker = unwrapped;
           };
