@@ -24,7 +24,7 @@ execution: code
 
 ### Summary
 
-Dry-run coverage is reused only when the root recorded inside the coverage matches the current project root. Coverage written before this change records no root; it falls back to its report's `projectRoot` when the report has one. Otherwise the run refuses with `rootChanged` (recorded under another root) or `rootUnrecorded` (no root anywhere), logs why, runs its own dry run, and records the current root. With several saved reports, only those recorded under the current root are considered. Shard planning reads coverage through the same filter.
+Dry-run coverage is reused only when the root recorded inside the coverage matches the current project root. Coverage that records no root is refused with `rootUnrecorded`, whatever its report header says, and coverage recorded under another root is refused with `rootChanged`; either refusal logs why, runs its own dry run, and records the current root. With several saved reports, only those recorded under the current root are considered. Shard planning reads coverage through the same filter.
 
 ### Problem Frame
 
@@ -91,11 +91,11 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 - R7. A failing integration scenario lands first and is shown red on unchanged main code, with the failure quoted. Two real temp roots hold byte-identical files with per-test coverage and no `testFiles` option: root A runs, its report is copied into root B, A is deleted, and B runs. On main, B reuses the coverage and every mutant comes out NoCoverage. After the fix, B refuses with `rootChanged`, runs its own dry run, and its mutants show A's Killed/NoCoverage split. It replaces the cross-root scenario in P9.
 - R8. The `dryRunReuse` property law covers the root dimension: a prior under the current root keeps every existing outcome, a prior under other roots refuses with `rootChanged`, an unrecorded prior refuses with `rootUnrecorded`, no prior leaves the outcome unchanged, and the R3 precedence holds.
 - R9. A patch changeset for `@systemfsoftware/stryker-js` states the behaviour change and the two new reasons.
-- R11. A rebuild that only rewrites the turbo task log under the same root keeps reusing coverage and verdicts (the guarantee from commit 19043fdb3). The existing same-root scenario, 'A rebuild that only rewrites the task log keeps the dry-run digest and the reuse' in `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts`, keeps proving it, unchanged.
+- R11. A rebuild that only rewrites a build log naming the project root keeps reusing coverage and verdicts (the guarantee from commit 19043fdb3). The scenario 'A rebuild that only rewrites a build log naming the project root re-executes nothing' in `packages/stryker-js/tests/relocated-project.integration.test.ts` proves it.
 - R12. The candidate filter has its own property law over the roots recorded in the coverage records. The R10 outcomes hold: kept candidates are exactly those whose recorded root is the current root, in input order; the dropped counts add up; when none remain, the named roots are the distinct recorded roots, sorted, with no duplicates; and the choice between `rootChanged` and `rootUnrecorded` follows R10, including a list that mixes other-root and unrecorded candidates, which refuses with `rootChanged`.
 - R13. One integration scenario shows that `plan` under root B with A's copied report produces the same whole shard plan as `plan` under B once the report is removed (Key Decision 7). It is red on main, where the copied report prices B's dry run at 0 (P7).
 
-**Test admission** (test-layer-selection gate, default refuse): R7, R11, R13, R14 and R15 are in-process integration scenarios through the public engine entries (`Engine.mutationTestCell`, `Engine.planRequest`) over real temp directories, with no process spawn. R8 and R12 are colocated property laws, the only test kind a workflow admits. No behaviour this change ships is left to a throwaway smoke check.
+**Test admission** (test-layer-selection gate, default refuse): R7, R11, R13 and R14 are scenarios in `packages/stryker-js/tests/relocated-project.integration.test.ts` and `packages/stryker-js/tests/incremental-runs.integration.test.ts`, which run the built `stryker` binary over real temp projects. (session-settled: user-directed — the root ruled to preserve the built-CLI rewrite of these suites over the earlier in-process engine scenarios.) KTD4's spelling comparison is proven in-process through `Engine.mutationTestCell` in `packages/stryker-js/tests/base-path-spelling.integration.test.ts`, because only the API takes a base path the CLI would have realpathed. R8 and R12 are colocated property laws, the only test kind a workflow admits. R2, R4 and R15 are law-only: a released report carries an older `incrementalVersion`, which the version gate discards before the root check, so only a hand-edited current-version report reaches `rootUnrecorded`.
 
 ### Acceptance Examples
 
@@ -145,10 +145,10 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 - KTD1. Roots decode into a tagged union, recorded (with its path) or unrecorded. The wire keeps `projectRoot` as an optional key on the coverage record so legacy reports decode; the report header's `projectRoot` is not part of the coverage decode. The decode boundary maps absence to unrecorded, and nothing downstream checks for presence (pack: schema-laws, tagged-unions-over-state-by-presence.md; pack: cell-architecture, decode-never-cast.md). Governs R2, R12.
 - KTD2. One pure workflow, the candidate filter, owns root resolution across candidates. Per candidate it takes the root recorded in the coverage record, and nothing else. Its decision is a tagged union: candidates kept (their indices in order, plus dropped other-root and unrecorded counts), other roots only (the distinct recorded roots, sorted), unrecorded only, or no candidates. The run's choice (`packages/stryker-js/src/run/dry-run-choice.ts`) and the planner (`packages/stryker-js/src/plan-request.cell.ts`) both use it, and the planner prices from the run's chosen prior (pack: cell-architecture, pure-decision-workflows.md). Implements Key Decision 6. Governs R6, R10, R12.
 - KTD3. `DryRunReuseCommand`'s optional prior becomes a tagged union: no prior, under the current root (with its digests), other roots, or unrecorded. The shell maps each filter outcome one to one onto it. `dryRunReuse` decides in R3's order with exhaustive dispatch, then keeps its existing digest logic (pack: cell-architecture, pure-decision-workflows.md; pack: schema-laws, tagged-unions-over-state-by-presence.md). Implements Key Decisions 4 and 5. Governs R1-R3, R8.
-- KTD4. The shell compares roots as the crawl spells them: the current root is `path.resolve(basePath)`, the prefix of every file name `mutantIdOf` hashes, and the writer records the same string. A directory reached through a symlink and through its real path is two roots, because it yields two sets of mutant ids; comparing real paths would reuse coverage that matches no current mutant and score every mutant NoCoverage. The CLI, `plan`, `audit` and MCP entry points already pass a realpathed base path, so their roots are unchanged. (session-settled: user-directed — chosen over real-path comparison: the root ruled that reuse must compare the spelling mutant identity uses, and a mismatch must refuse and run a fresh dry run.) Governs R5.
+- KTD4. The shell compares roots as the crawl spells them: the current root is `path.resolve(basePath)`, the prefix of every file name `mutantIdOf` hashes, and the writer records the same string. A directory reached through a symlink and through its real path is two roots, because it yields two sets of mutant ids; comparing real paths would reuse coverage that matches no current mutant and score every mutant NoCoverage. The CLI, `plan`, `audit` and MCP entry points already pass a realpathed base path, so their roots are unchanged. A relative base path and its absolute spelling resolve to one root while hashing different file names; that pair is refused by the run-inputs digest instead, which differs between the two spellings because `runInputsDigestOf` looks up the manifest and lockfile along the path as spelled, and a scenario pins that outcome. (session-settled: user-directed — chosen over real-path comparison: the root ruled that reuse must compare the spelling mutant identity uses, and a mismatch must refuse and run a fresh dry run.) Governs R5.
 - KTD5. The root is a field of the coverage record, so the end-of-run, checkpoint and dry-run-only writers all persist it with no change to `slimIncrementalReport`. Fresh and reused coverage both record the current root, so legacy coverage reused under the same root carries its own root after its next write. Governs R1, R4, R14, R15.
-- KTD6. Scenario 2 of `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts` is rewritten into R7, scenario 1 stays as R11's proof, and R13, R14 and R15 join the same file. R7, R13, R14 and R15 use a per-test-coverage fixture shaped like `packages/stryker-js/tests/incremental-reuse.integration.test.ts:180-225`, because the file's command-runner fixture runs with `coverageAnalysis: 'off'` and cannot produce NoCoverage. R15's legacy report is A's own report with the root removed from the coverage only through `S.Json`, so the header still records A (AE8). Scenarios observe through `RunEvent` schemas and logs and declare no domain schema of their own (pack: boundary-testing, real-system-oracles.md; pack: schema-laws, tests-own-no-schemas.md).
-- KTD7. `INCREMENTAL_CACHE_VERSION` stays `'5'` (`packages/stryker-js/src/verdict-semantics.ts`). The new root key is optional and additive, so legacy reports still decode. A bump would make `admitReuseSource` discard every prior report, verdicts included, and void R11 and AE1. (session-settled: user-directed — chosen over a cache-layout bump: legacy reports must stay readable.)
+- KTD6. The cross-root and resumed-run scenarios live in the built-CLI suites: R7, R13 and the own-plus-restored scenario in `packages/stryker-js/tests/relocated-project.integration.test.ts`, R14 in `packages/stryker-js/tests/incremental-runs.integration.test.ts`, both over the per-test-coverage project of `packages/stryker-js/tests/__fixtures__/cli-project.fixture.ts`, which produces Killed and NoCoverage mutants. The old `dry-run-coverage-across-roots` file is deleted, because its command-runner fixture ran with `coverageAnalysis: 'off'` and could not produce NoCoverage. Scenarios observe through `RunEvent` schemas, the JSON report and logs, and declare no domain schema of their own (pack: boundary-testing, real-system-oracles.md; pack: schema-laws, tests-own-no-schemas.md).
+- KTD7. `INCREMENTAL_CACHE_VERSION` stays at main's value (`'6'`, set by #303, `packages/stryker-js/src/verdict-semantics.ts`); this change does not bump it. The new root key is optional and additive, so current-version reports without it still decode and are refused once with `rootUnrecorded`. A bump would make `admitReuseSource` discard every prior report, verdicts included, and void R11 and AE1. (session-settled: user-directed — chosen over a cache-layout bump: legacy reports must stay readable.)
 
 ### High-Level Technical Design
 
@@ -193,7 +193,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 **Dependencies:** none.
 
-**Files:** `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts`
+**Files:** `packages/stryker-js/tests/relocated-project.integration.test.ts`, `packages/stryker-js/tests/incremental-runs.integration.test.ts`, `packages/stryker-js/tests/__fixtures__/cli-project.fixture.ts`, `packages/stryker-js/tests/base-path-spelling.integration.test.ts`; delete `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts`
 
 **Approach:**
 
@@ -211,10 +211,11 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 - R7: A's statuses are some Killed and some NoCoverage, with at least one Killed. B's status counts equal A's.
 - R7: B's logs contain a `rootChanged` refusal naming B's root and A's recorded root as each run spelled it and the next action, and no "Reusing the persisted dry-run coverage" line.
 - R13: the whole shard plan of B with A's report equals the whole shard plan of B with no report (Key Decision 7).
-- R11: scenario 1 is unchanged and still passes.
-- KTD4 (`packages/stryker-js/tests/symlinked-base-path.integration.test.ts`, in-process through `Engine.mutationTestCell`, a regression test for a known bug): a project run with its base path spelled through a symlink, then through its real path, scores every mutant as a fresh run of a copy does, with the same number of test executions. Red before KTD4's spelling comparison: the second run executes no test and scores every mutant NoCoverage.
+- R11: the build-log scenario in `packages/stryker-js/tests/relocated-project.integration.test.ts` re-executes nothing.
+- KTD4 (`packages/stryker-js/tests/base-path-spelling.integration.test.ts`, in-process through `Engine.mutationTestCell`, a regression test for a known bug): a project run with its base path spelled through a symlink, then through its real path, scores every mutant as a fresh run of a copy does, with the same number of test executions. Red before KTD4's spelling comparison: the second run executes no test and scores every mutant NoCoverage.
+- KTD4, same file: a project run from a path relative to the working directory, then from its absolute path, scores every mutant as a fresh run of a copy does, with the same number of test executions. It passes before and after KTD4, because the run-inputs digest already refuses that pair; it fails if a change makes the digest spelling-free while roots still compare resolved.
 
-**Verification:** on main, R7 fails with every B mutant NoCoverage and R13 fails because the two plans differ (B's dry run priced at 0), while scenario 1 passes.
+**Verification:** on main, R7 fails with every B mutant NoCoverage and R13 fails because the two plans differ (B's dry run priced at 0), while the R11 scenario passes.
 
 ### U2. Root on the coverage record and in dryRunReuse
 
@@ -228,7 +229,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 **Approach:**
 
-1. Add `rootChanged` and `rootUnrecorded` to `DryRunRunReasonSchema`, the root union, and the optional wire key on `DryRunCoverageSchema` and `ReportedDryRunCoverageSchema` (KTD1). `INCREMENTAL_CACHE_VERSION` stays `'5'` (KTD7).
+1. Add `rootChanged` and `rootUnrecorded` to `DryRunRunReasonSchema`, the root union, and the optional wire key on `DryRunCoverageSchema` and `ReportedDryRunCoverageSchema` (KTD1). `INCREMENTAL_CACHE_VERSION` keeps main's value (KTD7).
 2. Replace `DryRunReuseCommand`'s optional prior with the prior union (KTD3).
 3. Rebuild the law file's builders and arbitraries over the prior union; existing laws run with a prior under the current root.
 
@@ -249,7 +250,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 **Dependencies:** U2 (the root union).
 
-**Files:** `packages/stryker-js/src/dry-run-candidate.workflow.ts` (new), `packages/stryker-js/src/__tests__/dry-run-candidate.workflow.property.test.ts` (new)
+**Files:** `packages/stryker-js/src/dry-run-candidates.workflow.ts` (new), `packages/stryker-js/src/__tests__/dry-run-candidates.workflow.property.test.ts` (new)
 
 **Approach:** a `Workflow.make` decision with `S.Never` error and the KTD2 outcome union.
 
@@ -263,7 +264,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 - When none are kept and some candidate records a root, the outcome is other roots, listing the distinct recorded roots sorted and once each.
 - When none are kept and no candidate records a root, the outcome is unrecorded.
 - An empty candidate list gives no candidates.
-- AE8 moves to the engine: a legacy end-of-run report under the same root is refused with `rootUnrecorded` (scenario in the cross-root file).
+- AE8: an unrecorded candidate is never kept, whatever its report header records (law-only, see Test admission).
 - AE7: candidates `[other, current]` keep index 1 with one dropped other-root candidate.
 - AE10: roots `[C, A, C]` under current root B give other roots `[A, C]`.
 
@@ -271,20 +272,20 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 ### U4. Run shell: record, choose, log
 
-**Goal:** the mutation run records real-path roots, decides through U3 and U2, and logs the R5 lines, turning R7, R14 and R15 green.
+**Goal:** the mutation run records its root as the crawl spells it, decides through U3 and U2, and logs the R5 lines, turning R7, R14 and R15 green.
 
 **Requirements:** R1, R2, R4, R5, R9, R10, R14, R15; AE1-AE3, AE11-AE13; KTD4, KTD5, KTD7; Key Decision 3.
 
 **Dependencies:** U1, U2, U3.
 
-**Files:** `packages/stryker-js/src/run/dry-run-choice.ts`, `packages/stryker-js/src/run/dry-run.cell.ts`, `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts`, `.changeset/<stem>.md` (new)
+**Files:** `packages/stryker-js/src/run/dry-run-choice.ts`, `packages/stryker-js/src/run/dry-run.cell.ts`, `packages/stryker-js/tests/relocated-project.integration.test.ts`, `.changeset/<stem>.md` (new)
 
 **Approach:**
 
 1. `priorCoveragesOf` decodes each report's coverage record and its recorded root; the report header root is not read.
 2. `testClosureDigestOf` takes its inputs from the first kept candidate, not the first candidate (R10).
 3. `priorChoiceOf` judges only kept candidates; any other filter outcome maps to one `dryRunReuse` call with the matching prior variant (KTD3).
-4. Fresh and reused coverage both record the current real root (KTD5).
+4. Fresh and reused coverage both record the current root (KTD4, KTD5).
 5. The log site prints the R5 lines.
 6. Add the R14 and R15 scenarios.
 7. Add the patch changeset with `pnpm change`.
@@ -295,10 +296,10 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 - AE11: a run under A interrupted at its first checkpoint, then a full run under A, logs "Reusing the persisted dry-run coverage" and spawns no initial test run.
 - AE12: a `--dryRunOnly` run under A, then a full run under A, reuses the coverage.
-- AE13: A's report with the root stripped from coverage and header; the next run under A logs the `rootUnrecorded` line and runs its dry run, and the run after it reuses.
-- U1's R7 scenario and scenario 1 cover the rest through the engine entry; the shell gets no test of its own (pack: boundary-testing, no-mocks-on-internal-glue.md).
+- AE13 is law-only (see Test admission): a released report carries an older `incrementalVersion`, which the version gate discards before the root check.
+- U1's built-CLI scenarios cover the rest; the shell gets no test of its own (pack: boundary-testing, no-mocks-on-internal-glue.md).
 
-**Verification:** R7, R14, R15 and scenario 1 pass, the law files still pass, and the changeset validates.
+**Verification:** R7, R14 and the R11 scenario pass, the law files still pass, and the changeset validates.
 
 ### U5. Planner reads coverage through the candidate filter
 
@@ -327,7 +328,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 - `pnpm --filter @systemfsoftware/stryker-js typecheck`
 - Build the package once when the integration file resolves built output: `pnpm exec turbo run build --filter=@systemfsoftware/stryker-js`.
-- `pnpm --filter @systemfsoftware/stryker-js exec vitest run src/__tests__/dry-run-reuse.workflow.property.test.ts src/__tests__/dry-run-candidate.workflow.property.test.ts tests/dry-run-coverage-across-roots.integration.test.ts`
+- `pnpm --filter @systemfsoftware/stryker-js exec vitest run src/__tests__/dry-run-reuse.workflow.property.test.ts src/__tests__/dry-run-candidates.workflow.property.test.ts tests/relocated-project.integration.test.ts tests/incremental-runs.integration.test.ts tests/base-path-spelling.integration.test.ts`
 - `./bin/dprint check` on touched files.
 - CI runs the full suite, `Changeset Check`, and the mutation run on main. No local mutation and no local e2e.
 
@@ -340,6 +341,6 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 - No test anywhere expects coverage reuse across roots.
 - The package typechecks, the targeted tests pass, and touched files are formatted.
 - A patch changeset for `@systemfsoftware/stryker-js` is present.
-- `INCREMENTAL_CACHE_VERSION` is still `'5'`.
-- `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md` is unchanged.
+- `INCREMENTAL_CACHE_VERSION` keeps main's value.
+- `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md` records that saved coverage is bound to the root that recorded it, compared as the crawl spells it.
 - No probe files, throwaway scripts, or abandoned-attempt code remain in the diff.
