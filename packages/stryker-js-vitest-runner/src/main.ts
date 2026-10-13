@@ -12,8 +12,9 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 
-import { testRunnerHandlers } from './TestRunnerWorker.service.js'
-import { layer as vitestRunner } from './vitest-test-runner.js'
+import { testRunnerHandlers } from './TestRunnerWorker.js'
+import { layer as vitestSession } from './vitest-session.js'
+import { layer as vitestTestRunner } from './vitest-test-runner.js'
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
@@ -39,14 +40,15 @@ const vitestRunnerLayer = Layer.unwrap(
   Effect.gen(function*() {
     const options = yield* Worker.WorkerOptions
     const sandboxDirectory = yield* Config.String('STRYKER_SANDBOX_DIR')
-    return vitestRunner({ options, sandboxDirectory })
+    const input = { options, sandboxDirectory }
+    return vitestTestRunner(input).pipe(Layer.provide(vitestSession(input)))
   }),
 )
 
-const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layer))
+const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layerConfig))
 
 const workerRootLayer = vitestRunnerLayer.pipe(
-  Layer.provideMerge(Worker.WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
+  Layer.provideMerge(Worker.WorkerOptions.layerConfig.pipe(Layer.provideMerge(servedPlatformLayer))),
 )
 
 NodeRuntime.runMain(
