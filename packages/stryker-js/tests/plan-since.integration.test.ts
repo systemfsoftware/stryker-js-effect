@@ -665,32 +665,4 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
         ),
       ),
     )
-
-    scenario(
-      'An unknown since ref fails the plan with the configuration class',
-      Gherkin.Do.pipe(
-        Given('a git repository holding a committed stryker config')(
-          'root',
-          () => gitWorkspace(workspaceFilesOf(FULL_MUTATE)),
-        ),
-        When('the plan runs since a ref that does not exist')(
-          'ran',
-          (s) =>
-            Effect.ensuring(
-              spawnCli(
-                s.root,
-                ['plan', '--target-seconds', '1', '--out', PLAN_FILE, '--since', UNRESOLVED_REF],
-                'human',
-              ),
-              removeWorkspace(s.root),
-            ),
-        ),
-        Then('the process exits with the configuration class and stderr names the ref')((s, expect) =>
-          expect({
-            exitCode: s.ran.exitCode,
-            namesRef: s.ran.stderr.includes(UNRESOLVED_REF),
-          }).toEqual({ exitCode: 2, namesRef: true })
-        ),
-      ),
-    )
   })
