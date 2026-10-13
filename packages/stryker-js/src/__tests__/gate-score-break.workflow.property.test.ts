@@ -36,6 +36,17 @@ const expectedNotesOf = (entry: ProjectScore): ReadonlyArray<string> => [
   }),
 ]
 
+const SCORE_BREAK_REMEDIATION =
+  'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
+
+const percentageOf = (entry: ProjectScore): number =>
+  Report.MutationScore.match(entry.score, { Scored: ({ percentage }) => percentage, Unscored: () => 0 })
+
+const expectedBreachLineOf = (entry: ProjectScore): string =>
+  `  score-below-break: ${entry.project} scored ${percentageOf(entry).toFixed(2)} < break ${String(breakOf(entry))}`
+
+const lastLineOf = (lines: ReadonlyArray<string>): string | undefined => lines[lines.length - 1]
+
 const breachedProjectsOf = (subject: typeof gateScoreBreak, projects: ReadonlyArray<ProjectScore>) =>
   Result.match(subject(GateScoreBreakCommand.make({ projects: [...projects] })), {
     onFailure: (refused) => ({ breached: refused.breaches.map((breach) => breach.project), judged: refused.projects }),
@@ -49,13 +60,27 @@ describe('gateScoreBreak', () => {
     (subject, [entry]) => {
       const result = subject(GateScoreBreakCommand.make({ projects: [entry] }))
       return Result.match(result, {
-        onFailure: (refused) =>
-          breaksOwnThreshold(entry) &&
-          JSON.stringify(refused.breaches) === JSON.stringify([{
-              project: entry.project,
-              percentage: Report.MutationScore.match(entry.score, { Scored: (s) => s.percentage, Unscored: () => -1 }),
-              threshold: breakOf(entry),
-            }]),
+        onFailure: (refused) => {
+          const expectedNotes = expectedNotesOf(entry)
+          const expectedBreach = expectedBreachLineOf(entry)
+          return (
+            breaksOwnThreshold(entry) &&
+            JSON.stringify(refused.breaches) === JSON.stringify([{
+                project: entry.project,
+                percentage: Report.MutationScore.match(entry.score, {
+                  Scored: (s) => s.percentage,
+                  Unscored: () => -1,
+                }),
+                threshold: breakOf(entry),
+              }]) &&
+            refused.message.includes(expectedBreach) &&
+            expectedNotes.every((line) => refused.message.includes(line)) &&
+            lastLineOf(refused.message.split('\n')) === SCORE_BREAK_REMEDIATION &&
+            refused.lines.includes(expectedBreach) &&
+            expectedNotes.every((line) => refused.lines.includes(line)) &&
+            lastLineOf(refused.lines) === SCORE_BREAK_REMEDIATION
+          )
+        },
         onSuccess: (cleared) =>
           !breaksOwnThreshold(entry) && JSON.stringify(cleared.lines) === JSON.stringify(expectedNotesOf(entry)),
       })
