@@ -15,7 +15,7 @@ concurrency:
 jobs:
   lane:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     outputs:
       docs-only: ${{ steps.lane.outputs.docs-only }}
     steps:

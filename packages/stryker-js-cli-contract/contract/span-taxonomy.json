@@ -890,6 +890,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.sandbox.prepare",
+    "name": "stryker.sandbox.prepare",
+    "attributes": {}
+  },
+  {
     "id": "stryker.sandbox.preprocess.disable_type_checks",
     "name": "stryker.sandbox.preprocess.disable_type_checks",
     "attributes": {}
