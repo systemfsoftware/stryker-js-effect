@@ -333,6 +333,7 @@ const NO_TRUE_SIBLING_SITE = [5, 50, 63] as const
 const NOT_CONSTANT_SITE = [6, 50, 63] as const
 const COLLECTION_UNION_SITE = [7, 63, 76] as const
 const MIXED_UNION_SITE = [8, 74, 87] as const
+const ACCESSOR_SITE = [9, 73, 93] as const
 
 const RECEIVER_SOURCE = [
   'export const chained = (box: { items: string[] }): boolean => box.items.length > 0',
@@ -392,6 +393,11 @@ const LOOSE_SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
   sizeMutant('0000000000000053', STRING_ARRAY_SITE, 'ConditionalExpression', 'true'),
 ]
 
+const ACCESSOR_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000060', ACCESSOR_SITE, 'EqualityOperator', 'box.items.length >= 0'),
+  sizeMutant('0000000000000061', ACCESSOR_SITE, 'ConditionalExpression', 'true'),
+]
+
 const sizeCaseOf = (fixture: string, mutants: ReadonlyArray<SizeMutant>): Case => ({
   fixture,
   brokenId: '',
@@ -416,6 +422,8 @@ const collectionSizeCase = sizeCaseOf('per-mutant-collection-size', SIZE_MUTANTS
 const receiverCase = sizeCaseOf('receiver-project', RECEIVER_MUTANTS)
 
 const looseCollectionSizeCase = sizeCaseOf('loose-project', LOOSE_SIZE_MUTANTS)
+
+const accessorReceiverCase = sizeCaseOf('per-mutant-collection-size', ACCESSOR_MUTANTS)
 
 const sizeProjectOf = (strictNullChecks: boolean, source: string): Readonly<Record<string, string>> => ({
   'tsconfig.json': JSON.stringify({
@@ -696,6 +704,25 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             culled: {
               '0000000000000040': 'constant-collection-size: box.items.length >= 0 is always true',
             },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison is kept when reading its receiver runs an accessor',
+      Gherkin.Do.pipe(
+        When('an array length comparison read through a getter and its true sibling are handed to the checker')(
+          'seen',
+          () => checkFixture(accessorReceiverCase),
+        ),
+        Then('both mutants pass and neither is ignored')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000060': 'passed',
+              '0000000000000061': 'passed',
+            },
+            culled: {},
           })
         ),
       ),

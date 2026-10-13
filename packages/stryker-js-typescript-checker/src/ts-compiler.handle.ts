@@ -38,6 +38,7 @@ import {
   type Program,
   type Project,
   type Snapshot,
+  SymbolFlags,
   type Type,
   TypeFlags,
 } from 'typescript/unstable/async'
@@ -1517,6 +1518,48 @@ const isReferenceChain = (expression: Expression): boolean =>
     ),
   ])
 
+interface SymbolLike {
+  readonly flags: SymbolFlags
+}
+
+const isPlainSymbol = (symbol: SymbolLike | undefined): boolean =>
+  symbol !== undefined && (symbol.flags & SymbolFlags.Accessor) === 0
+
+const plainReadOf = (checker: TypeChecker, expression: Expression): Effect.Effect<boolean> =>
+  Boolean.match(isIdentifier(expression), {
+    onTrue: () => Effect.map(Effect.promise(() => checker.getSymbolAtLocation(expression)), isPlainSymbol),
+    onFalse: () =>
+      Boolean.match(expression.kind === SyntaxKind.ThisKeyword, {
+        onTrue: () => Effect.succeed(true),
+        onFalse: () =>
+          Option.match(Option.liftPredicate(expression, isPropertyAccessExpression), {
+            onNone: () => Effect.succeed(false),
+            onSome: (access) =>
+              Boolean.match(access.questionDotToken === undefined, {
+                onFalse: () => Effect.succeed(false),
+                onTrue: () =>
+                  Effect.flatMap(
+                    Effect.promise(() => checker.getSymbolAtLocation(access.name)),
+                    (symbol) =>
+                      Boolean.match(isPlainSymbol(symbol), {
+                        onFalse: () => Effect.succeed(false),
+                        onTrue: () => plainReadOf(checker, access.expression),
+                      }),
+                  ),
+              }),
+          }),
+      }),
+  })
+
+const referenceReceiverAt = (
+  checker: TypeChecker,
+  operand: LengthOperand,
+): Effect.Effect<boolean> =>
+  Boolean.match(operand.referenceReceiver, {
+    onFalse: () => Effect.succeed(false),
+    onTrue: () => plainReadOf(checker, operand.receiver),
+  })
+
 const lengthReceiverOf = (expression: Expression): Option.Option<Expression> =>
   Option.map(
     Option.filter(Option.liftPredicate(expression, isPropertyAccessExpression), (access) =>
@@ -1589,15 +1632,16 @@ const sizeComparisonAt = (
     {
       onNone: () => Effect.succeedNone,
       onSome: ({ operator, operand }) =>
-        Effect.map(receiverKindsAt(owned.project.checker, operand.receiver), (receiver) =>
-          Option.some({
-            operator,
-            lengthSide: operand.side,
-            againstZero: operand.other.getText(owned.sourceFile).trim() === '0',
-            receiver,
-            referenceReceiver: operand.referenceReceiver,
-            strictNullChecks: strictNullChecksOf(owned.project.compilerOptions),
-          })),
+        Effect.flatMap(receiverKindsAt(owned.project.checker, operand.receiver), (receiver) =>
+          Effect.map(referenceReceiverAt(owned.project.checker, operand), (referenceReceiver) =>
+            Option.some({
+              operator,
+              lengthSide: operand.side,
+              againstZero: operand.other.getText(owned.sourceFile).trim() === '0',
+              receiver,
+              referenceReceiver,
+              strictNullChecks: strictNullChecksOf(owned.project.compilerOptions),
+            }))),
     },
   )
 
