@@ -30,7 +30,16 @@ import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
 import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
 import { EMPTY_COSTS, measuredCostsOf, mergeCosts } from './file-costs.js'
 import { laneTrigger } from './lane-trigger.js'
-import { FileCosts, LegFile, type LegScope, type ParityLine, ParityPlan, RunScopeName, Shard } from './Parity.schema.js'
+import {
+  FileCosts,
+  LegFile,
+  type LegScope,
+  type ParityLine,
+  ParityPlan,
+  RunScopeName,
+  Shard,
+  TypeQueryServers,
+} from './Parity.schema.js'
 import { planLegs, PlanLegsCommand } from './plan-legs.workflow.js'
 import {
   CompareFinished,
@@ -152,9 +161,15 @@ const loadShards = (
     return yield* Effect.forEach(Arr.range(1, count), loadShard(byShard, count))
   })
 
+const isTypeQueryServers = S.is(TypeQueryServers)
+
 const projectShardsOf = (shards: ReadonlyArray<ShardLines>): ReadonlyArray<ProjectShard> =>
   Arr.dedupeWith(
-    shards.flatMap(({ shard, lines }) => lines.map((line) => ProjectShard.make({ project: line.project, shard }))),
+    shards.flatMap(({ shard, lines }) =>
+      lines.filter((line) => !isTypeQueryServers(line)).map((line) =>
+        ProjectShard.make({ project: line.project, shard })
+      )
+    ),
     (left, right) => left.project === right.project,
   )
 
