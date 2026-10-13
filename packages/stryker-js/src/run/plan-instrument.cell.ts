@@ -29,7 +29,7 @@ type PlanInstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly mutants: readonly Mutant.Mutant[]
 }
 
-const readPlanInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
+const gatherPlanInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
   command: PrepareForInstrument,
 ) {
   const { filesToMutate, instrumentResult, instrumentedProject } = yield* instrumentFiles(command)
@@ -45,20 +45,18 @@ const readPlanInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(f
   }
 })
 
-const writePlanInstrument = (
-  raw: PlanInstrumentRaw,
-): Effect.Effect<PlanInstrumentDone, never, PhaseClock | RunEnvironment | RunEvents> =>
-  enteringInstrumentPhase(
-    raw.fileCount,
-    Effect.as(
-      offerSkipsIfAny({ skipped: raw.instrumentResult.skipped, claimants: raw.prev.frameworkClaimants }),
-      {
-        project: raw.instrumentedProject,
-        mutants: raw.mutants,
-        options: raw.prev.options,
-        incrementalReportDiscard: raw.prev.incrementalReportDiscard,
-      },
-    ),
+const readPlanInstrument = (command: PrepareForInstrument) =>
+  enteringInstrumentPhase(command.project.filesToMutate.size, gatherPlanInstrument(command))
+
+const writePlanInstrument = (raw: PlanInstrumentRaw): Effect.Effect<PlanInstrumentDone, never, RunEvents> =>
+  Effect.as(
+    offerSkipsIfAny({ skipped: raw.instrumentResult.skipped, claimants: raw.prev.frameworkClaimants }),
+    {
+      project: raw.instrumentedProject,
+      mutants: raw.mutants,
+      options: raw.prev.options,
+      incrementalReportDiscard: raw.prev.incrementalReportDiscard,
+    },
   )
 
 export const planInstrumentCell: Cell.Cell<
