@@ -216,13 +216,13 @@ const seedFixture = async (dir: string, options: FixtureOptions): Promise<void> 
   if (options.bTurboJson !== undefined) await write(dir, 'packages/b/turbo.json', options.bTurboJson)
 }
 
-const withRepo = async (options: FixtureOptions, body: (dir: string) => Promise<void>): Promise<void> => {
+const withRepo = async <A>(options: FixtureOptions, body: (dir: string) => Promise<A>): Promise<A> => {
   const dir = await Deno.makeTempDir({ dir: PERMITTED_SCRATCH_DIR, prefix: 'turbo-semantics-' })
   try {
     await git(dir, ['init', '-q', '-b', options.branch ?? 'trunk', '.'])
     await seedFixture(dir, options)
     await commit(dir, 'fixture')
-    await body(dir)
+    return await body(dir)
   } finally {
     await Deno.remove(dir, { recursive: true })
   }
@@ -424,24 +424,37 @@ Deno.test('a push event payload before base selects what the explicit base selec
   })
 })
 
-Deno.test('an all-zero push before falls back to every task and says it could not determine the change', async () => {
-  await withRepo({}, async (dir) => {
+interface AllZeroPush {
+  readonly selected: readonly string[]
+  readonly all: readonly string[]
+  readonly warned: boolean
+}
+
+const allZeroPush = (branch: string): Promise<AllZeroPush> =>
+  withRepo({ branch }, async (dir) => {
     await write(dir, 'packages/a/src/index.js', 'export const a = 2\n')
     await commit(dir, 'push change')
     const eventPath = `${dir}/.push-event.json`
     await Deno.writeTextFile(eventPath, JSON.stringify({ before: UNKNOWN_SHA, forced: false, commits: [] }))
     const ran = await turboRun(dir, { affected: true, env: { GITHUB_ACTIONS: 'true', GITHUB_EVENT_PATH: eventPath } })
-    assertEqual(ran.code, 0, 'the all-zero push still exits 0')
-    assertEqual(
-      tasksOf(ran.stdout).map((task) => task.taskId).sort(),
-      await allTasks(dir),
-      'an undeterminable push runs every task',
-    )
-    assert(
-      ran.stderr.includes('could not determine changed files'),
-      `stderr names the fallback, got: ${ran.stderr}`,
-    )
+    assertEqual(ran.code, 0, `the all-zero push on ${branch} still exits 0`)
+    return {
+      selected: tasksOf(ran.stdout).map((task) => task.taskId).sort(),
+      all: await allTasks(dir),
+      warned: ran.stderr.includes('could not determine changed files'),
+    }
   })
+
+Deno.test('an all-zero push before off main falls back to every task and says it could not determine the change', async () => {
+  const push = await allZeroPush('trunk')
+  assertEqual(push.selected, push.all, 'an undeterminable push off main runs every task')
+  assert(push.warned, 'stderr names the fallback')
+})
+
+Deno.test('an all-zero push before on main selects no task and prints no warning', async () => {
+  const push = await allZeroPush('main')
+  assertEqual(push.selected, [], 'an undeterminable push on main selects nothing')
+  assert(!push.warned, 'nothing on stderr says the change was undeterminable')
 })
 
 Deno.test('turbo query affectedTasks keeps the package-level lockfile diff and diverges from run --affected', async () => {
