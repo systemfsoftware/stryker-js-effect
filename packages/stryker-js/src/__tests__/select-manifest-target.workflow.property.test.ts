@@ -138,13 +138,18 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_StringExports_≡RootOnlyWhateverMainAndModuleSay',
+    '∀c_RootExports_≡StringOrArrayRootServesTheRootOnlyWhateverMainAndModuleSay',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
-    (subject, [command]) =>
-      [
-        exported(subject, command, './index.js', ''),
-        exported(subject, command, './index.js', `x${textOf(command)}`),
-      ].join('|') === 'path:./index.js|missing',
+    (subject, [command]) => {
+      const target = targetOf(command)
+      const subpath = `x${textOf(command)}`
+      return [
+        exported(subject, command, target, ''),
+        exported(subject, command, target, subpath),
+        exported(subject, command, [target], ''),
+        exported(subject, command, [target], subpath),
+      ].join('|') === `path:${target}|missing|path:${target}|missing`
+    },
   )
 
   it.prop(

@@ -48,21 +48,6 @@ const TEST = [
 
 const UNRELATED_FILE = 'tools/unrelated.js'
 
-interface ExportsShape {
-  readonly name: string
-  readonly exports: S.Json
-}
-
-const SHAPES: ReadonlyArray<ExportsShape> = [
-  { name: 'a flat string root', exports: { '.': './dist/index.js' } },
-  {
-    name: 'nested conditions with types first',
-    exports: { '.': { import: { types: './dist/index.d.ts', default: './dist/index.js' } } },
-  },
-  { name: 'an array fallback', exports: { '.': ['./dist/index.js'] } },
-  { name: 'a null subpath beside the root', exports: { '.': './dist/index.js', './internal/*': null } },
-]
-
 interface RunOutcome {
   readonly exitCode: number
   readonly reuse: Option.Option<RunEvent.ReuseReported>
@@ -145,11 +130,11 @@ const linkInstalledPackages = (root: string): Effect.Effect<void, never, Service
     yield* fs.symlink(path.join(root, 'lib'), path.join(root, 'node_modules', '@fixture', 'lib'))
   }).pipe(Effect.orDie)
 
-const makeProject = (shape: ExportsShape): Effect.Effect<string, never, Services | Scope.Scope> =>
+const makeProject = (exports: S.Json): Effect.Effect<string, never, Services | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-exports-reuse-' }))
-    const libManifest = yield* encodeManifest({ name: '@fixture/lib', type: 'module', exports: shape.exports })
+    const libManifest = yield* encodeManifest({ name: '@fixture/lib', type: 'module', exports })
     yield* Effect.forEach(
       [
         ['package.json', '{ "name": "exports-reuse-app", "type": "module", "private": true }\n'],
@@ -168,29 +153,47 @@ const makeProject = (shape: ExportsShape): Effect.Effect<string, never, Services
     return root
   }).pipe(Effect.orDie)
 
-const runTwiceAroundAnUnrelatedEdit = (root: string): Effect.Effect<RunPair, never, Services> =>
+interface Edit {
+  readonly file: string
+  readonly content: string
+}
+
+const UNRELATED_EDIT: Edit = { file: UNRELATED_FILE, content: 'export const unrelated = 2\n' }
+
+const RUNTIME_EDIT: Edit = { file: 'lib/dist/index.js', content: 'export const double = (value) => value + value\n' }
+
+const TYPES_FIRST_EXPORTS: S.Json = { '.': { import: { types: './dist/index.d.ts', default: './dist/index.js' } } }
+
+const runTwiceAround = (root: string, edit: Edit): Effect.Effect<RunPair, never, Services> =>
   Effect.gen(function*() {
     const first = yield* spawnRun(root)
-    yield* writeFile(root, UNRELATED_FILE, 'export const unrelated = 2\n')
+    yield* writeFile(root, edit.file, edit.content)
     const second = yield* spawnRun(root)
     return { first, second }
   })
 
-Feature('Keeping verdicts for a linked package whatever shape its exports take', { timeout: 600_000 })
+Feature('Reusing verdicts for tests that import a linked workspace package', { timeout: 600_000 })
   .withLayer(NodeServices.layer)
-  .live('the built stryker binary runs a project twice around an edit to a file no test imports')
-  .body(({ scenario }) => {
-    for (const shape of SHAPES) {
-      scenario(
-        `A linked package whose exports use ${shape.name} keeps every verdict`,
+  .live('the built stryker binary runs a project twice around an edit')
+  .body(({ scenario, scenarioOutline }) => {
+    scenarioOutline(
+      'A linked package whose exports use <shape> keeps every verdict across an edit no test reaches',
+      [
+        { shape: 'a flat string root', exports: { '.': './dist/index.js' } },
+        { shape: 'nested conditions with types first', exports: TYPES_FIRST_EXPORTS },
+        { shape: 'an array fallback', exports: { '.': ['./dist/index.js'] } },
+        { shape: 'a top-level array', exports: ['./dist/index.js'] },
+        { shape: 'a null subpath beside the root', exports: { '.': './dist/index.js', './internal/*': null } },
+      ] as const,
+      (row) =>
         Gherkin.Do.pipe(
-          Given(`a project whose test imports a linked package with ${shape.name} in its exports`)(
+          Given(`a project whose test imports a linked package with ${row.shape} in its exports`)(
             'root',
-            () => makeProject(shape),
+            () => makeProject(row.exports),
           ),
           When('the binary runs the project, a file no test imports changes, and it runs again')(
             'runs',
-            (s) => runTwiceAroundAnUnrelatedEdit(s.root),
+            (s) => runTwiceAround(s.root, UNRELATED_EDIT),
           ),
           Then('both runs exit 0 and the second reuses every verdict the first one tested')((s, expect) => {
             const firstRan = countsOf(s.runs.first.reuse).ran
@@ -207,6 +210,33 @@ Feature('Keeping verdicts for a linked package whatever shape its exports take',
             })
           }),
         ),
-      )
-    }
+    )
+
+    scenario(
+      'A linked package whose types come first still re-tests its importers when only its runtime file changes',
+      Gherkin.Do.pipe(
+        Given('a project whose test imports a linked package that lists its types before its runtime file')(
+          'root',
+          () => makeProject(TYPES_FIRST_EXPORTS),
+        ),
+        When('the binary runs the project, only the package runtime file changes, and it runs again')(
+          'runs',
+          (s) => runTwiceAround(s.root, RUNTIME_EDIT),
+        ),
+        Then('both runs exit 0 and the second tests again every mutant the first one tested')((s, expect) => {
+          const firstRan = countsOf(s.runs.first.reuse).ran
+          return expect({
+            firstExitCode: s.runs.first.exitCode,
+            firstTestedMutants: firstRan > 0,
+            secondExitCode: s.runs.second.exitCode,
+            second: countsOf(s.runs.second.reuse),
+          }).toEqual({
+            firstExitCode: 0,
+            firstTestedMutants: true,
+            secondExitCode: 0,
+            second: { reused: 0, ran: firstRan, refusedFor: ['closureChanged'] },
+          })
+        }),
+      ),
+    )
   })
