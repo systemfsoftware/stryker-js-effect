@@ -12,11 +12,22 @@ export class MachineStreamError extends Schema.TaggedError<MachineStreamError>()
   }
 }
 
+const refusedLineOf = (stdout: string, message: string): string =>
+  Option.getOrElse(
+    Option.flatMap(
+      Option.fromNullishOr(/at \[(\d+)\]/.exec(message)?.[1]),
+      (position) => Option.fromNullishOr(stdout.split(/(?<=\n)/)[Number(position)]),
+    ),
+    () => '',
+  )
+
 export const decodeStream = (
   stdout: string,
 ): Effect.Effect<ReadonlyArray<RunEvent.RunEvent>, MachineStreamError> =>
   Schema.decodeEffect(RunEvent.RunEventWireText)(stdout).pipe(
-    Effect.mapError((refused) => new MachineStreamError({ line: '', detail: refused.message })),
+    Effect.mapError((refused) =>
+      new MachineStreamError({ line: refusedLineOf(stdout, refused.message), detail: refused.message })
+    ),
   )
 
 export const terminalEvent = (
