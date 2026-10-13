@@ -2,10 +2,10 @@
 title: "fix: stryker gate judges a merged report against each project's thresholds.break"
 type: fix
 status: active
-date: 2026-10-10
+date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-10-2127-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-10-2220-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
@@ -16,7 +16,7 @@ A sharded run passes today when its merged score is below `thresholds.break`. Ea
 
 Packs: cell-architecture (pure decision in a `*.workflow.ts`; the cell only reads, groups straight-line and wires), boundary-testing (refusal tests at the verdict's edges), schema-laws (the per-project field and the gate's reader are schemas with generated round-trip laws). CONSTITUTION articles cited by ADR-0001: CONST-P2 and CONST-T4, because a decision outside a workflow is not mutated.
 
-Supersedes the 2127 plan after the ruling on `7ec745776` (it_bdfe56a0). Changed contract: R8's single shared floor of 46 let the stronger projects fall 15-25 points unjudged, so each dogfood project now sets its own floor in its own config. Carried over from 2127: update flags keep the break check (R5); a project with no recorded thresholds gets an info line (R7); gate journeys A5 and A6; A3 pins the info lines.
+Supersedes the 2220 plan, whose R8 lowered the dogfood break (shared 100 to 46, plus per-project floors 46/54/69/72) without a CONST-W3 declaration. Implementation had started, so this is a new contract, not an in-place edit. Changed contract: R8 now changes no threshold value (CONST-E9, CONST-T3, CONST-G3), and U5/U6 drop the floor edits. R1-R7, A1-A6 and U1-U4 carry over unchanged.
 
 ## Product Contract
 
@@ -35,7 +35,7 @@ The merged report never carries the configured break. Merge rebuilds each projec
 - R5. The `--baseline` and `--budget-baseline` verdicts are unchanged. The gate runs the baseline check, then the budget check, then the break check, and the first failure decides the exit. Under `--update-baseline` or `--update-budget-baseline` the baselines are written first and the break check still runs: updating a baseline does not accept a low score.
 - R6. Changeset: `@systemfsoftware/stryker-js` major, because a gate that passed today now fails. Migration: raise the score, set each project's own `thresholds.break` to its current score, or set it to `null`. The README rows for `stryker gate` and exit code 1 say the gate judges each project against the break in its own config, in one statement.
 - R7. A merged project whose shard streams carry no `verdict` line has no recorded thresholds (`thresholds: null`). It gets no verdict and the stable info line `stryker gate: <project>: no thresholds recorded for this project; re-run its shards with the project's config`. No reason code is added for it.
-- R8. Each dogfood project's own `stryker.config.ts` sets `thresholds.break` to its score on main run 38083502908 (`56426ca94`), rounded down: stryker-js 46 (46.45), typescript-checker 54 (54.27), vitest-runner 69 (69.35), e2e-core 72 (72.20). Each config spreads `sharedConfig` and overrides `thresholds` after it, keeping the shared `high` and `low`. The shared config (`packages/toolchain/stryker-config/lib/base.js`) keeps break 46, the weakest project's floor, for any project without an override. The old break of 100 was never enforced in sharded mode, so main scoring 58.27 never failed on it. `.github/workflows` is not touched.
+- R8. This change edits no threshold. `packages/toolchain/stryker-config/lib/base.js` keeps `thresholds.break: 100`, and no dogfood `stryker.config.ts` overrides it. Thresholds are a judgment surface, so the change they grade may not edit them (CONST-E9). CONST-T3's check is break = 100. Lowering it without a declaration in the change itself is an automatic P0 (CONST-G3, CONST-W3). Consequence once this lands: the gate step of main's Mutation lane, which runs nightly or on manual dispatch, fails while a project scores below 100. Main scored 58.27 on run 37960922409, and the per-project scores on run 38083502908 were stryker-js 46.45, typescript-checker 54.27, vitest-runner 69.35 and e2e-core 72.20. Any lower floor is the instrument owner's separate change, carrying its own CONST-W3 declaration that names the rule and the case. Those measured scores are evidence for that owner, not values this change sets. `.github/workflows` is not touched.
 
 ### Acceptance (tests)
 
@@ -55,7 +55,8 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 - A report with no files has no score, so it gets no verdict and no "no valid mutant" line.
 - When the baseline check fails first, the break failure is not reported (A6). Both remediations ask for the survivors to be killed.
 - Projects are partitioned by explicit per-project `files` lists, not by path-prefix inference.
-- A per-project floor tracks one run's score. A flaky mutant can move a score below its floor by less than a point; the floors are rounded down to absorb that. Raise each floor as its project's score rises.
+- A red gate step skips the budget-baseline bootstrap upload (`.github/workflows/mutation.yml:342-347`). This is residual: the workflow is Stream K's, and this change does not touch it.
+- A diff-scoped report is judged like any other: the gate reads the report's `files` and `projects`, never its run `scope` (R1, R4). The score is over the mutants the report holds, compared with the break that project's config resolved.
 
 ### Scope boundaries
 
@@ -68,5 +69,5 @@ Test layers: A3 is a decision, so it gets property tests only. A4 is a schema, s
 - U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: VerdictThresholds | null, files }`; `shard-merge.ts` writes null when no shard stream of the project has a `verdict` line.
 - U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: the cell passes thresholds through and logs the decision's `lines`.
 - U4 (landed `e581c9fa0`). A2, READMEs, changeset.
-- U5. A5 and A6 in `gate.integration.test.ts`; README row rewritten; shared floor 46 in `base.js`.
-- U6. Per-project floors (R8) in the four `stryker.config.ts` files; changeset migration and README row name the project's own config.
+- U5. A5 and A6 in `gate.integration.test.ts`; README row rewritten.
+- U6. No threshold edit (R8): `base.js` and the four dogfood `stryker.config.ts` files equal `main`, and no floors changeset ships. The changeset migration and the README row name the project's own config.
