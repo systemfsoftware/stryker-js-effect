@@ -51,7 +51,7 @@ export type MutantRunOutcome =
   | MutantRunRetryExhausted
 
 export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
-  wallClockTimeout: S.Boolean,
+  workerReplaced: S.Boolean,
   neverStarted: S.Boolean,
   confirming: S.Boolean,
   timeoutMs: Mutant.RunOptionsFields.timeout,
@@ -106,7 +106,7 @@ const decideExpiry = (command: MutantRunObservation): Result.Result<MutantRunOut
   })
 
 const decide = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
-  Boolean.match(command.wallClockTimeout, {
+  Boolean.match(command.workerReplaced, {
     onTrue: () => decideExpiry(command),
     onFalse: () => decideGuard(command),
   })

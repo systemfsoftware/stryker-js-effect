@@ -31,7 +31,7 @@ it.prop(
     Result.match(subject(command), {
       onFailure: () => false,
       onSuccess: (decision) =>
-        Boolean.match(command.wallClockTimeout && !command.confirming, {
+        Boolean.match(command.workerReplaced && !command.confirming, {
           onTrue: () => S.is(MutantRunConfirm)(decision) && decision.timeoutMs === twiceOrLargest(command.timeoutMs),
           onFalse: () => !S.is(MutantRunConfirm)(decision),
         }),
@@ -46,7 +46,7 @@ it.prop(
       onFailure: () => false,
       onSuccess: (decision) =>
         S.is(MutantRunTimeoutConfirmed)(decision) ===
-          (command.wallClockTimeout && command.confirming && !command.neverStarted),
+          (command.workerReplaced && command.confirming && !command.neverStarted),
     }),
 )
 
@@ -58,7 +58,7 @@ it.prop(
       onFailure: () => false,
       onSuccess: (decision) =>
         S.is(MutantRunNeverStarted)(decision) ===
-          (command.wallClockTimeout && command.confirming && command.neverStarted),
+          (command.workerReplaced && command.confirming && command.neverStarted),
     }),
 )
 
@@ -69,7 +69,7 @@ it.prop(
     Result.match(subject(command), {
       onFailure: () => false,
       onSuccess: (decision) =>
-        Boolean.match(command.wallClockTimeout, {
+        Boolean.match(command.workerReplaced, {
           onTrue: () => !S.is(MutantRunSettled)(decision) && !S.is(MutantRunRetry)(decision),
           onFalse: () =>
             Boolean.match(coveringTestMissing(command), {

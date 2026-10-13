@@ -107,7 +107,7 @@ const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttempt
     ),
   )
   return {
-    wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
+    workerReplaced: invalidatesRunnerPool(result.status, reasonOf(result)),
     neverStarted: reasonOf(result) === WorkerNeverStartedReason.literal,
     confirming: input.confirming,
     timeoutMs: plan.runOptions.timeout,
