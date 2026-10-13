@@ -1,6 +1,6 @@
 /**
  * effect-imports — the import table, callee resolution and shadow analysis the
- * opt-in concurrency and arid rules share.
+ * Effect concurrency mutators and the arid rules share.
  *
  * It answers, from a file's own `effect` imports, which module and export a
  * visited callee resolves to (an aliased namespace or a named import counts; a
