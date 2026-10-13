@@ -564,6 +564,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.report.sarif",
+    "name": "stryker.report.sarif",
+    "attributes": {}
+  },
+  {
     "id": "stryker.reporterStream.attach",
     "name": "stryker.reporterStream.attach",
     "attributes": {}

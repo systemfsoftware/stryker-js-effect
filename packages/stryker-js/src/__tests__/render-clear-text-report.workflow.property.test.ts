@@ -11,7 +11,7 @@ import {
   ClearTextReportCommand,
   ClearTextReportRendered,
   renderClearTextReport,
-} from '../render-clear-text-report.workflow.js'
+} from '../Reporter/render-clear-text-report.workflow.js'
 
 const commandArb = Arbitrary.schema(ClearTextReportCommand)
 
