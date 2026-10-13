@@ -34,6 +34,9 @@ export const CheckerDigestRequest = S.Struct({
 })
 export type CheckerDigestRequest = typeof CheckerDigestRequest.Type
 
+export const CheckerCapabilitiesRequest = S.Struct({ checkerName: S.String })
+export type CheckerCapabilitiesRequest = typeof CheckerCapabilitiesRequest.Type
+
 export const ReporterInitOptions = S.Struct({
   traceparent: S.optionalKey(Traceparent),
   tracestate: S.optionalKey(Tracestate),

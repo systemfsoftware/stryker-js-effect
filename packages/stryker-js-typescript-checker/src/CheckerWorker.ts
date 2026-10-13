@@ -1,5 +1,5 @@
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Plugin, type TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -93,6 +93,20 @@ export const checkerHandlers = Plugin.CheckerRpcs.toLayer(
           ),
           Match.exhaustive,
         ),
+
+      capabilities: ({ checkerName }: { readonly checkerName: string }): Effect.Effect<
+        TypeQuery.CheckerCapabilities,
+        Checker.CheckerFailed
+      > =>
+        Match.value(checkerName).pipe(
+          Match.when('typescript', () => Effect.succeed(runtime.capabilities)),
+          Match.orElse(() => Effect.fail(refuse(checkerName, [], 'Checker ' + checkerName + ' does not exist'))),
+        ),
+
+      typeQuery: (
+        request: TypeQuery.TypeQueryRequest,
+      ): Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused> =>
+        Effect.flatMap(runtime.typeQuery, (typeQuery) => typeQuery.query(request)),
     }
   }),
 )
