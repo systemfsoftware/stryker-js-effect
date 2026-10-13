@@ -19,8 +19,8 @@ execution: code
 - **Stop conditions:**
   - The root's answer to Q1 comes first: this plan stops at its plan gate.
   - U4 does not start until `async-mutex` is approved (Q2). If it is refused, U1-U3 still ship inert, and the run stops before U4.
-  - U6's CI job waits for the root's placement of `drop-audit` (Q5). U6's code ships without it.
-- **Who finishes:** `ce-work` builds U1-U7. The root decides Q1 and Q5, the supervisor decides Q2, and the supervisor merges each layer.
+  - R13's corpus verdict comes from Stream K's `needs: [kill-matrix]` audit job in `mutation.yml` (root ruling, 2026-10-13). U6 ships the audit predicate and replay; PR-3's no-signal-loss evidence waits until K's job is on `main`.
+- **Who finishes:** `ce-work` builds U1-U7. The root decides Q1, the supervisor decides Q2, Stream K adds the audit job, and the supervisor merges each layer.
 - **Open blockers:** Q1 (root), Q2 (supervisor). The root's scorecard and SOTA-bar documents (`~/.kiro/crew/workspace/plans/2026-10-13-0000-stryker-sota-*.md`) are not readable from this workspace, so this plan works from the gap the root quoted: "no z3/SMT solver; static subsumption already exists".
 - **Applicable packs** (`.compound-engineering/config.yaml`): `cell-architecture`, `boundary-testing`, `schema-laws`. The rules that shaped decisions are cited where they apply.
 
@@ -110,7 +110,7 @@ The corpus is Effect-style decision code with few numeric helpers. Projects with
 
 **No signal loss**
 
-- R13. On every PR from this unit on, CI computes the proved-drop list from the PR's build under the default policy and joins it to main's newest full kill matrix, which runs every mutant against every covering test:
+- R13. From this unit on, the Mutation lane's audit job (Stream K's, `needs: [kill-matrix]`, nightly and manual dispatch on `main`) computes the proved-drop list from that commit's workspace build under the default policy and joins it to the `--full` kill matrix the same run produced, which runs every mutant against every covering test:
   - Killed, Timeout, RuntimeError or CompileError fails, because an equivalent mutant can do none of these; the failure names the mutant id and every test that killed it, so the reader can tell an encoding defect from a test that calls the function outside the proof's parameter domain;
   - Survived or NoCoverage passes, as evidence consistent with the proof, not as proof;
   - a drop with no matrix entry is listed as unjoinable, and a run with drops but no joined drop fails as unattested.
@@ -156,7 +156,7 @@ The corpus is Effect-style decision code with few numeric helpers. Projects with
 - Out: property reads, strings, bigint, `%`, `**`, bitwise operators and `Math.round`, each for a reason measured or cited above.
 - Out: the shapes Stream C's `constant-collection-size` claims (#304), and type-invalid mutants (unit I, PR-C).
 - Out: learned or LLM-based equivalence detection.
-- Out: editing `.github/workflows/`, `PROJECTS` or `mutate` globs. R13's job rides on whatever placement the root rules for `drop-audit` (#288).
+- Out: editing `.github/workflows/`, `PROJECTS` or `mutate` globs. Stream K adds the audit job to `mutation.yml` (root ruling, 2026-10-13); this unit only extends the `stryker audit` command that job runs.
 - Considered and not built: caching verdicts across runs. A query costs about 65 ms and reuse would need the encoding version in the engine digest; evidence of solver time dominating a run would change this.
 - Considered and not built: a separate plugin package for the solver. Stream A owns package splits; Q3 records the trade-off.
 
@@ -167,7 +167,7 @@ The corpus is Effect-style decision code with few numeric helpers. Projects with
 This plan covers proved equivalence only. The rest is the current understanding, not a committed roadmap.
 
 - Unit I Layer 1 (S1 subsumption, merged in #273): R8 extends its re-admission rule.
-- `stryker audit` (merged in #276) and its CI job `drop-audit` (#288, open): R13 adds a second predicate to the audit, and its job depends on where the root places `drop-audit`.
+- `stryker audit` (merged in #276) and its job, which Stream K adds to the Mutation lane as `needs: [kill-matrix]` (#288 stays open until that job merges, then closes as superseded): R13 adds a second predicate to the audit.
 - Stream H's type queries (#328, open): not needed. R2 reads declared keyword types, not inferred ones.
 - Stream F native generation: can emit R4's fact later.
 
@@ -176,7 +176,7 @@ This plan covers proved equivalence only. The rest is the current understanding,
 - Q1. **Build at this yield?** On the corpus the unit disposes one equivalent survivor and saves no executed mutant (Problem Frame). The 2026-10-09 rejection rested on the same count; T12's intent orders the outcome anyway. For the root at the plan gate.
 - Q2. **Approve `async-mutex`.** `z3-solver` 5.2.0 depends on `async-mutex ^0.3.2` (MIT, single maintainer `dirtyhairy`; 0.3.2 is what the range resolves to under the pin). It blocks U4 (supervisor).
 - Q3. **Package boundary.** `z3-solver` puts 35.8 MB into every install of `@systemfsoftware/stryker-js`. A separate plugin package would keep it optional, but Stream A is splitting packages. The plan keeps it in the engine with a lazy load (KTD3); the root may redirect.
-- Q5. **CI home for R13.** No workflow runs `stryker audit` on `main`; #288 adds the job, and the root is ruling on its placement (pull request, postsubmit on the matrix lane, or Stream K's lane). U6 extends the audit command; the job wiring follows the ruling. The drop list comes from the PR's own engine, so a PR that changes the encoder supplies the drops its gate judges; the kill matrix, from main's full-policy run, is the independent side. Until the job is placed, PR-2's default drops have R7, R17 and replay behind them but no corpus check.
+- Q5. **CI home for R13. Resolved by the root, 2026-10-13.** The audit is a `needs: [kill-matrix]` job in the Mutation lane, owned by Stream K: under CONST-E7 the gate grades Stream I's drops, so Stream I does not own the job. It audits the `--full` matrix the same run produced, so drops in code a commit adds join as well. A red audit makes Mutation red, and the triage cron owns it. Mutation runs nightly plus manual dispatch, so the day's merged drops are judged that night; until then a default drop has R7, R17 and replay behind it.
 - Q6. **Proof field shape against `schema-laws`.** U1 adds an optional `equivalence` field to `Mutant` whose presence follows the reason code. That is the trigger of (pack: schema-laws, tagged-unions-over-state-by-presence.md), which (pack: schema-laws, cross-field-invariants-as-struct-checks.md) rule 2 hands such fields to. `main` already models `statusReason` and `subsumption` this way with struct checks (`Mutant.schema.ts:137-148`), and a status-tagged `Mutant` is a cross-package wire change beyond T12. KTD11 follows the precedent and records the violation. The root may order the union instead, which moves U1 and U5 onto a reshaped `Mutant`.
 
 ### Product Contract preservation
@@ -189,6 +189,8 @@ Changed: R4, R7, R9, R10, R11, R12, R13, R14, R15, AE8 (added), R20 and R21 (add
 - The `'full'` behaviour and solver-unavailable handling had no requirement.
 
 R13 keeps its original failing set (Killed, Timeout, RuntimeError, CompileError) and now also names the killing tests, lists unjoinable drops and fails an unattested run; a draft of this plan relaxed the failing set and review reverted that. Q4 (whether replay is its own command or part of `stryker audit`) is resolved by KTD7. Scope is unchanged.
+
+R13's trigger and matrix changed by the root's 2026-10-13 ruling (Q5): the Mutation lane's job judges each commit's drops against the same run's `--full` matrix, instead of every PR against main's newest matrix. Its verdicts are unchanged.
 
 ---
 
@@ -235,12 +237,12 @@ flowchart TB
   R --> RP[stryker audit replay KTD7, R12]
 ```
 
-The CI handshake for R13:
+The CI handshake for R13, inside one Mutation run on `main`:
 
 ```mermaid
 flowchart TB
-  B[PR build, default policy] --> D[proved-drop list with proofs]
-  K[main newest kill-matrix, full policy] --> Q[proved-drop predicate KTD7]
+  B[the commit's workspace build, default policy] --> D[proved-drop list with proofs]
+  K[this run's kill matrix, --full] --> Q[proved-drop predicate KTD7]
   D --> Q
   D --> RP[replay every proof R12]
   Q --> V{verdict}
@@ -259,11 +261,11 @@ flowchart TB
 
 Three layers, each green and releasable on its own; new code lands inert until a higher layer wires it in.
 
-| Layer                       | Units      | Ships                                                                                                                                  | Gate                       |
-| --------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| PR-1 Contracts and facts    | U1, U2, U3 | the proof schema and rule id on the plugin `Mutant`, instrumenter facts, the encoding workflow; nothing drops, the stream is unchanged | Q1                         |
-| PR-2 Solver and engine step | U4, U5     | the pinned solver, the stream field and its major bump, and the prove step, on by default                                              | Q2                         |
-| PR-3 Audit and replay       | U6, U7     | the proved-drop predicate, replay, docs                                                                                                | Q5 for the job wiring only |
+| Layer                       | Units      | Ships                                                                                                                                  | Gate                                        |
+| --------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| PR-1 Contracts and facts    | U1, U2, U3 | the proof schema and rule id on the plugin `Mutant`, instrumenter facts, the encoding workflow; nothing drops, the stream is unchanged | Q1                                          |
+| PR-2 Solver and engine step | U4, U5     | the pinned solver, the stream field and its major bump, and the prove step, on by default                                              | Q2                                          |
+| PR-3 Audit and replay       | U6, U7     | the proved-drop predicate, replay, docs                                                                                                | Stream K's audit job for the corpus verdict |
 
 ### Risks & Dependencies
 
@@ -274,8 +276,8 @@ Three layers, each green and releasable on its own; new code lands inert until a
 | Stream C's #304 also edits `RULE_IDS` and `StreamSchemaVersion`.                                                                                | KTD9; whichever lands second merges main and bumps again.                                                                                                      |
 | The yield stays at one drop.                                                                                                                    | Q1 puts it to the root before any code lands.                                                                                                                  |
 | `rlimit` meaning changes across Z3 versions.                                                                                                    | The proof records the solver version (R10), replay refuses a mismatch (R12), and KTD10 recalibrates on upgrade.                                                |
-| R13 cannot join a drop in code the PR adds, because mutant ids are content-derived.                                                             | Such drops are listed as unjoinable; R17 and review stand behind them until main's next kill matrix includes the code.                                         |
-| PR-2 enables drops before Q5 places R13's job.                                                                                                  | Q5 states the window; the root can hold PR-2's merge until the job exists.                                                                                     |
+| A proved drop merges before any corpus check runs.                                                                                              | That night's Mutation run audits it against its own `--full` matrix (Q5); a red result is the triage cron's. R7, R17 and replay stand until then.              |
+| PR-2 enables drops before Stream K's audit job exists.                                                                                          | The root can hold PR-2's merge until K's job is on `main`.                                                                                                     |
 | A codebase with many small numeric helpers pays solver time on every default run, and `'full'` (R20) also turns off the other mutant-set rules. | R15 counts total solver time per run; per-query cost is bounded by R9. A separate opt-out is not built without that count showing a need.                      |
 
 ### System-Wide Impact
@@ -422,7 +424,7 @@ Three layers, each green and releasable on its own; new code lands inert until a
   1. Beside `dropOf` (`audit-request.cell.ts:154-158`), collect proved drops with their proofs from the default-policy build.
   2. The new workflow joins them to the matrix and assigns R13's verdicts with its own reason vocabulary and next actions, naming the killing tests on a failure.
   3. Replay mode reads a report, checks solver and encoder versions, re-encodes each recorded fact, compares it with the recorded text, and solves under the fixed limit (R12).
-  4. Add both to the audit report's union; the job wiring waits for Q5.
+  4. Add both to the audit report's union; Stream K's job in the Mutation lane runs them.
 - **Patterns to follow:** `audit-drops.workflow.ts` (`NEXT_ACTION` exhaustive record, closed reason literals) and `audit.schema.ts`'s `DropAuditPassed`/`DropAuditFailed`.
 - **Test scenarios:**
   - A proved drop Killed, timed out, RuntimeError or CompileError in the matrix fails with its id and the tests that killed it.
@@ -448,16 +450,16 @@ Three layers, each green and releasable on its own; new code lands inert until a
 
 ## Verification Contract
 
-| Gate                         | Command or source                                                                                                      | Applies to                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| Format                       | `./bin/dprint check`                                                                                                   | every PR                     |
-| Typecheck, tests, API report | `pnpm --filter <package> typecheck`, `pnpm --filter <package> test`, `pnpm --filter <package> api:check`               | each package a unit touches  |
-| Single plan                  | `pnpm gate:repo`                                                                                                       | every PR                     |
-| CI                           | `check`, every `e2e (…)` leg, `Changeset Check`, watched with `xd://github run_watch`                                  | every PR head                |
-| Solver limit evidence        | U4's measured `rlimit count` over the corpus facts and the chosen literal                                              | PR-2                         |
-| No signal loss               | `stryker audit` proved-drop predicate and replay against main's newest `kill-matrix-<n>`, cited by run id              | PR-3, once Q5 places the job |
-| Corpus counts                | the R15 counts from the first main Mutation run after release, against run 38363576433                                 | after PR-2's release         |
-| Packed binary loads solver   | the first main Mutation run after PR-2 merges, which runs the built CLI: R15 reports zero unavailability and AE7 holds | after PR-2's merge           |
+| Gate                         | Command or source                                                                                                        | Applies to                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| Format                       | `./bin/dprint check`                                                                                                     | every PR                        |
+| Typecheck, tests, API report | `pnpm --filter <package> typecheck`, `pnpm --filter <package> test`, `pnpm --filter <package> api:check`                 | each package a unit touches     |
+| Single plan                  | `pnpm gate:repo`                                                                                                         | every PR                        |
+| CI                           | `check`, every `e2e (…)` leg, `Changeset Check`, watched with `xd://github run_watch`                                    | every PR head                   |
+| Solver limit evidence        | U4's measured `rlimit count` over the corpus facts and the chosen literal                                                | PR-2                            |
+| No signal loss               | the Mutation lane's audit verdict (proved-drop predicate and replay) on that run's `--full` kill matrix, cited by run id | PR-3, once K's job is on `main` |
+| Corpus counts                | the R15 counts from the first main Mutation run after release, against run 38363576433                                   | after PR-2's release            |
+| Packed binary loads solver   | the first main Mutation run after PR-2 merges, which runs the built CLI: R15 reports zero unavailability and AE7 holds   | after PR-2's merge              |
 
 Nothing runs mutation locally. Tests count as passing only when the parent session ran them.
 
