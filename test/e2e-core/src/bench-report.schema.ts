@@ -65,7 +65,7 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'run-path-occupied':
     'something already sits at the run path under RUNNER_TEMP before a side moved in (a stray tree or a run that never moved back): read the reason for the path and the side, find what left it in the job log, then re-run the job',
   'run-path-move-failed':
-    "RUNNER_TEMP could not be listed, or a side's tree could not be renamed to the run path: read the OS error in the reason (permissions, no space, a rename across filesystems), fix the runner, then re-run the job",
+    "RUNNER_TEMP could not be listed, a side's tree could not be renamed to the run path, or a side's working directory or CLI lies outside its tree: read the reason; an OS error (permissions, no space, a rename across filesystems) needs a runner fix, a path outside the tree is a bench bug in side setup; then re-run the job",
   'run-path-unrestored':
     "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths, the rename error and the run's own error, then re-run the job",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',

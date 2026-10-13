@@ -147,7 +147,7 @@ const planned = (
         }),
       ),
       {
-        onFailure: (outside) => Effect.fail(orchestrationFailed('defect', outside.message)),
+        onFailure: (outside) => Effect.fail(orchestrationFailed('run-path-move-failed', outside.message)),
         onSuccess: Effect.succeed,
       },
     )

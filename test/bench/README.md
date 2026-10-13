@@ -98,12 +98,11 @@ real path. The leg aborts when this breaks:
 
 - `run-path-occupied`: the run path already exists before a move-in;
 - `run-path-move-failed`: `RUNNER_TEMP` could not be listed, or the move-in
-  rename failed; the reason carries the OS error;
+  rename failed, and the reason carries the OS error; or a side's working
+  directory or CLI lies outside its own tree, which is a bench bug in side
+  setup;
 - `run-path-unrestored`: a tree could not be moved back; the reason carries
-  the rename error and, when the run itself failed too, the run's own error;
-- `defect`: a side's working directory or CLI lies outside its own tree, so
-  it cannot be rebased onto the run path. That is a bench bug, not a runner
-  fault.
+  the rename error and, when the run itself failed too, the run's own error.
 
 While a side's tree sits at the run path, its worktree's `.git` file points at
 a gitdir entry naming the old path. No git call runs inside a measured run:
