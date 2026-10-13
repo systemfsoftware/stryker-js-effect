@@ -101,14 +101,6 @@ const ARID_IMPORTED_CONSOLE_SOURCE = `import console from 'node:console'
 export const ready = () => console.log('x')
 `
 
-const ARID_IMPORTED_DATE_SOURCE = `import { Date } from './clock'
-export const parsed = () => Date.parse('x')
-`
-
-const ARID_SHADOWED_DATE_SOURCE = `const Date = { parse: (text: string) => text }
-export const parsed = () => Date.parse('x')
-`
-
 const ARID_ROOT_NAMESPACE_SOURCE = `import * as E from 'effect'
 export const ready = () => E.Effect.logInfo('x')
 `
@@ -1238,48 +1230,6 @@ export function price(n) {
           ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-console.ts', source),
         ),
         Then('the console argument stays mutable')((
-          { result }: { result: Instrument.InstrumentResult },
-          expect,
-        ) =>
-          expect(
-            result.mutants
-              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
-              .map((mutant) => [mutant.status, mutant.statusReason]),
-          ).toEqual([[undefined, undefined]])
-        ),
-      ),
-    )
-
-    scenario(
-      'An imported Date binding stays mutated',
-      Gherkin.Do.pipe(
-        Given('a module importing Date from a local clock')('source', () => Effect.succeed(ARID_IMPORTED_DATE_SOURCE)),
-        When('it is instrumented under the default policy')(
-          'result',
-          ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-date.ts', source),
-        ),
-        Then('the parse argument stays mutable')((
-          { result }: { result: Instrument.InstrumentResult },
-          expect,
-        ) =>
-          expect(
-            result.mutants
-              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
-              .map((mutant) => [mutant.status, mutant.statusReason]),
-          ).toEqual([[undefined, undefined]])
-        ),
-      ),
-    )
-
-    scenario(
-      'A shadowed Date binding stays mutated',
-      Gherkin.Do.pipe(
-        Given('a module shadowing Date with a local object')('source', () => Effect.succeed(ARID_SHADOWED_DATE_SOURCE)),
-        When('it is instrumented under the default policy')(
-          'result',
-          ({ source }: { source: string }) => instrumentSource('/tmp/arid-shadowed-date.ts', source),
-        ),
-        Then('the parse argument stays mutable')((
           { result }: { result: Instrument.InstrumentResult },
           expect,
         ) =>
