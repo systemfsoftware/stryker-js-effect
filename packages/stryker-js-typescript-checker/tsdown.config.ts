@@ -15,7 +15,7 @@ const shared = {
 export default defineConfig([
   {
     ...shared,
-    entry: { index: './src/mod.ts', runtime: './src/runtime/mod.ts' },
+    entry: { index: './src/mod.ts', runtime: './src/runtime/mod.ts', 'type-query': './src/type-query/mod.ts' },
     clean: true,
     deps: { alwaysBundle: ['@std/jsonc'] },
   },

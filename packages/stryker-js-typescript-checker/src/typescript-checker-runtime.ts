@@ -1,7 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Mutant, type Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
@@ -22,6 +22,7 @@ import { type CompilerError, DryRunCompileErrors } from './Compiler.schema.js'
 import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
 import { describeDiagnostics, groups, init, programDigest, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
+import * as TypeQueryTsgo from './type-query.handle.js'
 
 type CheckEvent = CheckMutantsAnswer[number]
 
@@ -112,6 +113,14 @@ export const layer = (
         Effect.catchCause((cause) => Effect.fail(cause)),
         Effect.cached,
       )
-      return CheckerRuntime.of({ checker })
+      const scope = yield* Effect.scope
+      const typeQuery = yield* Effect.cached(
+        Layer.buildWithScope(TypeQueryTsgo.layer, scope).pipe(Effect.map(Context.get(TypeQuery.TypeQuery))),
+      )
+      return CheckerRuntime.of({
+        checker,
+        capabilities: { typeQuery: TypeQuery.TypeQueryVersion.literals },
+        typeQuery,
+      })
     }),
   ).pipe(Layer.provideMerge(makeCompilerBlueprint(options).layer(TypeScriptCompiler)))
