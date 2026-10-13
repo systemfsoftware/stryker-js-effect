@@ -17,7 +17,7 @@ export const nonNull: string = maybe!
 export const paren: number = (21)
 export const element: ReadonlyArray<number> = [22]
 export const member: { readonly v: number } = { v: 23 }
-const w = 24
+let w = 24
 export const shorthand: { readonly w: number } = { w }
 declare const c: boolean
 export const branch: number = c ? 25 : 26
@@ -56,3 +56,5 @@ export function isText(x: unknown): x is string { return typeof x === 'string' }
 export const sibling: { readonly a: number } = { ...{}, a: 44 }
 declare class Box { constructor(n: number) }
 export const boxed = new Box(45)
+declare const obj: { readonly w?: number }
+export const rebound = ({ w = 5 } = obj)

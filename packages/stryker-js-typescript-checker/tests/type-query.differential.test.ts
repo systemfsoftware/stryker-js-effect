@@ -210,8 +210,14 @@ const ENFORCED = { answer: 'NotAssignable', verdict: 'compileError' } as const
 const NOT_ENFORCED = { answer: 'Unknown context-not-enforced', verdict: 'passed' } as const
 const SPREAD_ELEMENT_OPERAND = { answer: 'Unknown no-contextual-type', verdict: 'passed' } as const
 const SHORTHAND_NAME = { answer: 'Unknown site-not-expression', verdict: 'compileError' } as const
+const DESTRUCTURING_SHORTHAND = { answer: 'Unknown no-contextual-type', verdict: 'compileError' } as const
 
-type Expected = typeof ENFORCED | typeof NOT_ENFORCED | typeof SPREAD_ELEMENT_OPERAND | typeof SHORTHAND_NAME
+type Expected =
+  | typeof ENFORCED
+  | typeof NOT_ENFORCED
+  | typeof SPREAD_ELEMENT_OPERAND
+  | typeof SHORTHAND_NAME
+  | typeof DESTRUCTURING_SHORTHAND
 
 const LINK_SITES: ReadonlyArray<readonly [Site, string, Expected]> = [
   [{ siteId: 'non-null', line: 16, text: 'maybe' }, 'null', NOT_ENFORCED],
@@ -245,6 +251,7 @@ const LINK_SITES: ReadonlyArray<readonly [Site, string, Expected]> = [
   [{ siteId: 'predicate-return', line: 55, text: "typeof x === 'string'" }, '""', ENFORCED],
   [{ siteId: 'spread-sibling', line: 56, text: '44' }, '""', ENFORCED],
   [{ siteId: 'new-argument', line: 58, text: '45' }, '""', ENFORCED],
+  [{ siteId: 'destructuring-shorthand', line: 60, text: 'w' }, '""', DESTRUCTURING_SHORTHAND],
 ]
 
 const LINK_CASES: ReadonlyArray<LinkCase> = LINK_SITES.map(([site, candidate, expected], index) => ({
