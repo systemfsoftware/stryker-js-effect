@@ -9,7 +9,7 @@ import * as S from 'effect/Schema'
 
 import { BenchCorpusJson } from './bench-corpus.schema.js'
 import { type LegSelection, type NoBenchBase, TurboAffectedPaths } from './bench-plan.schema.js'
-import { runChecked, runCommand } from './command.service.js'
+import { runChecked, runCommand } from './command.js'
 import { ENGINE_BUILD_DIRS } from './engine-dirs.js'
 import { BenchSetupFailed } from './prepare-side.schema.js'
 import { selectLegs, SelectLegsCommand } from './select-legs.workflow.js'

@@ -17,7 +17,7 @@ import {
   type LegSelection,
   type NoBenchBase,
 } from './bench-plan.schema.js'
-import { planLegs } from './plan-legs.service.js'
+import { planLegs } from './plan-legs.js'
 import type { BenchSetupFailed } from './prepare-side.schema.js'
 
 const planEnv = Effect.all({

@@ -18,7 +18,7 @@ import {
 
 import type { BenchEnterpriseCorpus, BenchRepoEntry } from './bench-corpus.schema.js'
 import type { BenchTarget } from './bench-target.schema.js'
-import { type Argv, runChecked } from './command.service.js'
+import { type Argv, runChecked } from './command.js'
 import { ENGINE_BUILD_DIRS, IGNORER_DIRS, TYPESCRIPT_CHECKER_DIR, VITEST_RUNNER_DIR } from './engine-dirs.js'
 import {
   BenchSetupFailed,
