@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: bench-${{ github.event_name == 'push' && github.sha || github.run_id }}
@@ -30,26 +31,44 @@ concurrency:
 
 jobs:
   plan:
-    name: bench · one job per corpus entry
+    name: bench · side A and the legs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
+      base: ${{ steps.plan.outputs.base }}
       targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-          sparse-checkout: test/bench/corpus.json
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Released tarballs
+        uses: ./.github/actions/released-tarballs
+      - name: Install the bench harness
+        run: pnpm install --frozen-lockfile
+
+      - id: plan
+        name: Side A and the legs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm --filter @systemfsoftware/stryker-bench plan
       - id: targets
-        name: Corpus entries
+        name: One target per leg
+        env:
+          LEGS: ${{ steps.plan.outputs.legs }}
         run: |
-          targets=$(jq -c '[.repo[].project, .enterprise.fixture] | map({ entry: ., slug: gsub("[^A-Za-z0-9._-]+"; "-") })' test/bench/corpus.json)
+          targets=$(jq -c 'map({ entry: ., slug: gsub("[^A-Za-z0-9._-]+"; "-") })' <<< "$LEGS")
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
   bench:
     name: bench · ${{ matrix.target.entry }}
     needs: plan
+    if: ${{ needs.plan.outputs.targets != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -74,18 +93,15 @@ jobs:
 
       - id: sides
         name: Both sides as sibling worktrees
+        env:
+          BASE: ${{ needs.plan.outputs.base }}
         run: |
-          parent=$(git rev-parse --verify --quiet 'HEAD^1') || {
-            echo "::error title=Bench no parent::$(git rev-parse HEAD) has no first parent to bench against"
-            exit 1
-          }
           side_a="$RUNNER_TEMP/bench-a"
           side_b="$RUNNER_TEMP/bench-b"
-          git worktree add --detach "$side_a" "$parent"
+          git worktree add --detach "$side_a" "$BASE"
           git worktree add --detach "$side_b" HEAD
           pin() { jq -c '.nodes["stryker-published"].locked' "$1/flake.lock"; }
           {
-            echo "parent=$parent"
             echo "a=$side_a"
             echo "b=$side_b"
             echo "same-pin=$([ "$(pin "$side_a")" = "$(pin .)" ] && echo true || echo false)"
@@ -150,7 +166,7 @@ jobs:
           BENCH_SIDE_A: ${{ steps.sides.outputs.a }}
           BENCH_SIDE_B: ${{ steps.sides.outputs.b }}
           BENCH_TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/cache
-          BENCH_BASE_SHA: ${{ steps.sides.outputs.parent }}
+          BENCH_BASE_SHA: ${{ needs.plan.outputs.base }}
           BENCH_HEAD_SHA: ${{ github.sha }}
           BENCH_REF: ${{ github.ref }}
           BENCH_SETUP_TIMINGS: ${{ runner.temp }}/bench-setup.tsv

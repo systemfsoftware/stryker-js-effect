@@ -1,19 +1,6 @@
-import {
-  Array as Arr,
-  Boolean,
-  Console,
-  Duration,
-  Effect,
-  FileSystem,
-  Match,
-  Option,
-  Path,
-  Ref,
-  Schema as S,
-  Stream,
-} from 'effect'
+import { Array as Arr, Boolean, Console, Duration, Effect, FileSystem, Match, Option, Path, Schema as S } from 'effect'
 import type { BadArgument, PlatformError } from 'effect/PlatformError'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import type { ChildProcessSpawner } from 'effect/process'
 
 import {
   type BenchSide,
@@ -31,6 +18,8 @@ import {
 
 import type { BenchEnterpriseCorpus, BenchRepoEntry } from './bench-corpus.schema.js'
 import type { BenchTarget } from './bench-target.schema.js'
+import { type Argv, runChecked } from './command.service.js'
+import { ENGINE_BUILD_DIRS, IGNORER_DIRS, TYPESCRIPT_CHECKER_DIR, VITEST_RUNNER_DIR } from './engine-dirs.js'
 import {
   BenchSetupFailed,
   PackageEntrypoints,
@@ -53,14 +42,6 @@ type SetupCause = PlatformError | BadArgument | S.SchemaError
 
 type BenchPlatform = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 
-type Argv = readonly [string, ...ReadonlyArray<string>]
-
-interface CommandOutcome {
-  readonly exitCode: number
-  readonly stdout: string
-  readonly stderr: string
-}
-
 interface PackedTarball {
   readonly fileName: string
   readonly tarballPath: string
@@ -75,21 +56,11 @@ const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
 const MANIFEST_FILE_NAME = 'package.json'
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
 const LOCKFILE = 'pnpm-lock.yaml'
-const STDERR_TAIL_CHARS = 4000
 const PACKED_MANIFEST_PATH = 'package/package.json'
 const CLI_BUILD_FILTER = '@systemfsoftware/stryker-js'
 const TYPESCRIPT_CHECKER_BUILD_FILTER = '@systemfsoftware/stryker-js-typescript-checker'
 const CLI_MAIN_RELATIVE = ['packages', 'stryker-js', 'dist', 'main.mjs'] as const
 const ENTERPRISE_CLI_RELATIVE = ['node_modules', '@systemfsoftware', 'stryker-js', 'dist', 'main.mjs'] as const
-
-const VITEST_RUNNER_DIR = 'packages/stryker-js-vitest-runner'
-const TYPESCRIPT_CHECKER_DIR = 'packages/stryker-js-typescript-checker'
-const IGNORER_DIRS = [
-  'packages/ignorers/effect-schema-declarations',
-  'packages/ignorers/in-source-vitest-block',
-] as const
-
-const ENGINE_BUILD_DIRS = ['packages/stryker-js', VITEST_RUNNER_DIR, TYPESCRIPT_CHECKER_DIR, ...IGNORER_DIRS] as const
 
 const STEP_REPO_BUILD = 'turbo build the repo corpus projects'
 const STEP_CONFIGS = 'write the per-entry bench configs'
@@ -108,50 +79,6 @@ const fail = (step: string, detail: string, cause?: SetupCause): BenchSetupFaile
 
 const sideLabel = (side: BenchSide): string => `side ${side}`
 
-const runCommand = (argv: Argv, cwd?: string): Effect.Effect<CommandOutcome, BenchSetupFailed, BenchPlatform> =>
-  Effect.scoped(Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const [command, ...args] = argv
-    const options = { forceKillAfter: Duration.seconds(10), ...(cwd === undefined ? {} : { cwd }) }
-    const handle = yield* spawner.spawn(ChildProcess.make(command, args, options)).pipe(
-      Effect.mapError((cause) => fail(`spawn ${command}`, 'the command could not be started', cause)),
-    )
-    const stdout = yield* Ref.make('')
-    const stderr = yield* Ref.make('')
-    const collect = (stream: typeof handle.stdout, into: Ref.Ref<string>) =>
-      Stream.runForEach(Stream.decodeText(stream), (chunk) => Ref.update(into, (text) => text + chunk))
-    const [exitCode] = yield* Effect.all(
-      [handle.exitCode, collect(handle.stdout, stdout), collect(handle.stderr, stderr)] as const,
-      { concurrency: 'unbounded' },
-    ).pipe(
-      Effect.mapError((cause) => fail(`read ${command} output`, 'the command output could not be read', cause)),
-      Effect.onInterrupt(() =>
-        Effect.flatMap(
-          Effect.all([Ref.get(stdout), Ref.get(stderr)]),
-          ([out, err]) =>
-            Console.error(
-              `bench setup interrupted: ${argv.join(' ')}\n--- output tail ---\n${
-                `${out}${err}`.slice(-STDERR_TAIL_CHARS)
-              }`,
-            ),
-        )
-      ),
-    )
-    return { exitCode, stdout: yield* Ref.get(stdout), stderr: yield* Ref.get(stderr) }
-  }))
-
-const runChecked = (
-  step: string,
-  argv: Argv,
-  cwd?: string,
-): Effect.Effect<CommandOutcome, BenchSetupFailed, BenchPlatform> =>
-  Effect.filterOrFail(
-    runCommand(argv, cwd),
-    (outcome) => outcome.exitCode === 0,
-    (outcome) =>
-      fail(step, `exited ${outcome.exitCode}\n${`${outcome.stdout}${outcome.stderr}`.slice(-STDERR_TAIL_CHARS)}`),
-  )
-
 const timed = <A, E, R>(
   name: string,
   effect: Effect.Effect<A, E, R>,
@@ -163,7 +90,10 @@ const timed = <A, E, R>(
   )
 
 const lastLockfileCommitTimeOf = (root: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
-  runChecked(STEP_ENTERPRISE_INSTALL, ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE]).pipe(
+  runChecked({
+    step: STEP_ENTERPRISE_INSTALL,
+    argv: ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE],
+  }).pipe(
     Effect.map((outcome) => outcome.stdout.trim()),
     Effect.filterOrFail(
       (cutoff) => cutoff.length > 0,
@@ -284,11 +214,11 @@ const workspacePackages = (
   root: string,
 ): Effect.Effect<ReadonlyArray<string>, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
-    const listing = yield* runChecked(
-      STEP_ENTERPRISE_CLOSURE,
-      ['pnpm', 'ls', '-r', '--depth', '-1', '--json'],
-      root,
-    )
+    const listing = yield* runChecked({
+      step: STEP_ENTERPRISE_CLOSURE,
+      argv: ['pnpm', 'ls', '-r', '--depth', '-1', '--json'],
+      cwd: root,
+    })
     const projects = yield* S.decodeEffect(S.fromJsonString(S.Array(WorkspaceListing)))(listing.stdout).pipe(
       Effect.mapError((cause) => fail(STEP_ENTERPRISE_CLOSURE, 'pnpm ls wrote no parseable workspace listing', cause)),
     )
@@ -316,9 +246,9 @@ const packWorkspaceClosure = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const cacheArg = `--cache-dir=${turboCacheDir}`
-    const dryRun = yield* runChecked(
-      STEP_ENTERPRISE_CLOSURE,
-      [
+    const dryRun = yield* runChecked({
+      step: STEP_ENTERPRISE_CLOSURE,
+      argv: [
         'pnpm',
         'exec',
         'turbo',
@@ -329,19 +259,19 @@ const packWorkspaceClosure = (
         `--filter=${TYPESCRIPT_CHECKER_BUILD_FILTER}`,
         '--dry=json',
       ],
-      root,
-    )
+      cwd: root,
+    })
     const packages = yield* turboClosureOf(dryRun.stdout)
-    yield* runChecked(
-      STEP_ENTERPRISE_CLOSURE,
-      ['pnpm', 'exec', 'turbo', 'run', 'build', cacheArg, ...packages.map((name) => `--filter=${name}`)],
-      root,
-    )
-    yield* runChecked(
-      STEP_ENTERPRISE_CLOSURE,
-      ['pnpm', '-r', ...packages.map((name) => `--filter=${name}`), 'pack', '--pack-destination', directory],
-      root,
-    )
+    yield* runChecked({
+      step: STEP_ENTERPRISE_CLOSURE,
+      argv: ['pnpm', 'exec', 'turbo', 'run', 'build', cacheArg, ...packages.map((name) => `--filter=${name}`)],
+      cwd: root,
+    })
+    yield* runChecked({
+      step: STEP_ENTERPRISE_CLOSURE,
+      argv: ['pnpm', '-r', ...packages.map((name) => `--filter=${name}`), 'pack', '--pack-destination', directory],
+      cwd: root,
+    })
     const fileNames = yield* fs.readDirectory(directory).pipe(
       Effect.mapError((cause) => fail(STEP_ENTERPRISE_CLOSURE, `${directory} could not be listed`, cause)),
     )
@@ -350,10 +280,10 @@ const packWorkspaceClosure = (
 
 const packedMemberOf = (pack: PackedTarball): Effect.Effect<PackedMember, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
-    const outcome = yield* runChecked(
-      STEP_ENTERPRISE_CLOSURE,
-      ['tar', '-xzf', pack.tarballPath, '-O', PACKED_MANIFEST_PATH],
-    )
+    const outcome = yield* runChecked({
+      step: STEP_ENTERPRISE_CLOSURE,
+      argv: ['tar', '-xzf', pack.tarballPath, '-O', PACKED_MANIFEST_PATH],
+    })
     const manifest = yield* S.decodeEffect(S.fromJsonString(PackedManifest))(outcome.stdout).pipe(
       Effect.mapError((cause) =>
         fail(
@@ -501,8 +431,8 @@ const prepareEnterprise = (
           '--loglevel=warn',
           `--before=${lockfileCommitTime}`,
         ]
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, npmInstall, bundleRoot)
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...npmInstall, ...specs], bundleRoot)
+        yield* runChecked({ step: STEP_ENTERPRISE_INSTALL, argv: npmInstall, cwd: bundleRoot })
+        yield* runChecked({ step: STEP_ENTERPRISE_INSTALL, argv: [...npmInstall, ...specs], cwd: bundleRoot })
       }),
     )
 
@@ -527,9 +457,9 @@ const prepareRepo = (
 
     const repoBuild = yield* timed(
       `${label} ${STEP_REPO_BUILD}`,
-      runChecked(
-        STEP_REPO_BUILD,
-        [
+      runChecked({
+        step: STEP_REPO_BUILD,
+        argv: [
           'pnpm',
           'exec',
           'turbo',
@@ -538,8 +468,8 @@ const prepareRepo = (
           `--cache-dir=${input.turboCacheDir}`,
           ...[...ENGINE_BUILD_DIRS, entry.project].map((project) => `--filter=./${project}`),
         ],
-        input.root,
-      ),
+        cwd: input.root,
+      }),
     )
 
     const config = yield* timed(`${label} ${STEP_CONFIGS}`, writeRepoEntry(input, entry))

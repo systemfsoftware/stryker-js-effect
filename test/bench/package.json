@@ -13,6 +13,7 @@
   "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/test/bench",
   "scripts": {
     "bench": "tsx --conditions=@systemfsoftware/source src/main.ts",
+    "plan": "tsx --conditions=@systemfsoftware/source src/plan.ts",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",

@@ -1,11 +1,23 @@
 # @systemfsoftware/stryker-bench
 
 The report-only A/B bench lane's orchestrator. The `bench` workflow runs on
-every push to main (and on `workflow_dispatch`), never on a pull request. It
-runs one job per corpus entry (`BENCH_ENTRY`); each job builds the pushed
-commit's first parent (side A) and the commit itself (side B) on the same
-runner, runs both interleaved over that entry's workload, and reads every
-number from each run's own NDJSON.
+every push to main (and on `workflow_dispatch`), never on a pull request. Its
+plan job (`pnpm --filter @systemfsoftware/stryker-bench plan`, `src/plan.ts`)
+picks side A and the legs. On a push, side A is the newest main commit whose
+push-triggered Bench run concluded `success` and which is an ancestor of the
+pushed commit, and a leg runs only when Turbo
+(`turbo query affected --packages`) reports affected the package holding its
+entry or an engine directory every leg builds (`src/engine-dirs.ts`). The full
+corpus runs on a dispatch, when no green ancestor exists (side A is then the
+first parent), and when the lane's own inputs changed: the `test/bench`
+package, `bench.yml`, `.github/actions/released-tarballs/` or the flake pin.
+When no leg is affected, the bench job is skipped and the run is green. The
+plan job writes its choice to the step summary, and it fails when the checkout
+has uncommitted changes, since Turbo would count them.
+
+The bench job runs one job per selected leg (`BENCH_ENTRY`); each builds side A
+and the pushed commit (side B) on the same runner, runs both interleaved over
+that entry's workload, and reads every number from each run's own NDJSON.
 
 Time is measured, never enforced. The bench has no deadline of its own: GitHub's
 60-minute job timeout is the only thing that stops a hung setup or run. The
@@ -18,7 +30,7 @@ orchestration fails (`aborted`, with `side-setup-failed` naming the side and
 step). A regression is reported, not acted on, and only a leg's `total` decides
 one: when it separates past max(3% of side A's median, 10 ms), the verdict line,
 the step summary and the JSON report carry `phase-regressed`, the commit and its
-parent, that `total` and then each other regressed phase of the leg with its
+base (side A), that `total` and then each other regressed phase of the leg with its
 delta, and root's next action. A phase that regressed under an unchanged `total`
 is no regression: the verdict line is a `Bench phase-only slowdown` notice that
 says no leg total crossed the regression threshold and names the slower cells.
