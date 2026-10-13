@@ -76,7 +76,7 @@ const runOnce = (
     const ports = Engine.nodePlatformLayer
     const logs: string[] = []
     const layer = Layer.mergeAll(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(root), queue), ports),
       ports,
       Logger.layer([
         Logger.make((entry) => {

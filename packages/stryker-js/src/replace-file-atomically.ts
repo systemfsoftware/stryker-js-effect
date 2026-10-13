@@ -12,13 +12,19 @@ export interface AtomicWritePorts {
 
 const TEMP_NAME_BYTES = 8
 
+const TEMP_SUFFIX = '.tmp'
+
 const textEncoder = new TextEncoder()
+
+const tempNameOf = (name: string, unique: string): string => `.${name}.${unique}${TEMP_SUFFIX}`
+
+export const tempSiblingRuleOf = (file: string): string => file.replace(/[^/\\]*$/, (name) => tempNameOf(name, '*'))
 
 const tempFileOf = (ports: AtomicWritePorts, file: string): Effect.Effect<string> =>
   Effect.sync(() =>
     ports.path.join(
       ports.path.dirname(file),
-      `.${ports.path.basename(file)}.${bytesToHex(randomBytes(TEMP_NAME_BYTES))}.tmp`,
+      tempNameOf(ports.path.basename(file), bytesToHex(randomBytes(TEMP_NAME_BYTES))),
     )
   )
 

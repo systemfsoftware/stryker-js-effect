@@ -6,13 +6,13 @@ on:
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
   workflow_dispatch:
     inputs:
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
 
 concurrency:
   group: kill-matrix-${{ github.ref }}
@@ -79,7 +79,7 @@ jobs:
       - id: key
         name: Content key of the build
         env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
         run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v6

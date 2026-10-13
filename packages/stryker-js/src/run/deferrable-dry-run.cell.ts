@@ -15,7 +15,7 @@ import { withPhaseSpan } from '../reporter-stream.service.js'
 import { requireDryRun } from '../require-dry-run.workflow.js'
 import { requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import type { StageError } from '../Run.schema.js'
-import { requireDryRunCommandOf } from './dry-run-choice.js'
+import { currentRootCoveragesOf, requireDryRunCommandOf } from './dry-run-choice.js'
 import { dryRunCell, type TestBasis } from './dry-run.cell.js'
 import { incrementalReportTextOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
@@ -108,10 +108,11 @@ const enterDryRun = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* phaseEntered('dry-run')
   const env = yield* RunEnvironment
   const text = yield* incrementalReportTextOf({ basePath: env.basePath, options: command.options })
+  const { kept } = yield* currentRootCoveragesOf([text], env.basePath)
   const plannable = plannableOf(command).plannable
   const priorEntries = yield* priorEntriesOf(command.verdictStore, plannable.map((mutant) => mutant.id))
   const decision = Result.getOrElse(
-    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannable, text, priorEntries })),
+    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannable, kept, priorEntries })),
     (never: never) => never,
   )
   return yield* Match.value(decision).pipe(

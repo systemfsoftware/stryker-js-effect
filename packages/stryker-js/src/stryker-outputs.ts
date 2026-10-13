@@ -1,5 +1,7 @@
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
+import { tempSiblingRuleOf } from './replace-file-atomically.js'
+
 export const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
 
 export const sarifFileNameOf = (jsonReportFileName: string): string =>
@@ -16,6 +18,7 @@ export const strykerOutputFilesOf = (
 ): readonly string[] => [
   options.tempDirName,
   options.incrementalFile,
+  tempSiblingRuleOf(options.incrementalFile),
   options.progressStreamFile,
   options.htmlReporter.fileName,
   options.jsonReporter.fileName,
