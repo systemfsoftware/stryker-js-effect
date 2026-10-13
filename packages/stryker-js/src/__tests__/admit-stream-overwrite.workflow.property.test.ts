@@ -147,6 +147,26 @@ describe('admitStreamOverwrite', () => {
   )
 
   it.prop(
+    '∀ec_WholeFileHoldingARecordStartFollowedByForeignText_≡Refused',
+    { of: [Arbitrary.all({ event: eventArb, command: commandArb })], subject: admitStreamOverwrite },
+    (subject, [draw]) =>
+      Option.match(encodeLine(draw.event), {
+        onNone: () => false,
+        onSome: (line) =>
+          refused(
+            subject,
+            StreamOverwriteCommand.make({
+              file: draw.command.file,
+              regularFile: true,
+              empty: false,
+              wholeFileRead: true,
+              leadingText: `${line.trimEnd().slice(0, -1)}:${draw.command.leadingText.replaceAll('\n', '')}`,
+            }),
+          ),
+      }),
+  )
+
+  it.prop(
     '∀c_RegularFileStartingWithABareStreamObject_≡Refused',
     { of: [commandArb], subject: admitStreamOverwrite },
     (subject, [command]) =>

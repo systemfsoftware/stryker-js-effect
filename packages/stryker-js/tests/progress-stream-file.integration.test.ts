@@ -428,6 +428,10 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
           starting: 'holding a closed stream object followed by text',
           bytes: Array.from(UTF8.encode('{"_tag":"stream"}oops')),
         },
+        {
+          starting: 'holding an unclosed stream object followed by text',
+          bytes: Array.from(UTF8.encode('{"_tag":"stream": my notes')),
+        },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
