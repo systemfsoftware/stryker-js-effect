@@ -3,6 +3,7 @@ import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
+import { AddTest, FixConfig, NoneNeeded, StrengthenTests } from './next-action.schema.js'
 import { ModeSignal, OutputMode } from './output-mode.schema.js'
 import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
 import { ShardPlan as ShardPlanDocument } from './shard-plan.schema.js'
@@ -97,27 +98,6 @@ export const MutantCost = S.Struct({
 })
 export type MutantCost = typeof MutantCost.Type
 
-const mutantTestedFields = {
-  id: Mutant.MutantId,
-  fileName: Mutant.CanonicalFileName,
-  location: Mutant.Location,
-  mutatorName: Mutant.MutatorName,
-  replacement: S.NullOr(S.String),
-  completed: Report.NonNegativeInt,
-  total: Report.NonNegativeInt,
-  static: S.Boolean,
-  cost: S.NullOr(MutantCost),
-  subsumption: S.NullOr(Mutant.Subsumption),
-}
-
-const IgnoredStatusReason = S.Struct({ status: S.Literal('Ignored'), statusReason: Mutant.IgnoreStatusReasonText })
-
-const SettledStatusReason = S.Struct({ status: Mutant.SettledStatusSchema, statusReason: S.NullOr(S.String) })
-
-const statusReasonCheck = S.makeFilter(S.is(S.Union([IgnoredStatusReason, SettledStatusReason])), {
-  expected: 'an Ignored mutant whose statusReason names an ignore rule (`<rule-id>: <detail>`)',
-})
-
 const subsumptionCheck = S.makeFilter(
   (line: { readonly subsumption: Mutant.Subsumption | null; readonly status: Mutant.MutantStatus }) =>
     line.subsumption === null || Mutant.subsumptionMatchesStatus(line.subsumption, line.status),
@@ -127,78 +107,145 @@ const subsumptionCheck = S.makeFilter(
   },
 )
 
-export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
-  'mutantTested',
-  S.Struct({
-    ...mutantTestedFields,
-    status: Mutant.MutantStatusSchema,
-    statusReason: S.NullOr(S.String),
-  }).check(statusReasonCheck, subsumptionCheck),
-) {}
+const reasonTextOf = <Reason extends S.Top>(reason: { readonly fields: { readonly statusReason: Reason } }) =>
+  S.toEncoded(reason.fields.statusReason)
 
-/**
- * The machine-stream line a tested mutant is published as. Its wire shape is a
- * published contract: the `mutant` tag and the `file`/`mutator` keys must not
- * change. The line carries the verified fields of `Reporter.MutantTested`, the
- * status reason, the static classification (R24) and the measured cost
- * breakdown (R39).
- */
-export type RunMutantTested = RunMutantTestedEvent
-
-const mutantWireFields = {
+const sharedFactFields = {
   id: Mutant.MutantId,
-  file: S.toType(Mutant.CanonicalFileName),
+  fileName: S.toType(Mutant.CanonicalFileName),
   location: Mutant.Location,
-  mutator: Mutant.MutatorName,
+  mutatorName: Mutant.MutatorName,
   replacement: S.NullOr(S.String),
-  completed: Report.NonNegativeInt,
-  total: Report.NonNegativeInt,
   static: S.Boolean,
   cost: S.NullOr(MutantCost),
   subsumption: S.NullOr(Mutant.Subsumption),
 }
 
-const MutantWireCommon = S.Struct(mutantWireFields)
+const progressFields = { completed: Report.NonNegativeInt, total: Report.NonNegativeInt }
 
-const eventFieldsOf = (line: typeof MutantWireCommon.Type) => ({
-  id: line.id,
-  fileName: line.file,
-  location: line.location,
-  mutatorName: line.mutator,
-  replacement: line.replacement,
-  completed: line.completed,
-  total: line.total,
-  static: line.static,
-  cost: line.cost,
-  subsumption: line.subsumption,
+const sharedWireFields = {
+  id: Mutant.MutantId,
+  file: S.toType(Mutant.CanonicalFileName),
+  location: Mutant.Location,
+  mutator: Mutant.MutatorName,
+  replacement: S.NullOr(S.String),
+  ...progressFields,
+  static: S.Boolean,
+  cost: S.NullOr(MutantCost),
+  subsumption: S.NullOr(Mutant.Subsumption),
+}
+
+const OriginalText = S.NullOr(S.String).annotate({
+  description:
+    'The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement.',
 })
 
-const MutantTestedWireSchema = S.TaggedStruct('mutant', {
-  ...mutantWireFields,
-  status: Mutant.MutantStatusSchema,
-  statusReason: S.NullOr(S.String),
-}).check(statusReasonCheck, subsumptionCheck)
+const killableFields = { original: OriginalText, coveredBy: S.Array(S.String) }
 
-export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
+const statusFields = [
+  {
+    status: S.Literal('Killed'),
+    statusReason: reasonTextOf(Mutant.StatusReason.cases.Killed),
+    killedBy: S.Array(S.String),
+  },
+  {
+    status: S.Literal('Survived'),
+    statusReason: reasonTextOf(Mutant.StatusReason.cases.Survived),
+    ...killableFields,
+    next: S.Union([StrengthenTests, FixConfig]),
+  },
+  {
+    status: S.Literal('NoCoverage'),
+    statusReason: reasonTextOf(Mutant.StatusReason.cases.NoCoverage),
+    original: OriginalText,
+    coveredBy: S.optional(S.Never),
+    next: AddTest,
+  },
+  {
+    status: S.Literal('Timeout'),
+    statusReason: reasonTextOf(Mutant.StatusReason.cases.Timeout),
+    ...killableFields,
+    next: NoneNeeded,
+  },
+  {
+    status: S.Literal('RuntimeError'),
+    statusReason: reasonTextOf(Mutant.StatusReason.cases.RuntimeError),
+    ...killableFields,
+    next: NoneNeeded,
+  },
+  { status: S.Literal('CompileError'), statusReason: reasonTextOf(Mutant.StatusReason.cases.CompileError) },
+  { status: S.Literal('Ignored'), statusReason: reasonTextOf(Mutant.StatusReason.cases.Ignored) },
+] as const
+
+const [killedOnly, survivedOnly, noCoverageOnly, timeoutOnly, runtimeErrorOnly, compileErrorOnly, ignoredOnly] =
+  statusFields
+
+type DeclaredStatus = (typeof statusFields)[number]['status']['Type']
+
+type CoversEveryStatus<Union extends { readonly Type: { readonly status: Mutant.MutantStatus } }> =
+  [Union['Type']['status']] extends [DeclaredStatus] ? [DeclaredStatus] extends [Union['Type']['status']] ? true : false
+    : false
+
+type Asserted<Holds extends true, A> = Holds extends true ? A : never
+
+export const MutantFacts = S.Union([
+  S.Struct({ ...sharedFactFields, ...killedOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...survivedOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...noCoverageOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...timeoutOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...runtimeErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...compileErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...sharedFactFields, ...ignoredOnly }).check(subsumptionCheck),
+]).annotate({
+  description:
+    "What is known about a settled mutant, by status. `statusReason` is `<code>: <detail>` from the status's own codes; `next` says what to do about a survivor or a failure.",
+}).pipe(S.toTaggedUnion('status'))
+export type MutantFacts = Asserted<CoversEveryStatus<typeof MutantFacts>, typeof MutantFacts.Type>
+
+const eventFields = { _tag: S.tag('mutantTested'), ...sharedFactFields, ...progressFields }
+
+export const RunMutantTestedEvent = S.Union([
+  S.Struct({ ...eventFields, ...killedOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...survivedOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...noCoverageOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...timeoutOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...runtimeErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...compileErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...eventFields, ...ignoredOnly }).check(subsumptionCheck),
+]).pipe(S.toTaggedUnion('status'))
+export type RunMutantTested = Asserted<CoversEveryStatus<typeof RunMutantTestedEvent>, typeof RunMutantTestedEvent.Type>
+
+const wireFields = { _tag: S.tag('mutant'), ...sharedWireFields }
+
+const MutantTestedWireSchema = S.Union([
+  S.Struct({ ...wireFields, ...killedOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...survivedOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...noCoverageOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...timeoutOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...runtimeErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...compileErrorOnly }).check(subsumptionCheck),
+  S.Struct({ ...wireFields, ...ignoredOnly }).check(subsumptionCheck),
+])
+
+type MutantTestedWire = Asserted<
+  CoversEveryStatus<typeof MutantTestedWireSchema>,
+  typeof MutantTestedWireSchema.Encoded
+>
+
+export const RunMutantTested: S.Codec<RunMutantTested, MutantTestedWire> = MutantTestedWireSchema
   .pipe(
     S.decodeTo(S.toType(RunMutantTestedEvent), {
-      decode: SchemaGetter.transform((line) =>
-        RunMutantTestedEvent.make({ ...eventFieldsOf(line), status: line.status, statusReason: line.statusReason })
-      ),
+      decode: SchemaGetter.transform((line) => ({
+        ...line,
+        _tag: 'mutantTested' as const,
+        fileName: line.file,
+        mutatorName: line.mutator,
+      })),
       encode: SchemaGetter.transform((tested) => ({
+        ...tested,
         _tag: 'mutant' as const,
-        id: tested.id,
         file: tested.fileName,
-        location: tested.location,
         mutator: tested.mutatorName,
-        replacement: tested.replacement,
-        completed: tested.completed,
-        total: tested.total,
-        static: tested.static,
-        cost: tested.cost,
-        subsumption: tested.subsumption,
-        status: tested.status,
-        statusReason: tested.statusReason,
       })),
     }),
   )
@@ -353,11 +400,8 @@ export class TceReported extends S.TaggedClass<TceReported>()('tce', {
 }) {}
 
 export class MutantDetailReported extends S.TaggedClass<MutantDetailReported>()('mutant-detail', {
-  id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  coveringTests: S.Array(S.String),
-  killedBy: S.NullOr(S.String),
-  reproducer: S.NullOr(S.String),
+  mutant: MutantFacts,
+  reproducer: S.String,
 }) {}
 
 export const FeedbackJudgment = S.Literals(['useful', 'not-useful'])

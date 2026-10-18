@@ -19,7 +19,6 @@ import { readMutationReport, readSurfacedSurvivors } from '../Feedback/read-repo
 import { ResolvedMode } from '../output-mode.schema.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { mutantRerunAdmissionCell, RerunRefused } from '../Rerun/mod.js'
-import { mutantDetailEventsOf } from '../Rerun/rerun-selection.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
 import type { RunEnvironmentShape } from '../run/RunEnvironment.service.js'
@@ -152,11 +151,11 @@ const NO_RESULTS: MutationTestDone = { results: [], verdict: null }
 const resultsOf = (settled: void | MutationTestDone): ReadonlyArray<Mutant.RunMutantResult> =>
   (settled ?? NO_RESULTS).results
 
-const reportedOf = (
+const rerunResultOf = (
   results: ReadonlyArray<Mutant.RunMutantResult>,
   id: Mutant.MutantId,
-): Effect.Effect<RunEvent.MutantDetailReported, MutantUnusable> =>
-  Effect.fromOption(Arr.head(mutantDetailEventsOf({ requested: Option.some([id]), results }))).pipe(
+): Effect.Effect<Mutant.RunMutantResult, MutantUnusable> =>
+  Effect.fromOption(Arr.findFirst(results, (candidate) => candidate.id === id)).pipe(
     Effect.mapError(() => MutantUnusable.make({ id })),
   )
 
@@ -185,17 +184,20 @@ const rerunMutant = (
       Effect.catchTag('SchemaError', Effect.die),
       Effect.mapError(rerunFailureOf(id)),
     )
-    const reported = yield* reportedOf(resultsOf(settled), id)
+    const result = yield* rerunResultOf(resultsOf(settled), id)
     const diff = yield* readDiff(basePath, id)
-    return {
-      id: reported.id,
-      status: reported.status,
-      coveringTests: [...reported.coveringTests],
-      killedBy: reported.killedBy,
-      reproducer: reported.reproducer ?? `stryker run --mutant ${id}`,
-      diff,
-    }
+    return { ...rerunFactsOf(result), reproducer: RunEvent.reproducerOf(id), diff }
   })
+
+const testsOf = (tests: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
+  Option.getOrElse(Option.fromUndefinedOr(tests), (): ReadonlyArray<string> => [])
+
+const rerunFactsOf = (result: Mutant.RunMutantResult) => ({
+  id: result.id,
+  status: result.status,
+  coveringTests: [...testsOf(result.coveredBy)],
+  killedBy: Option.getOrNull(Arr.head(testsOf(result.killedBy))),
+})
 
 const handlers = (basePath: string) =>
   mcpToolkit.toLayer({

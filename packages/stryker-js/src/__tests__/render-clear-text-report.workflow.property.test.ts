@@ -5,6 +5,7 @@ import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import {
   ClearTextRenderOptions,
@@ -50,6 +51,36 @@ const STATIC_SUMMARY_PREFIX = 'Static mutants: '
 const staticSummaryTextsOf = (rendered: ClearTextReportRendered): ReadonlyArray<string> =>
   Arr.flatMap(rendered.stdout, (chunk) => Arr.flatMap(chunk, (line) => Arr.map(line, (span) => span.text)))
     .filter((text) => text.startsWith(STATIC_SUMMARY_PREFIX))
+
+const erroredArb = Arbitrary.all({
+  report: Arbitrary.schema(Report.MutationTestResult),
+  file: Arbitrary.schema(Report.FileResult),
+  mutant: Arbitrary.schema(Report.MutantResult),
+  computed: Arbitrary.schema(Report.MetricsResultSchema),
+  render: Arbitrary.schema(ClearTextRenderOptions),
+  detail: Arbitrary.schema(S.String),
+  compile: Arbitrary.schema(S.Boolean),
+  remembered: Arbitrary.schema(S.Boolean),
+})
+
+const ERROR_MESSAGE = 'Error message: '
+
+const withOnlyMutant = (
+  report: Report.MutationTestResult,
+  file: Report.FileResult,
+  mutant: Report.MutantResult,
+): Report.MutationTestResult => ({ ...report, files: { 'src/a.ts': { ...file, mutants: [mutant] } } })
+
+const errorMessagesOf = (rendered: ClearTextReportRendered): ReadonlyArray<string> =>
+  Arr.flatMap(
+    [...rendered.stdout, ...rendered.diagnostics],
+    (chunk) =>
+      Arr.flatMap(chunk, (line) =>
+        Option.match(Arr.head(line), {
+          onNone: () => [],
+          onSome: (first) => first.text === ERROR_MESSAGE ? [line.slice(1).map((span) => span.text).join('')] : [],
+        })),
+  )
 
 describe('renderClearTextReport', () => {
   it.prop(
@@ -136,5 +167,37 @@ describe('renderClearTextReport', () => {
             ),
         },
       ),
+  )
+
+  it.prop(
+    '∀d_ErroredReason_≡DetailWithoutCodes',
+    { of: [erroredArb], subject: renderClearTextReport },
+    (subject, [{ report, file, mutant, computed, render, detail, compile, remembered }]) => {
+      const status = compile ? 'CompileError' : 'RuntimeError'
+      const coded = `${compile ? 'compile-error' : 'runtime-error'}: ${detail}`
+      const statusReason = remembered ? `remembered: ${coded}` : coded
+      return Result.match(
+        subject(
+          ClearTextReportCommand.make({
+            reported: withOnlyMutant(report, file, { ...mutant, status, statusReason }),
+            computed,
+            render: { ...render, reportMutants: true },
+            rendered: true,
+          }),
+        ),
+        {
+          onFailure: () => false,
+          onSuccess: (value) =>
+            Match.value(value).pipe(
+              Match.tag('ClearTextReportRendered', (rendered) => {
+                const messages = errorMessagesOf(rendered)
+                return messages.length === 1 && messages[0] === detail
+              }),
+              Match.tag('ClearTextReportSuppressed', () => false),
+              Match.exhaustive,
+            ),
+        },
+      )
+    },
   )
 })

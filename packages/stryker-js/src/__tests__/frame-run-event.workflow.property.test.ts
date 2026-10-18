@@ -71,7 +71,8 @@ describe('frameRunEvent', () => {
         headerWritten: true,
       }
       const result = subject(FrameRunEventCommand.make({ state: openState, event }))
-      return Result.isSuccess(result) && S.is(EventFramed)(result.success) && result.success.event === event
+      const sameEvent = S.toEquivalence(S.toType(RunEvent.RunEvent))
+      return Result.isSuccess(result) && S.is(EventFramed)(result.success) && sameEvent(result.success.event, event)
     },
   )
 

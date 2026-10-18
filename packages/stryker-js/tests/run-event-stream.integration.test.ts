@@ -20,9 +20,9 @@ const Feature = makeFeature({ it })
 const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4, shardPlan: null })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '8.0', code: 0, help: 'usage' })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '9.0', code: 0, help: 'usage' })
 const RUN_FAILED = CliContract.RunFailed.make({
-  schemaVersion: '8.0',
+  schemaVersion: '9.0',
   code: 3,
   error: 'x',
   remediation: 'y',
@@ -78,13 +78,27 @@ const mutantFieldsOf = (fixture: MutantFixture) => ({
 })
 
 const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTested =>
-  CliContract.RunMutantTestedEvent.make({
-    ...mutantFieldsOf(fixture),
-    status: fixture.status,
-    statusReason: fixture.status === 'Ignored'
-      ? 'ignore-static: Static mutant (and "ignoreStatic" was enabled)'
-      : null,
-  })
+  fixture.status === 'Ignored'
+    ? CliContract.RunMutantTestedEvent.cases.Ignored.make({
+      ...mutantFieldsOf(fixture),
+      _tag: 'mutantTested',
+      status: 'Ignored',
+      statusReason: 'ignore-static: Static mutant (and "ignoreStatic" was enabled)',
+    })
+    : CliContract.RunMutantTestedEvent.cases.Survived.make({
+      ...mutantFieldsOf(fixture),
+      _tag: 'mutantTested',
+      status: 'Survived',
+      statusReason: 'covered-not-killed: 1 covering tests ran, none failed',
+      original: '-',
+      coveredBy: ['a.test.ts > adds'],
+      next: CliContract.nextActionOf({
+        id: mutantFieldsOf(fixture).id,
+        file: mutantFieldsOf(fixture).fileName,
+        location: MUTANT_LOCATION,
+        coveredBy: ['a.test.ts > adds'],
+      }, 'Survived'),
+    })
 
 const reportOf = (fixtures: ReadonlyArray<MutantFixture>): Report.MutationTestResult => ({
   schemaVersion: '1.0',
@@ -264,7 +278,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '8.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '9.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -390,7 +404,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '8.0' },
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '9.0' },
             open: false,
           })
         }),
