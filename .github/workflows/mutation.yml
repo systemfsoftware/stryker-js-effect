@@ -2,8 +2,9 @@
 # three-project corpus. The instrumenter and the HTML reporter add a share the first
 # nightly run measures.
 # Run shape: one scheduled run a day (17 3 * * *) plus any manual dispatch, never a push
-# or a pull request. A full run holds the scoring lane, the kill-matrix lane and the drop
-# audit; `lane: kill-matrix` holds the last two.
+# or a pull request, and only on main: the guard job refuses any other ref, and the `sha`
+# input tests an older commit of main. A full run holds the scoring lane, the kill-matrix
+# lane and the drop audit; `lane: kill-matrix` holds the last two.
 # Per lane, job-minutes read from the jobs API on 2026-10-13. Scoring lane, scheduled
 # `--full`: runs 38384850859 (47.7), 38239240750 (43.5), 38130563737 (44.5) and
 # 38042987222 (161.5), median 46.1 (43.5-161.5). Kill-matrix lane over 15 completed main
@@ -14,14 +15,17 @@
 # first-parent commits from 2026-10-06T20:00Z to 2026-10-13T20:00Z (16.4 a day), and the
 # 12 completed push runs of 2026-10-13 took 4,006 job-min; push runs per day 2026-10-06 to
 # 2026-10-12 were 19, 14, 11, 14, 20, 2 and 11.
-# Reason: the #333 review run 20261013-170535-66c6722d, finding #6 "Mutation heavy lane's
-# cost changed with no runner-minutes header" (pack rule ci-wall-clock/heavy-lanes-state-their-daily-minutes),
-# was rejected only because mutation.yml was outside #333's diff.
+# Why this header: pack rule ci-wall-clock/heavy-lanes-state-their-daily-minutes asks every
+# heavy lane to state what it costs a day.
 name: Mutation
 
 on:
   workflow_dispatch:
     inputs:
+      sha:
+        description: Commit of main to test. Empty tests the tip of main; any other commit must be in main's history.
+        type: string
+        default: ""
       full:
         description: Re-verify every mutant instead of reusing the incremental cache
         type: boolean
@@ -49,8 +53,72 @@ env:
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
+  guard:
+    name: guard · main only, and a commit from main's history
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.guard.outputs.sha }}
+    steps:
+      - id: start
+        name: Record the start time
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - id: checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: guard
+        name: Refuse a ref other than main and a sha outside main's history
+        env:
+          REF: ${{ github.ref }}
+          TIP: ${{ github.sha }}
+          SHA_INPUT: ${{ inputs.sha }}
+        run: |
+          refuse() {
+            {
+              echo "reason=$1"
+              echo "next<<NEXT_EOF"
+              echo "$2"
+              echo "NEXT_EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "$1: $2"
+            exit 1
+          }
+          dispatch='gh workflow run mutation.yml --ref main'
+          if [ "$REF" != refs/heads/main ]; then
+            refuse GUARD_NOT_MAIN "Mutation runs only on refs/heads/main, and this run's ref is $REF. Next action: dispatch it from main ($dispatch). To test a commit of main other than its tip, pass that commit as the sha input ($dispatch -f sha=<commit>)."
+          fi
+          if [ -z "$SHA_INPUT" ]; then
+            sha=$TIP
+          elif ! [[ "$SHA_INPUT" =~ ^[0-9a-f]{7,40}$ ]]; then
+            refuse GUARD_SHA_UNKNOWN "The sha input is not a commit sha (7 to 40 lowercase hex digits); ref $REF. Next action: pass a commit from main's history ($dispatch -f sha=<commit>), or leave sha empty to test the tip of main."
+          elif ! sha=$(git rev-parse --verify --quiet "$SHA_INPUT^{commit}"); then
+            refuse GUARD_SHA_UNKNOWN "The sha input $SHA_INPUT names no commit of this repository; ref $REF. Next action: pass a commit from main's history ($dispatch -f sha=<commit>), or leave sha empty to test the tip of main."
+          elif ! git merge-base --is-ancestor "$sha" origin/main; then
+            refuse GUARD_SHA_NOT_ON_MAIN "The sha input $SHA_INPUT resolves to $sha, which is not an ancestor of origin/main, so it was never on main; ref $REF. Next action: land it on main first, or pass a commit from main's history ($dispatch -f sha=<commit>); an empty sha tests the tip of main."
+          fi
+          {
+            echo "sha=$sha"
+            echo "reason=GUARD_OK"
+          } >> "$GITHUB_OUTPUT"
+          echo "Testing $sha of main (sha input '$SHA_INPUT', ref $REF)."
+
+      - name: Report the guard
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.guard.outputs.reason || 'GUARD_SETUP_FAILED' }}
+          next-action: ${{ steps.guard.outputs.next || 'A setup step failed before the guard ran; open the first failed step of this job.' }}
+          started-at: ${{ steps.start.outputs.at }}
+
   plan:
     name: plan · shards from the incremental cost record
+    needs: [guard]
     if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -62,6 +130,8 @@ jobs:
       incrementalKey: ${{ steps.cache-key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
       - id: cache-key
         name: Content key of the incremental report
@@ -107,6 +177,7 @@ jobs:
 
   build:
     name: build · once for every shard
+    needs: [guard]
     if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -114,6 +185,8 @@ jobs:
       key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
       - id: key
         uses: ./.github/actions/mutation-build-key
@@ -156,7 +229,7 @@ jobs:
 
   mutation:
     name: mutation · shard ${{ matrix.shard }}
-    needs: [plan, build]
+    needs: [guard, plan, build]
     if: ${{ github.event.inputs.lane != 'kill-matrix' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -165,6 +238,8 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -256,8 +331,8 @@ jobs:
 
   report:
     name: Mutation report
-    needs: [plan, mutation]
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    needs: [guard, plan, mutation]
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && !cancelled() && needs.guard.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -265,6 +340,8 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -379,14 +456,17 @@ jobs:
 
   kill-matrix:
     name: Kill matrix
+    needs: [guard]
     permissions:
       contents: read
     uses: ./.github/workflows/kill-matrix.yml
+    with:
+      sha: ${{ needs.guard.outputs.sha }}
 
   drop-audit:
     name: drop-audit · audit this run's kill matrix
-    needs: [kill-matrix]
-    if: ${{ !cancelled() }}
+    needs: [guard, kill-matrix]
+    if: ${{ !cancelled() && needs.guard.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -402,6 +482,8 @@ jobs:
 
       - id: checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
       - id: build-key
         uses: ./.github/actions/mutation-build-key
