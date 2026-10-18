@@ -221,7 +221,7 @@ Feature('Settling a mutant run against a deadline that starts with its first tes
       ),
     )
     scenario(
-      'A mutant whose runner never starts is timed out only once the boot window closes',
+      'A mutant whose runner never starts is reported as never started once the boot window closes',
       Gherkin.Do.pipe(
         Given('a runner that never reports a first test')(
           'running',
@@ -244,9 +244,11 @@ Feature('Settling a mutant run against a deadline that starts with its first tes
               ),
             ),
         ),
-        Then('the mutant is reported timed out by the wall clock')((s, expect) =>
+        Then('the run ends as never started, not as a wall-clock expiry')((s, expect) =>
           settledOf(s.settled).pipe(
-            Effect.map((result) => expect(verdictOf(result)).toEqual(wallClockTimeout)),
+            Effect.map((result) =>
+              expect(verdictOf(result)).toEqual({ status: 'timeout', reason: 'worker-never-started' })
+            ),
           )
         ),
       ),

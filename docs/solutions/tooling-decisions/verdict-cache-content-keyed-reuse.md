@@ -164,7 +164,8 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   own dependency, or an observed-only test file opens a closure or goes
   unhashed.
 - **Only reproducible verdicts are cached.** A wall-clock Timeout is reused
-  only after it reproduces; a hit-limit Timeout is reused on first sight.
+  only after it reproduces, either in an earlier run or in the confirmation run
+  of the same run; a hit-limit Timeout is reused on first sight.
 - **The engine is identified by its installed files, not by a declaration.**
   The engine digest hashes the manifest and every file under the paths the
   `files` field declares, for `@systemfsoftware/stryker-js` and the runner it
