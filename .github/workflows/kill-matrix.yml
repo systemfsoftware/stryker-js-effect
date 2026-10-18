@@ -1,22 +1,18 @@
 name: Kill matrix
 
+# Called only by mutation.yml, whose guard job admits main alone and resolves the commit
+# every job here checks out.
 on:
   workflow_call:
     inputs:
+      sha:
+        description: Commit to check out, the caller's guard job output.
+        type: string
+        required: true
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
-  workflow_dispatch:
-    inputs:
-      projects:
-        description: Comma-separated projects to mutate, the dogfood corpus.
-        type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
-
-concurrency:
-  group: kill-matrix-${{ github.ref }}
-  cancel-in-progress: false
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
 
 permissions:
   contents: read
@@ -41,6 +37,8 @@ jobs:
       count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -75,12 +73,11 @@ jobs:
       key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
 
       - id: key
-        name: Content key of the build
-        env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
-        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/mutation-build-key
 
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -96,7 +93,7 @@ jobs:
           path: .turbo/cache
           key: ${{ steps.key.outputs.key }}
           restore-keys: |
-            mutation-build-${{ runner.os }}-
+            ${{ steps.key.outputs.prefix }}
 
       - name: Build every mutated project
         run: |
@@ -114,6 +111,8 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -183,6 +182,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

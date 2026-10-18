@@ -1,0 +1,27 @@
+name: Mutation build key
+description: >-
+  Key of the Mutation lane's Turbo build cache, `mutation-build-<os>-<hash>` over `pnpm-lock.yaml`,
+  `turbo.json` and `packages/**`, for every job that builds the corpus (Mutation's `build` and
+  `drop-audit`, the kill matrix's `build`). Call it after checkout and before `pnpm install`, so
+  node_modules and dist never enter the key. Turbo re-hashes every task's inputs on restore, so a
+  stale or partial cache only costs a rebuild.
+
+outputs:
+  key:
+    description: The full key.
+    value: ${{ steps.key.outputs.key }}
+  prefix:
+    description: The key without its hash, for `restore-keys`.
+    value: ${{ steps.key.outputs.prefix }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PREFIX: mutation-build-${{ runner.os }}-
+        HASH: ${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
+      run: |
+        echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+        echo "key=$PREFIX$HASH" >> "$GITHUB_OUTPUT"
