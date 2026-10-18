@@ -23,6 +23,7 @@ const RULE_IDS = [
   'redundant-relational',
   'equivalent-to-original',
   'duplicate-at-site',
+  'constant-collection-size',
   'ignore-static',
   'directive',
   'excluded-mutator',
@@ -48,6 +49,8 @@ const RULE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RULE_IDS)[number]> 
     `The mutant behaves exactly like the original code, so no test can kill it. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled it to the original's output; remove that checker from \`checkers\` to keep it.`,
   'duplicate-at-site':
     `Another mutant at the same site produces the same code. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled both to the same output; remove that checker from \`checkers\` to keep it.`,
+  'constant-collection-size':
+    'The mutant compares the size of an array, tuple or string with zero so that it is always true or always false (`xs.length >= 0`), and a kept mutant at the same site already replaces the comparison with that constant. The TypeScript checker decides it from the types; remove that checker from `checkers` to keep it.',
   'ignore-static': 'The mutant is static (it runs once at module load). To keep it, set `ignoreStatic: false`.',
   directive: 'A `// Stryker disable` comment covers the mutant. To keep it, remove or narrow the comment.',
   'excluded-mutator': 'Its mutator is listed in `mutator.excludedMutations`. To keep it, remove it from that list.',
