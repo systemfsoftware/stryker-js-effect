@@ -1,17 +1,17 @@
-# comment-checker, from the release asset the pinned input's
-# `nix/release-hashes.json` names for this host. A fixed-output fetch, so a
-# digest that drifts from the URL fails the build loudly rather than reusing
-# the previous store object.
-{ lib, stdenv, stdenvNoCC, fetchurl, autoPatchelfHook, hashes }:
+# comment-checker, the release asset of tag `v<version>` that
+# `nix/comment-checker-release.json` names for this host. A fixed-output fetch,
+# so a digest that drifts from the URL fails the build loudly rather than
+# reusing the previous store object. A new release is a hand edit of that file.
+{ lib, stdenv, stdenvNoCC, fetchurl, autoPatchelfHook }:
 
 let
-  manifest = builtins.fromJSON (builtins.readFile hashes);
+  manifest = lib.importJSON ./comment-checker-release.json;
 
   system = stdenvNoCC.hostPlatform.system;
   target = manifest.systems.${system} or (throw "comment-checker: no release binary for ${system}");
   sha256 =
     manifest.assets.${target}
-      or (throw "comment-checker: ${hashes} carries no digest for ${target}");
+      or (throw "comment-checker: nix/comment-checker-release.json carries no digest for ${target}");
 in
 stdenvNoCC.mkDerivation {
   pname = "comment-checker";
