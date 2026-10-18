@@ -341,6 +341,30 @@ const VM_REACH_LOADER_TEST = [
   '',
 ].join('\n')
 
+const ARID_CONDITION_SOURCE = [
+  'export const compute = (value: number): number => value',
+  '',
+  'export const work = (flag: boolean): number => {',
+  '  if (flag) {',
+  '    return compute(1 + 1)',
+  '  }',
+  '  return 0',
+  '}',
+  '',
+].join('\n')
+
+const ARID_CONDITION_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { work } from '../src/work.ts'",
+  '',
+  "test('leaves the guarded block unvisited', () => {",
+  '  expect(work(false)).toBe(0)',
+  '})',
+  '',
+].join('\n')
+
+const ARID_IGNORE_PREFIX = 'arid-uncovered-block: '
+
 const VM_WIRE_LEFT_SOURCE = [
   'export const base = 1 + 1',
   'export const add = (left, right) => left + right',
@@ -1485,6 +1509,68 @@ Feature('Content-keyed reuse across incremental reports')
             kept: false,
             reran: true,
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A held condition mutant is re-decided on a repeat run and Ignored again while the rest are reused',
+      Gherkin.Do.pipe(
+        Given(
+          'a workspace whose condition mutant guards a block no test runs, run twice without change',
+        )(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeVmFixture([
+                ['package.json', VM_PACKAGE_SOURCE],
+                ['src/work.ts', ARID_CONDITION_SOURCE],
+                ['test/sample.test.mjs', ARID_CONDITION_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, {
+                    mutate: ['src/**/*.ts'],
+                    coverageAnalysis: 'perTest',
+                  })
+                  const first = yield* runOnce(root, options)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the second run refuses the condition mutants as decided per run and re-ignores them the same way')(
+          (s, expect) => {
+            const aridIdsOf = (mutants: readonly RecordedMutant[]): readonly string[] =>
+              mutants
+                .filter((mutant) =>
+                  mutant.status === 'Ignored' && (mutant.statusReason ?? '').startsWith(ARID_IGNORE_PREFIX)
+                )
+                .map((mutant) => mutant.id)
+                .sort()
+            const firstArid = aridIdsOf(s.fixture.first.mutants)
+            const secondArid = aridIdsOf(s.fixture.second.mutants)
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              firstAridPositive: firstArid.length > 0,
+              secondDecidedPerRun: s.fixture.second.reuse?.refused.decidedPerRun,
+              secondRan: s.fixture.second.reuse?.ran,
+              secondAridIds: secondArid,
+              secondReused: s.fixture.second.reuse?.reused,
+              reusedEveryOther: s.fixture.second.reuse?.reused ===
+                s.fixture.first.mutants.length - firstArid.length,
+            }).toEqual({
+              runSucceeded: true,
+              firstAridPositive: true,
+              secondDecidedPerRun: firstArid.length,
+              secondRan: firstArid.length,
+              secondAridIds: firstArid,
+              secondReused: s.fixture.first.mutants.length - firstArid.length,
+              reusedEveryOther: true,
+            })
+          },
         ),
       ),
     )

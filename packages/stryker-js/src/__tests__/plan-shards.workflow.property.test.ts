@@ -1,10 +1,13 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 
-import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from '../plan-shards.workflow.js'
+import * as S from 'effect/Schema'
+
+import { PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from '../plan-shards.workflow.js'
 
 type PlanSubject = (command: PlanShardsCommand) => Result.Result<readonly PlannedShard[], never>
 
@@ -15,6 +18,98 @@ const scheduledPlacements = (shards: ReadonlyArray<PlannedShard>): ReadonlyArray
   shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants.map((id) => `${entry.project}|${id}`)))
 
 const multisetOf = (entries: ReadonlyArray<string>): string => JSON.stringify([...entries].sort())
+
+const anchorKeysOf = (mutant: PlannedMutant): ReadonlyArray<string> => [mutant.id, ...(mutant.anchors ?? [])]
+
+const sharesAnAnchor = (left: PlannedMutant, right: PlannedMutant): boolean =>
+  left.project === right.project && anchorKeysOf(left).some((key) => anchorKeysOf(right).includes(key))
+
+const anchorComponentsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<ReadonlyArray<PlannedMutant>> => {
+  const remaining = [...mutants]
+  const components: PlannedMutant[][] = []
+  while (remaining.length > 0) {
+    const seed = remaining.shift()
+    if (seed === undefined) {
+      break
+    }
+    const component = [seed]
+    for (let index = 0; index < component.length; index += 1) {
+      const current = component[index]
+      for (let at = remaining.length - 1; at >= 0; at -= 1) {
+        const candidate = remaining[at]
+        if (current !== undefined && candidate !== undefined && sharesAnAnchor(current, candidate)) {
+          component.push(candidate)
+          remaining.splice(at, 1)
+        }
+      }
+    }
+    components.push(component)
+  }
+  return components
+}
+
+const placementLabelOf = (project: string, id: string): string => `${project}|${id}`
+
+const shardIndexByPlacementOf = (shards: ReadonlyArray<PlannedShard>): Map<string, number> => {
+  const indexByPlacement = new Map<string, number>()
+  for (let index = 0; index < shards.length; index += 1) {
+    const shard = shards[index]
+    if (shard === undefined) {
+      continue
+    }
+    for (const entry of shard.projects) {
+      for (const id of entry.mutants) {
+        indexByPlacement.set(placementLabelOf(entry.project, id), index)
+      }
+    }
+  }
+  return indexByPlacement
+}
+
+const everyAnchorComponentLandsInOneShard = (
+  command: PlanShardsCommand,
+  shards: ReadonlyArray<PlannedShard>,
+): boolean => {
+  const indexByPlacement = shardIndexByPlacementOf(shards)
+  for (const component of anchorComponentsOf(command.mutants)) {
+    const first = component[0]
+    if (first === undefined) {
+      continue
+    }
+    const expected = indexByPlacement.get(placementLabelOf(first.project, first.id))
+    if (expected === undefined) {
+      return false
+    }
+    for (const mutant of component) {
+      if (indexByPlacement.get(placementLabelOf(mutant.project, mutant.id)) !== expected) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+const everyAnchoredMutantSharesAShardWithItsAnchor = (
+  command: PlanShardsCommand,
+  shards: ReadonlyArray<PlannedShard>,
+): boolean => {
+  const indexByPlacement = shardIndexByPlacementOf(shards)
+  for (const mutant of command.mutants) {
+    const own = indexByPlacement.get(placementLabelOf(mutant.project, mutant.id))
+    for (const anchor of mutant.anchors ?? []) {
+      const target = command.mutants.find((candidate) =>
+        candidate.project === mutant.project && candidate.id === anchor
+      )
+      if (target === undefined) {
+        continue
+      }
+      if (indexByPlacement.get(placementLabelOf(target.project, target.id)) !== own) {
+        return false
+      }
+    }
+  }
+  return true
+}
 
 const compareText = (left: string, right: string): number => Math.sign(Number(left > right) - Number(left < right))
 
@@ -92,7 +187,7 @@ const referenceLptBinsOf = (
   return bins
 }
 
-const placementKeysOf = (placementsPerShard: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
+const shardSignaturesOf = (placementsPerShard: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
   placementsPerShard.map((placements) => [...placements].sort().join(','))
 
 const occupiedShardsOfProject = (
@@ -127,8 +222,8 @@ const reproducesPureLptShards = (command: PlanShardsCommand, shards: ReadonlyArr
   return (
     shards.length === count &&
     Equal.equals(
-      placementKeysOf(shards.map((shard) => scheduledPlacements([shard]))),
-      placementKeysOf(reference.map((bin) => bin.placements)),
+      shardSignaturesOf(shards.map((shard) => scheduledPlacements([shard]))),
+      shardSignaturesOf(reference.map((bin) => bin.placements)),
     ) &&
     shards.every((shard, index) => shard.predictedSeconds === loadOfBinAt(reference, index) / 1000)
   )
@@ -145,6 +240,56 @@ const pureLptCounterexampleTyingAcrossANulProjectName = PlanShardsCommand.make({
       costMs: 1.2399973784708121e-164,
       dependsOnDryRun: false,
     },
+  ],
+  dryRunCosts: {},
+})
+
+const withAnchors = (
+  mutants: ReadonlyArray<PlannedMutant>,
+  picks: ReadonlyArray<boolean>,
+): ReadonlyArray<PlannedMutant> =>
+  mutants.map((mutant, holder) => {
+    const siblings = mutants.filter((other, at) => at !== holder && other.project === mutant.project)
+    const anchored = siblings
+      .filter((_, at) => picks[(holder * mutants.length + at) % Math.max(1, picks.length)] === true)
+      .map((sibling) => sibling.id)
+    const unique = [...new Set(anchored)]
+    const [first, ...rest] = unique
+    return first === undefined ? mutant : { ...mutant, anchors: [first, ...rest] }
+  })
+
+const anchoredCommandArb = Arbitrary.all([
+  Arbitrary.schema(PlanShardsCommand),
+  S.Boolean.pipe(S.Array, Arbitrary.schema),
+]).pipe(
+  Arbitrary.map(([command, picks]) =>
+    PlanShardsCommand.make({
+      targetSeconds: command.targetSeconds,
+      maxShards: command.maxShards,
+      mutants: withAnchors(command.mutants, picks),
+      dryRunCosts: command.dryRunCosts,
+    })
+  ),
+)
+
+const chainedAnchorCommand = PlanShardsCommand.make({
+  targetSeconds: 0.001,
+  mutants: [
+    {
+      project: 'chain',
+      id: Mutant.MutantId.make('aaaaaaaaaaaaaaaa'),
+      costMs: 1,
+      dependsOnDryRun: false,
+      anchors: [Mutant.MutantId.make('bbbbbbbbbbbbbbbb')],
+    },
+    {
+      project: 'chain',
+      id: Mutant.MutantId.make('bbbbbbbbbbbbbbbb'),
+      costMs: 1,
+      dependsOnDryRun: false,
+      anchors: [Mutant.MutantId.make('cccccccccccccccc')],
+    },
+    { project: 'chain', id: Mutant.MutantId.make('cccccccccccccccc'), costMs: 1, dependsOnDryRun: false },
   ],
   dryRunCosts: {},
 })
@@ -236,6 +381,42 @@ describe('planShards', () => {
       const largest = command.mutants.reduce((max, mutant) => Math.max(max, mutant.costMs), 0)
       const busiest = loads.reduce((max, load) => Math.max(max, load), 0)
       return busiest <= (4 / 3) * (total / count + largest) + 1e-9
+    },
+  )
+
+  it.prop(
+    '∀c_Mutants_≡EveryAnchorComponentLandsInExactlyOneShard',
+    { of: [anchoredCommandArb], subject: planShards },
+    (subject, [command]) =>
+      Arr.every([chainedAnchorCommand, command], (probe) => {
+        const shards = shardsOf(subject, probe)
+        return shards !== undefined && everyAnchorComponentLandsInOneShard(probe, shards)
+      }),
+  )
+
+  it.prop(
+    '∀m_AnchoredMutant_≡IsNeverSplitFromTheMutantItAnchorsTo',
+    { of: [anchoredCommandArb], subject: planShards },
+    (subject, [command]) =>
+      Arr.every([chainedAnchorCommand, command], (probe) => {
+        const shards = shardsOf(subject, probe)
+        return shards !== undefined && everyAnchoredMutantSharesAShardWithItsAnchor(probe, shards)
+      }),
+  )
+
+  it.prop(
+    '∀c_CommandAndMutant_≡TheDrawnPlacementsDecodeAndPlacingOneMutantTwiceIsRefused',
+    { of: [PlanShardsCommand, PlannedMutant], subject: S.decodeUnknownResult(PlanShardsCommand) },
+    (subject, [command, repeated]) => {
+      const payloadOf = (mutants: ReadonlyArray<PlannedMutant>) => ({
+        _tag: 'PlanShardsCommand',
+        targetSeconds: command.targetSeconds,
+        ...(command.maxShards === undefined ? {} : { maxShards: command.maxShards }),
+        mutants,
+        dryRunCosts: command.dryRunCosts,
+      })
+      return Result.isSuccess(subject(payloadOf(command.mutants))) &&
+        Result.isFailure(subject(payloadOf([...command.mutants, repeated, repeated])))
     },
   )
 })

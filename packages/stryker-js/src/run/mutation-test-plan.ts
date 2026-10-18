@@ -2,6 +2,7 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
+import * as Function from 'effect/Function'
 import * as Metric from 'effect/Metric'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
@@ -12,6 +13,7 @@ import { checkerMutantsSkipped } from '../Checker/Checker.handle.js'
 import { CheckerMutantFromMutant } from '../Checker/Checker.schema.js'
 import { StageError } from '../Run.schema.js'
 import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
+import type { MutationTestPlan } from './mutation-test-plan.cell.js'
 
 export const isMutantStatus = S.is(Mutant.MutantStatusSchema)
 export type ValidMutantStatus = Mutant.MutantStatus
@@ -33,6 +35,21 @@ export const inPlannedOrder = ({ planned, results }: PlannedResults): readonly M
   )
   return Arr.sortWith(results, (result) => rankById[result.id] ?? planned.length, Order.Number)
 }
+
+export const settledBeforeTestsOf = (
+  plan: Pick<MutationTestPlan, 'earlyResults' | 'heldSubsumed' | 'heldGuards'>,
+): number => plan.earlyResults.length + plan.heldSubsumed.length + plan.heldGuards.length
+
+type PlannedTotals = Pick<MutationTestPlan, 'plansForReporter' | 'earlyResults' | 'heldSubsumed' | 'heldGuards'>
+
+export const plannedTotalOf: {
+  (rememberedCount: number): (plan: PlannedTotals) => number
+  (plan: PlannedTotals, rememberedCount: number): number
+} = Function.dual(
+  2,
+  (plan: PlannedTotals, rememberedCount: number): number =>
+    plan.plansForReporter.length + settledBeforeTestsOf(plan) + rememberedCount,
+)
 
 const sandboxFilePairsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(

@@ -117,6 +117,31 @@ export const subsumptionMatchesStatus: {
     S.is(Subsumed)(subsumption) ? status === 'Ignored' : status !== 'Ignored',
 )
 
+export const Guard = S.Struct({
+  block: MutantId.annotate({ description: "The BlockStatement mutant that empties the `if`'s consequent block." }),
+  inside: S.Array(MutantId).annotate({
+    description: 'Every other mutant inside the consequent block.',
+  }),
+  alternate: S.optional(MutantId).annotate({
+    description:
+      "The BlockStatement mutant that empties the `if`'s else block; absent when the `if` has no else. An `if` whose else is not a non-empty block, or whose else `BlockStatement` mutant is not planned (an empty block, a block outside the `mutate` range, or that mutator not selected), carries no guard.",
+  }),
+}).annotate({
+  description:
+    "The `if` whose condition this mutant sits in. A mutant carries a guard only while a `BlockStatement` mutant for the consequent block is planned; when none is planned — an empty block, a block outside the `mutate` range, or the `BlockStatement` mutator not selected — the `if`'s condition mutants run unguarded. An `excludedMutations` entry or a disable directive over the block leaves its `BlockStatement` mutant in the run as Ignored, but an Ignored block mutant never witnesses the guard, so the `if`'s condition mutants run unguarded.",
+})
+export type Guard = typeof Guard.Type
+
+export const uncoveredBlockStatusReason: {
+  (noCoverage: MutantId): (guard: Guard) => string
+  (guard: Guard, noCoverage: MutantId): string
+} = dual(2, (guard: Guard, noCoverage: MutantId): string =>
+  ignoreStatusReasonText({
+    code: 'arid-uncovered-block',
+    detail:
+      `no test ran the block this condition guards (${guard.block}); its NoCoverage mutant ${noCoverage} already reports that gap, so add a test that runs the block, or set mutator.mutantSetPolicy 'full' to run this mutant`,
+  }))
+
 /**
  * A mutant's file location in the mutation-testing-report-schema contract:
  * 1-based line and 1-based column, the same base the JSON report and the
@@ -136,6 +161,7 @@ export const Mutant = S.TaggedStruct('Mutant', {
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   subsumption: S.optional(Subsumption),
+  guard: S.optional(Guard),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
