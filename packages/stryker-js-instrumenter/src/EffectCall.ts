@@ -1,5 +1,5 @@
 /**
- * EffectCall — the call-shape half the opt-in concurrency mutators share: given
+ * EffectCall — the call-shape half the Effect concurrency mutators share: given
  * a covered Effect call it selects the form its argument count describes
  * (data-first vs data-last, immediate vs pipe), reads the call's arity, and
  * exposes how each `effect` module the replacement needs is reached from the

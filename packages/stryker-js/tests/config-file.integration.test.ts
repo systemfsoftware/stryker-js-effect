@@ -507,9 +507,9 @@ Feature('Configuring a Stryker run from a module config file')
     )
 
     scenario(
-      'A config module that opts into extra mutations keeps them exactly as written',
+      "A config module that opts into a provider's extra mutations keeps them exactly as written",
       Gherkin.Do.pipe(
-        Given('a config module opting into the extra mutations it names')(
+        Given('a config module opting into the provider mutation it names')(
           'read',
           () => readExplicit(fixtureFile('opt-in-mutators', 'stryker.config.ts')),
         ),
@@ -518,7 +518,7 @@ Feature('Configuring a Stryker run from a module config file')
           (s) => Effect.sync(() => ({ optedInto: optionsOrThrow(s.read).mutator.optInMutations })),
         ),
         Then('the run opts into exactly the names the file listed, in order')((s, expect) =>
-          expect(s.seen.optedInto).toEqual(['FinalizerEscape'])
+          expect(s.seen.optedInto).toEqual(['acme/RaceProbe'])
         ),
       ),
     )

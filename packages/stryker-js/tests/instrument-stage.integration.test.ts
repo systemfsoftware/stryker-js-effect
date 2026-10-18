@@ -13,6 +13,7 @@ import * as Stdio from 'effect/Stdio'
 const Feature = makeFeature({ it })
 
 const UNKNOWN_NAME = 'TurnItUpToEleven'
+const FINALIZER_ESCAPE = 'FinalizerEscape'
 
 interface ProjectFixture {
   readonly root: string
@@ -108,6 +109,39 @@ Feature('Opting a mutation run into extra mutations')
               exitClass: 'ConfigError',
               unknownEntryNamed: true,
               causeNamesTheUnknownEntry: true,
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'A run that names a default concurrency mutation on its opt-in list refuses to start',
+      Gherkin.Do.pipe(
+        Given('a project with one small source file')('project', () => writeProject()),
+        When('the run starts with the finalizer escape on its opt-in list')(
+          'outcome',
+          (s) =>
+            runFromProject(s.project.root, { mutator: { optInMutations: [FINALIZER_ESCAPE] } }).pipe(
+              Effect.ensuring(removeProject(s.project.root)),
+            ),
+        ),
+        Then(
+          'the run stops before instrumentation, as a config failure saying the name is a default-tier mutator',
+        )(
+          (s, expect) => {
+            const failure = failureOf(s.outcome)
+            const cause = textOf(failure.cause)
+            return expect({
+              stage: failure.stage,
+              exitClass: failure['exitClass'],
+              causeNamesTheEntry: cause.includes(`"${FINALIZER_ESCAPE}"`),
+              causeSaysDefaultTier: cause.includes('is a default-tier mutator'),
+            }).toEqual({
+              stage: 'prepare',
+              exitClass: 'ConfigError',
+              causeNamesTheEntry: true,
+              causeSaysDefaultTier: true,
             })
           },
         ),

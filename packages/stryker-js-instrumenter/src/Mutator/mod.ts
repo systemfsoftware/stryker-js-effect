@@ -1,4 +1,4 @@
-export { defaultMutators, optInMutators, registryOf, selectMutators, stockRegistry } from '../Mutator.service.js'
+export { defaultMutators, registryOf, selectMutators, stockRegistry } from '../Mutator.service.js'
 export type {
   Mutator,
   MutatorContext,
