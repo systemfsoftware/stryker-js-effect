@@ -1,19 +1,18 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
+import { Effect, Schema as S } from 'effect'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, terminalEvent, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
-import { readCheckpointOf, readReportOf } from './__fixtures__/run-artifacts.fixture.js'
+import { decodeStream, reuseEventOf, terminalEvent, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { DEFAULT_VERDICT_DIRECTORY, readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const RESILIENCE_SLICE = 'stryker.resilience.config.ts'
-const CHECKPOINT_FILE = 'reports/stryker-incremental.json'
 const TRAP_FILE = 'packages/services/src/nontermination.ts'
 const INTERRUPT_AFTER_MUTANT_EVENTS = 1
-const PENDING = 'Pending'
 const TIMEOUT = 'Timeout'
 const INTERRUPTED_EXIT_CODE = 130
 
@@ -24,10 +23,7 @@ const isMutantEvent = (event: RunEvent.RunEvent): event is MutantEvent => event.
 const mutantEventsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<MutantEvent> =>
   events.filter(isMutantEvent)
 
-const sortedIds = (ids: ReadonlyArray<string>): ReadonlyArray<string> => [...ids].sort()
-
-const checkpointRowsOf = (checkpoint: Report.MutationTestResult) =>
-  Object.values(checkpoint.files).flatMap((file) => file.mutants)
+const isRemembered = S.is(Mutant.RememberedStatusSchema)
 
 const verifyResilienceRun = (expect: Expect, run: ExecResult, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const timedOut = mutantEventsOf(events).filter((event) => event.status === TIMEOUT)
@@ -61,32 +57,23 @@ const verifyInterruptEnvelope = (
     terminalKind: 'error',
   })
 
-const verifyInterruptedCheckpoint = (
+const verifyInterruptedVerdictsReused = (
   expect: Expect,
   events: ReadonlyArray<RunEvent.RunEvent>,
-  checkpoint: Report.MutationTestResult,
+  rerun: ExecResult,
+  reuse: RunEvent.ReuseReported,
 ): Check => {
-  const rows = checkpointRowsOf(checkpoint)
-  const plannedIds: ReadonlyArray<string> = rows.map((row) => String(row.id))
-  const pendingIds: ReadonlyArray<string> = rows
-    .filter((row) => row.status === PENDING)
-    .map((row) => String(row.id))
-  const settledIds: ReadonlyArray<string> = mutantEventsOf(events).map((event) => String(event.id))
-
+  const reusable = mutantEventsOf(events).filter((event) => isRemembered(event.status) && event.status !== TIMEOUT)
   return expect({
-    settledIsNonEmpty: settledIds.length > 0,
-    pendingIsNonEmpty: pendingIds.length > 0,
-    settledWithinPlanned: settledIds.every((id) => plannedIds.includes(id)),
-    settledRowsWereAnnounced: checkpointRowsOf(checkpoint)
-      .filter((row) => row.status !== PENDING)
-      .every((row) => settledIds.includes(String(row.id))),
-    pending: sortedIds(pendingIds),
+    rerunExitCode: rerun.exitCode,
+    announcedIsNonEmpty: reusable.length > 0,
+    unreadableEntries: reuse.refused.entryUnreadable,
+    reusedEveryAnnouncedVerdict: reuse.reused >= reusable.length,
   }).toStrictEqual({
-    settledIsNonEmpty: true,
-    pendingIsNonEmpty: true,
-    settledWithinPlanned: true,
-    settledRowsWereAnnounced: true,
-    pending: sortedIds(plannedIds.filter((id) => !settledIds.includes(id))),
+    rerunExitCode: 0,
+    announcedIsNonEmpty: true,
+    unreadableEntries: 0,
+    reusedEveryAnnouncedVerdict: true,
   })
 }
 
@@ -137,9 +124,9 @@ Feature('Surviving worker timeouts and concurrency in an enterprise fixture', { 
     )
 
     scenario(
-      'An interrupted run leaves the unsettled planned mutants Pending in its checkpoint',
+      'An interrupted run leaves every verdict it announced readable, and the next run reuses them',
       Gherkin.Do.pipe(
-        When('the CLI runs the resilience slice in incremental mode until a mutant settles')(
+        When('the CLI runs the resilience slice in incremental mode until a stored mutant settles')(
           'run',
           () =>
             runStryker({
@@ -148,7 +135,7 @@ Feature('Surviving worker timeouts and concurrency in an enterprise fixture', { 
               args: ['run', RESILIENCE_SLICE, '--incremental'],
               interrupt: {
                 afterMutantEvents: INTERRUPT_AFTER_MUTANT_EVENTS,
-                checkpointFile: CHECKPOINT_FILE,
+                storeDirectory: DEFAULT_VERDICT_DIRECTORY,
               },
             }),
         ),
@@ -160,12 +147,16 @@ Feature('Surviving worker timeouts and concurrency in an enterprise fixture', { 
         Then('the interrupt ends the run before it reaches a verdict')((s, expect) =>
           verifyInterruptEnvelope(expect, s.run.output.result, s.run.output.interrupted, s.terminal)
         ),
-        When('the run checkpoint of the interrupted run is read and decoded')(
-          'checkpoint',
-          (s) => readCheckpointOf(s.run.output.readFile, CHECKPOINT_FILE),
+        When('the CLI runs the same slice incrementally again on the interrupted machine')(
+          'rerun',
+          (s) => s.run.output.runAgain(['run', RESILIENCE_SLICE, '--incremental']),
         ),
-        Then('the checkpoint holds Pending rows for exactly the mutants the stream left unsettled')(
-          (s, expect) => verifyInterruptedCheckpoint(expect, s.events, s.checkpoint),
+        When('the re-run reports its reuse counts on its own event stream')(
+          'reuse',
+          (s) => Effect.flatMap(decodeStream(s.rerun.stdout), reuseEventOf),
+        ),
+        Then('no stored entry is unreadable and the re-run reuses every verdict the interrupted run announced')(
+          (s, expect) => verifyInterruptedVerdictsReused(expect, s.events, s.rerun, s.reuse),
         ),
       ),
     )

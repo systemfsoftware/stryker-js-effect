@@ -36,8 +36,7 @@ export interface RunContext {
   readonly progressQueue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly completedRef: Ref.Ref<number>
   readonly plannedTotal: number
-  readonly plannedMutants: readonly Mutant.Mutant[]
-  readonly rememberedMutantIds: ReadonlyArray<string>
+  readonly putVerdict: (result: Mutant.RunMutantResult) => Effect.Effect<void>
   readonly pathService: Path.Path
 }
 
@@ -45,7 +44,6 @@ export interface ReportingInputArgs {
   readonly prev: TestBasis
   readonly env: RunEnvironmentShape
   readonly results: readonly Mutant.RunMutantResult[]
-  readonly rememberedMutantIds: ReadonlyArray<string>
 }
 
 export const reportingInputOf = (input: ReportingInputArgs): MutationReportingInput => ({
@@ -53,7 +51,6 @@ export const reportingInputOf = (input: ReportingInputArgs): MutationReportingIn
   options: input.prev.options,
   project: input.prev.project,
   testCoverage: input.prev.testCoverage,
-  timeOverheadMs: Duration.toMillis(input.prev.timeOverhead),
   runId: input.env.runId,
   resolvedMode: input.env.resolvedMode,
   basePath: input.env.basePath,
@@ -61,7 +58,6 @@ export const reportingInputOf = (input: ReportingInputArgs): MutationReportingIn
   formatRegistry: input.prev.formatRegistry,
   concurrency: input.prev.concurrency.testRunners + input.prev.concurrency.checkers,
   runStartedAt: input.env.runStartedAt,
-  rememberedMutantIds: input.rememberedMutantIds,
 })
 
 const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {
@@ -185,15 +181,7 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
 })
 
 const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
-  context.reporting.checkpoint(
-    reportingInputOf({
-      prev: context.prev,
-      env: context.env,
-      results,
-      rememberedMutantIds: context.rememberedMutantIds,
-    }),
-    context.plannedMutants,
-  ).pipe(
+  context.reporting.checkpoint(reportingInputOf({ prev: context.prev, env: context.env, results })).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
     Effect.ignoreCause,
   )
@@ -229,7 +217,10 @@ export const makeCheckpointWriter = Effect.fnUntraced(function*(
   )
   return {
     record: (result) =>
-      Effect.andThen(Ref.update(completed, (results) => [...results, result]), Queue.offer(signals, undefined)),
+      context.putVerdict(result).pipe(
+        Effect.andThen(Ref.update(completed, (results) => [...results, result])),
+        Effect.andThen(Queue.offer(signals, undefined)),
+      ),
   } satisfies CheckpointWriter
 })
 

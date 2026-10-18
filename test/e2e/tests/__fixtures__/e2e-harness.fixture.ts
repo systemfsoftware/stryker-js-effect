@@ -1,9 +1,9 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Stimulus } from '@systemfsoftware/trace-spec'
 import { VitestTestContext } from '@systemfsoftware/vitest'
 import { Effect, Layer, Option, Result, Schema } from 'effect'
-import type { Scope } from 'effect'
+import type { Config, Scope } from 'effect'
 
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
 import type { BakePlatform } from '../../src/Harness/fixture-cache.service.js'
@@ -19,20 +19,33 @@ export interface StrykerRunInput {
   readonly fixture: URL
   readonly label: string
   readonly args: ReadonlyArray<string>
+  readonly env?: Readonly<Record<string, string>> | undefined
   readonly interrupt?: StrykerInterrupt | undefined
 }
 
 export interface StrykerInterrupt {
   readonly afterMutantEvents: number
-  readonly checkpointFile: string
+  readonly storeDirectory: string
+}
+
+export interface GuestScriptInput {
+  readonly fixture: URL
+  readonly label: string
+  readonly script: string
+  readonly env?: Readonly<Record<string, string>> | undefined
 }
 
 export type StrykerReadFile = (relativePath: string) => Effect.Effect<string, SandboxForkFailure>
+
+export type StrykerRunAgain = (
+  args: ReadonlyArray<string>,
+) => Effect.Effect<ExecResult, Config.ConfigError | SandboxForkFailure>
 
 export interface StrykerRunOutput {
   readonly result: ExecResult
   readonly interrupted: boolean
   readonly readFile: StrykerReadFile
+  readonly runAgain: StrykerRunAgain
 }
 
 const PERSIST_POLL_ATTEMPTS = 200
@@ -44,45 +57,27 @@ const isMutantEvent = (
 
 const decodeStreamText = Schema.decodeResult(RunEvent.RunEventWireText)
 
-const decodeReport = Schema.decodeResult(Schema.fromJsonString(Report.MutationTestResult))
+const isRemembered = Schema.is(Mutant.RememberedStatusSchema)
 
 const streamEventsOf = (line: string): ReadonlyArray<RunEvent.RunEvent> =>
   Result.getOrElse(decodeStreamText(line), (): ReadonlyArray<RunEvent.RunEvent> => [])
 
-const settledIdsOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
-  Object.values(report.files).flatMap((file) =>
-    file.mutants.filter((mutant) => mutant.status !== 'Pending').map((mutant) => mutant.id)
+const isEntryFileName = (name: string): boolean => !name.startsWith('.') && name.endsWith('.json')
+
+const storedEntryCountIn = async (guestFiles: Warm.GuestFiles, directory: string): Promise<number> => {
+  const entries = await guestFiles.list(directory).catch((): ReadonlyArray<Warm.GuestEntry> => [])
+  const nested = await Promise.all(
+    entries.filter((entry) => entry.isDirectory).map((entry) =>
+      storedEntryCountIn(guestFiles, `${directory}/${entry.name}`)
+    ),
   )
-
-const checkpointSettledIds = async (
-  readGuestFile: Warm.GuestFileReader,
-  checkpointFile: string,
-): Promise<ReadonlyArray<string>> => {
-  const text = await readGuestFile(checkpointFile).catch(() => undefined)
-  return text === undefined
-    ? []
-    : Result.match(decodeReport(text), {
-      onFailure: (): ReadonlyArray<string> => [],
-      onSuccess: settledIdsOf,
-    })
+  const here = entries.filter((entry) => !entry.isDirectory && isEntryFileName(entry.name)).length
+  return nested.reduce((total, count) => total + count, here)
 }
 
-const checkpointListsAll = async (
-  readGuestFile: Warm.GuestFileReader,
-  checkpointFile: string,
-  ids: ReadonlyArray<string>,
-): Promise<boolean> => {
-  const settled = new Set(await checkpointSettledIds(readGuestFile, checkpointFile))
-  return ids.every((id) => settled.has(id))
-}
-
-const awaitPersisted = async (
-  readGuestFile: Warm.GuestFileReader,
-  checkpointFile: string,
-  ids: ReadonlyArray<string>,
-): Promise<boolean> => {
+const awaitStored = async (guestFiles: Warm.GuestFiles, storeDirectory: string, count: number): Promise<boolean> => {
   for (let attempt = 0; attempt < PERSIST_POLL_ATTEMPTS; attempt = attempt + 1) {
-    if (await checkpointListsAll(readGuestFile, checkpointFile, ids)) {
+    if (await storedEntryCountIn(guestFiles, storeDirectory) >= count) {
       return true
     }
     await Effect.runPromise(Effect.sleep(`${PERSIST_POLL_INTERVAL_MILLIS} millis`))
@@ -92,15 +87,18 @@ const awaitPersisted = async (
 
 const interruptAfter = (input: StrykerInterrupt): (
   line: string,
-  readGuestFile: Warm.GuestFileReader,
+  guestFiles: Warm.GuestFiles,
 ) => Promise<boolean> => {
   const counted = new Set<string>()
-  return async (line, readGuestFile) => {
-    streamEventsOf(line).filter(isMutantEvent).forEach((event) => counted.add(event.id))
+  return async (line, guestFiles) => {
+    streamEventsOf(line)
+      .filter(isMutantEvent)
+      .filter((event) => isRemembered(event.status))
+      .forEach((event) => counted.add(event.id))
     if (counted.size < input.afterMutantEvents) {
       return false
     }
-    return await awaitPersisted(readGuestFile, input.checkpointFile, [...counted])
+    return await awaitStored(guestFiles, input.storeDirectory, counted.size)
   }
 }
 
@@ -112,11 +110,26 @@ const annotateTrace = (traceId: string): Effect.Effect<void> =>
       ? Effect.void
       : Effect.promise(() => context.annotate(`trace ${traceId}`, TRACE_ANNOTATION_TYPE)))
 
+const outputOf = (
+  runner: typeof StrykerCliRunner.Service,
+  environment: Readonly<Record<string, string>>,
+  fork: Warm.SandboxFork,
+  result: ExecResult,
+  interrupted: boolean,
+): StrykerRunOutput => ({
+  result,
+  interrupted,
+  readFile: (relativePath) => Warm.readFile(fork, relativePath),
+  runAgain: (args) => runner.runInFork(args, fork, environment),
+})
+
+type HarnessRequirements = BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
+
 export type StrykerRunStimulus = Stimulus.Stimulus<
   StrykerRunInput,
   StrykerRunOutput,
   HarnessError | SandboxForkFailure,
-  BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
+  HarnessRequirements
 >
 
 export const StrykerRun: StrykerRunStimulus = Stimulus.make({
@@ -127,29 +140,19 @@ export const StrykerRun: StrykerRunStimulus = Stimulus.make({
       const cache = yield* BakedFixtureCache
       const warm = yield* cache.warm(input.fixture)
       const runner = yield* StrykerCliRunner
-      const forkRun = yield* Option.match(Option.fromUndefinedOr(input.interrupt), {
+      const environment = { ...input.env, TRACEPARENT: traceparent }
+      return yield* Option.match(Option.fromUndefinedOr(input.interrupt), {
         onNone: () =>
           Effect.map(
-            runner.run(input.args, warm, input.label, { TRACEPARENT: traceparent }),
-            (ran) => ({ result: ran.result, fork: ran.fork, interrupted: false }),
+            runner.run(input.args, warm, input.label, environment),
+            (ran) => outputOf(runner, environment, ran.fork, ran.result, false),
           ),
         onSome: (interrupt) =>
           Effect.map(
-            runner.streamRun(
-              input.args,
-              warm,
-              input.label,
-              { TRACEPARENT: traceparent },
-              interruptAfter(interrupt),
-            ),
-            (ran) => ({ result: ran.result, fork: ran.fork, interrupted: ran.result.interrupted }),
+            runner.streamRun(input.args, warm, input.label, environment, interruptAfter(interrupt)),
+            (ran) => outputOf(runner, environment, ran.fork, ran.result, ran.result.interrupted),
           ),
       })
-      return {
-        result: forkRun.result,
-        interrupted: forkRun.interrupted,
-        readFile: (relativePath: string) => Warm.readFile(forkRun.fork, relativePath),
-      } satisfies StrykerRunOutput
     }),
 })
 
@@ -158,5 +161,34 @@ export const runStryker = (
 ): Effect.Effect<
   Stimulus.Run<StrykerRunInput, StrykerRunOutput>,
   HarnessError | SandboxForkFailure,
-  BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
+  HarnessRequirements
 > => StrykerRun(input)
+
+export type GuestScriptStimulus = Stimulus.Stimulus<
+  GuestScriptInput,
+  StrykerRunOutput,
+  HarnessError | SandboxForkFailure,
+  HarnessRequirements
+>
+
+export const GuestScript: GuestScriptStimulus = Stimulus.make({
+  name: 'guest script of stryker CLI processes',
+  run: ({ input, traceId, traceparent }) =>
+    Effect.gen(function*() {
+      yield* annotateTrace(traceId)
+      const cache = yield* BakedFixtureCache
+      const warm = yield* cache.warm(input.fixture)
+      const runner = yield* StrykerCliRunner
+      const environment = { ...input.env, TRACEPARENT: traceparent }
+      const ran = yield* runner.runScript(input.script, warm, input.label, environment)
+      return outputOf(runner, environment, ran.fork, ran.result, false)
+    }),
+})
+
+export const runGuestScript = (
+  input: GuestScriptInput,
+): Effect.Effect<
+  Stimulus.Run<GuestScriptInput, StrykerRunOutput>,
+  HarnessError | SandboxForkFailure,
+  HarnessRequirements
+> => GuestScript(input)

@@ -31,12 +31,12 @@ export namespace MutatorProvider {
 
 // @public (undocumented)
 export namespace Options {
-    export { CheckerCustomConfig, CheckerCustomConfigSchema, CheckerEntryConfig, CheckerEntryConfigSchema, CommandRunnerOptions, CommandRunnerOptionsSchema, CoverageAnalysisMode, CoverageAnalysisMode as CoverageAnalysisModeType, DeepOptional, LogLevel, LogLevel as LogLevelType, MutantSetPolicy, MutantSetPolicy as MutantSetPolicyType, MutationScoreThresholds, MutationScoreThresholdsSchema, PackageManager, PackageManager as PackageManagerType, PartialStrykerOptions, PluginFileUrl, ReportType, ReportType as ReportTypeType, StrykerCoverageAnalysis, StrykerFileLogLevel, StrykerLogLevel, StrykerOptions, StrykerOptionsSchema, StrykerTempDirName, TestRunnerConfig, TestRunnerConfigSchema, TestRunnerCustomConfig, TestRunnerCustomConfigSchema, isCustomTestRunner };
+    export { CheckerCustomConfig, CheckerCustomConfigSchema, CheckerEntryConfig, CheckerEntryConfigSchema, CommandRunnerOptions, CommandRunnerOptionsSchema, CoverageAnalysisMode, CoverageAnalysisMode as CoverageAnalysisModeType, DeepOptional, FsVerdictStoreOptions, FsVerdictStoreOptionsSchema, LogLevel, LogLevel as LogLevelType, MutantSetPolicy, MutantSetPolicy as MutantSetPolicyType, MutationScoreThresholds, MutationScoreThresholdsSchema, PackageManager, PackageManager as PackageManagerType, PartialStrykerOptions, PluginFileUrl, ReportType, ReportType as ReportTypeType, S3VerdictStoreOptions, S3VerdictStoreOptionsSchema, StrykerCoverageAnalysis, StrykerFileLogLevel, StrykerLogLevel, StrykerOptions, StrykerOptionsSchema, StrykerTempDirName, TestRunnerConfig, TestRunnerConfigSchema, TestRunnerCustomConfig, TestRunnerCustomConfigSchema, VerdictStoreOptions, VerdictStoreOptionsSchema, isCustomTestRunner };
 }
 
 // @public (undocumented)
 export namespace Plugin {
-    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerDigestRequest, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
+    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCapabilitiesRequest, CheckerCheckResult, CheckerDigestRequest, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
 }
 
 // @public (undocumented)

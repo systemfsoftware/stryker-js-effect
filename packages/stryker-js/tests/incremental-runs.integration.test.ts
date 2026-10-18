@@ -6,6 +6,7 @@ import * as Path from 'effect/Path'
 
 import {
   exitOf,
+  INCREMENTAL_FILE,
   jsProjectFiles,
   logFile,
   REPORT_FILE,
@@ -23,6 +24,8 @@ const freshRun = (args: ReadonlyArray<string>) =>
     logFile,
     (log) => Effect.flatMap(writeProject(jsProjectFiles({ log })), (root) => runCounted({ root, log, args })),
   )
+
+const INTERRUPTED_WRITE_TEMP = `${INCREMENTAL_FILE.replace(/[^/]+$/, (name) => `.${name}`)}.5f3a9c1e7b2d4086.tmp`
 
 Feature('Re-running mutation testing on a project after an unfinished run')
   .withLayer(Engine.nodePlatformLayer)
@@ -102,6 +105,37 @@ Feature('Re-running mutation testing on a project after an unfinished run')
               nextExecutions: s.observed.reference.executions - s.observed.dryRunOnly.executions,
               nextScored: s.observed.reference.scored,
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A temp file left by an incremental report write cut short changes nothing the next run reuses',
+      Gherkin.Do.pipe(
+        Given('a finished run, then the temp file a write of its incremental report leaves when the run is killed')(
+          'observed',
+          () =>
+            Effect.scoped(Effect.gen(function*() {
+              const log = yield* logFile
+              const root = yield* writeProject(jsProjectFiles({ log }))
+              const first = yield* runCounted({ root, log, args: ['run'] })
+              yield* writeFiles(root, [[INTERRUPTED_WRITE_TEMP, '{"incrementalVersion":']])
+              const next = yield* runCounted({ root, log, args: ['run'] })
+              return { first, next }
+            })),
+        ),
+        Then('the next run executes no test and scores as the first')((s, expect) =>
+          expect({
+            exits: [exitOf(s.observed.first), exitOf(s.observed.next)],
+            firstStatuses: statusesOf(s.observed.first.scored),
+            nextExecutions: s.observed.next.executions,
+            nextScored: s.observed.next.scored,
+          }).toEqual({
+            exits: [0, 0],
+            firstStatuses: ['Killed', 'NoCoverage'],
+            nextExecutions: 0,
+            nextScored: s.observed.first.scored,
+          })
         ),
       ),
     )

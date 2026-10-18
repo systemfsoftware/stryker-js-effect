@@ -44,6 +44,8 @@ const locationOf = (content: string, text: string): TypeQuery.TypeQuerySite['loc
   return { start: { line: index + 1, column }, end: { line: index + 1, column: column + text.length } }
 }
 
+const publishedEngineOptionsOf = (options: Options.StrykerOptions) => ({ ...options, incrementalSources: [] })
+
 const makeClient = (tsconfigFile: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
@@ -52,7 +54,7 @@ const makeClient = (tsconfigFile: string) =>
     )
     return yield* Worker.makeWorkerClient({
       rpcs: Plugin.CheckerRpcs,
-      options,
+      options: publishedEngineOptionsOf(options),
       entrypoint: WORKER_ENTRYPOINT,
       workingDirectory: yield* path.fromFileUrl(WORKING_DIRECTORY_URL),
       execArgv: [],

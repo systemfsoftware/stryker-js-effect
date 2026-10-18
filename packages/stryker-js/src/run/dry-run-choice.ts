@@ -1,5 +1,3 @@
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -29,13 +27,11 @@ import {
 } from '../dry-run-reuse.workflow.js'
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import { RequireDryRunCommand } from '../require-dry-run.workflow.js'
-import { runInputsDigestOf } from '../verdict-semantics.js'
-import { priorStatusesOf } from './incremental-reuse.js'
+import { runInputsDigestOf, sha256HexOf } from '../verdict-semantics.js'
+import type { VerdictEntry } from '../verdict-store/VerdictEntry.schema.js'
 import type { InstrumentDone } from './instrument.cell.js'
 
 export type DryRunTarget = Pick<InstrumentDone, 'project' | 'options'>
-
-const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 const coverageOfReportText = (text: string): Option.Option<DryRunCoverage> =>
   Option.flatMap(
@@ -49,22 +45,24 @@ const priorCoveragesOf = (texts: readonly string[]): readonly DryRunCoverage[] =
 export interface RequireDryRunInput {
   readonly options: Options.StrykerOptions
   readonly mutants: readonly Pick<Mutant.Mutant, 'id' | 'static'>[]
-  readonly texts: readonly string[]
   readonly kept: readonly DryRunCoverage[]
+  readonly priorEntries: ReadonlyArray<VerdictEntry>
 }
 
-export const requireDryRunCommandOf = ({ options, mutants, texts, kept }: RequireDryRunInput): RequireDryRunCommand =>
+export const requireDryRunCommandOf = (
+  { options, mutants, kept, priorEntries }: RequireDryRunInput,
+): RequireDryRunCommand =>
   RequireDryRunCommand.make({
     dryRunOnly: options.dryRunOnly,
     ignoreStatic: options.ignoreStatic,
     hasCheckers: options.checkers.length > 0,
     mutants: mutants.map((mutant) => ({ id: mutant.id, static: mutant.static === true })),
-    priorStatuses: priorStatusesOf(texts),
+    priorStatuses: priorEntries.map((entry) => ({ mutantId: entry.components.mutantId, status: entry.status })),
     priorFlakyMutantIds: Arr.dedupe(kept.flatMap((coverage) => coverage.flakyMutantIds)),
   })
 
 const closureDigestOf = (analysis: ImportClosureAnalysis): string =>
-  hashOf(
+  sha256HexOf(
     [
       ...analysis.closures.map((closure) => `${closure.testFile}\u0000${closure.digest}`).sort(),
       analysis.projectDigest,

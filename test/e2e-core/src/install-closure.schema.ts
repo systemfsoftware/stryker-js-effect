@@ -25,5 +25,5 @@ export const FixtureManifest = S.Struct({
 })
 export type FixtureManifest = typeof FixtureManifest.Type
 
-export const StagedFixtureManifest = S.Struct({ path: S.String, manifest: FixtureManifest })
+export const StagedFixtureManifest = S.Struct({ fixture: S.String, path: S.String, manifest: FixtureManifest })
 export type StagedFixtureManifest = typeof StagedFixtureManifest.Type

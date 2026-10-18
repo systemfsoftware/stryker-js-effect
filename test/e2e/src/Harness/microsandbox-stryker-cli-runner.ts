@@ -58,12 +58,38 @@ const runStrykerCli = (
     return run
   }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' ') }))
 
+const GUEST_SHELL: readonly [string, ...Array<string>] = ['sh', '-c']
+
+const runGuestScript = (
+  script: string,
+  warm: Warm.WarmSandbox,
+  label: string,
+  runEnvironment: Readonly<Record<string, string>> | undefined,
+) =>
+  Effect.gen(function*() {
+    const environment = yield* guestEnvironmentOf(runEnvironment)
+    const fork = yield* Warm.fork(warm, label)
+    const result = yield* Warm.exec(fork, [...GUEST_SHELL, script], environment)
+    const run: ForkedRun = { result, fork }
+    return run
+  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': `sh -c (${label})` }))
+
+const runStrykerCliInFork = (
+  args: ReadonlyArray<string>,
+  fork: Warm.SandboxFork,
+  runEnvironment: Readonly<Record<string, string>> | undefined,
+) =>
+  Effect.gen(function*() {
+    const environment = yield* guestEnvironmentOf(runEnvironment)
+    return yield* Warm.exec(fork, cliArgvOf(args), environment)
+  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' '), 'e2e.cli.sameFork': true }))
+
 const streamStrykerCli = (
   args: ReadonlyArray<string>,
   warm: Warm.WarmSandbox,
   label: string,
   runEnvironment: Readonly<Record<string, string>> | undefined,
-  interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
+  interruptOnLine: (line: string, guestFiles: Warm.GuestFiles) => Promise<boolean>,
 ) =>
   Effect.gen(function*() {
     const environment = yield* guestEnvironmentOf(runEnvironment)
@@ -85,8 +111,19 @@ export const make: Effect.Effect<StrykerCliRunnerShape> = Effect.sync(() => ({
     warm: Warm.WarmSandbox,
     label: string,
     runEnvironment: Readonly<Record<string, string>> | undefined,
-    interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
+    interruptOnLine: (line: string, guestFiles: Warm.GuestFiles) => Promise<boolean>,
   ) => streamStrykerCli(args, warm, label, runEnvironment, interruptOnLine),
+  runScript: (
+    script: string,
+    warm: Warm.WarmSandbox,
+    label: string,
+    runEnvironment: Readonly<Record<string, string>> | undefined,
+  ) => runGuestScript(script, warm, label, runEnvironment),
+  runInFork: (
+    args: ReadonlyArray<string>,
+    fork: Warm.SandboxFork,
+    runEnvironment: Readonly<Record<string, string>> | undefined,
+  ) => runStrykerCliInFork(args, fork, runEnvironment),
 }))
 
 export const layer: Layer.Layer<StrykerCliRunner> = Layer.effect(StrykerCliRunner, make)

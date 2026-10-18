@@ -4,6 +4,7 @@ export {
   BoundaryErrorSchema,
   BoundaryPayloadRejected,
   BoundaryUnrecognizedSignal,
+  CheckerCapabilitiesRequest,
   CheckerCheckResult,
   CheckerDigestRequest,
   CheckerGroupResult,
