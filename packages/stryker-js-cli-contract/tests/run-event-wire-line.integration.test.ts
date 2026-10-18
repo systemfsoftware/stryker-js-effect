@@ -13,7 +13,7 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"9.0","role":"testRunner","index":0,"startupMs":12.5}'
 
 const READS_NOWHERE = '"subsumption":null'
 
@@ -33,6 +33,9 @@ const IGNORED_REASON = '"redundant-relational: subsumed by 0000000000000002"'
 
 const lineWith = (status: string, reason: string, subsumption: string): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"statusReason":${reason},"subsumption":${subsumption}}`
+
+const planLine = (scope: string): string =>
+  `{"_tag":"plan","total":2,"shardPlan":{"version":2,"scope":${scope},"targetSeconds":60,"shards":[],"matrix":{"include":[]}}}`
 
 const subsumedReferenceOf = (line: string): string =>
   Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
@@ -67,7 +70,7 @@ const COUNTS =
 const PHASES = '"prepare":1,"instrument":2,"dry-run":3,"mutation-test":4'
 
 const verdictLine = (phaseDurations: string): string =>
-  `{"_tag":"verdict","schemaVersion":"8.0","runId":"01ARZ3NDEKTSV4RRFFQ69G5FAV","mode":"machine","signal":"flag","score":100,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":${COUNTS},"mutants":[],"scope":"full","mutantSetPolicy":"default","phaseDurations":${phaseDurations},"static":null,"budget":{"predictedSeconds":0,"actualSeconds":1}}`
+  `{"_tag":"verdict","schemaVersion":"9.0","runId":"01ARZ3NDEKTSV4RRFFQ69G5FAV","mode":"machine","signal":"flag","score":100,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":${COUNTS},"mutants":[],"scope":"full","mutantSetPolicy":"default","phaseDurations":${phaseDurations},"static":null,"budget":{"predictedSeconds":0,"actualSeconds":1}}`
 
 const durationOf = (line: string, phase: 'check' | 'reporting'): string =>
   Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
@@ -110,6 +113,38 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           expect(s.outcomes).toEqual({
             declared: 'accepted: mutantTested',
             undeclared: expect.stringMatching(/^refused:/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A plan line records its diff scope, and a diff scope that omits its source digest is refused',
+      Gherkin.Do.pipe(
+        Given('plan lines scoped to a diff, scoped to a diff without sources, and widened to the full project')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              diffScoped: planLine(
+                '{"_tag":"DiffScoped","base":"b","head":"h","sources":"s","files":["src/a.ts"]}',
+              ),
+              withoutSources: planLine('{"_tag":"DiffScoped","base":"b","head":"h","files":["src/a.ts"]}'),
+              fullScope: planLine(
+                '{"_tag":"FullScope","base":"b","head":"h","sources":"s","files":[],"reason":"package.json changed"}',
+              ),
+              unscoped: planLine('{"_tag":"Unscoped"}'),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('every declared scope is accepted and the scope without sources is refused naming sources')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            diffScoped: 'accepted: plan',
+            withoutSources: expect.stringMatching(/^refused:[\s\S]*\bsources\b/),
+            fullScope: 'accepted: plan',
+            unscoped: 'accepted: plan',
           })
         ),
       ),
@@ -305,7 +340,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"9.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(

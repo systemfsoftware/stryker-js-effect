@@ -16,7 +16,7 @@ pnpm add @systemfsoftware/stryker-js-cli-contract
 
 The package groups its exports into namespaces. `RunEvent` holds the machine
 stream: the `RunEvent` union of every event kind the CLI emits, each event's
-class, two newline-delimited JSON codecs, and `StreamSchemaVersion` (`8.0`, the
+class, two newline-delimited JSON codecs, and `StreamSchemaVersion` (`9.0`, the
 version the stream declares). `RunEventWireLine` reads one line. `RunEventWireText`
 reads a whole stdout: it skips blank and whitespace-only lines, and it refuses the
 first other line that is not an event, at that line's 0-based position.

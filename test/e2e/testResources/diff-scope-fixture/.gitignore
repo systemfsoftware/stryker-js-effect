@@ -1,0 +1,7 @@
+node_modules/
+reports/
+.stryker-tmp/
+stryker.log
+*.tsbuildinfo
+plan-*.json
+repo-shas.txt

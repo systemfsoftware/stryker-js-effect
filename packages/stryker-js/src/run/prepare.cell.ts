@@ -13,6 +13,7 @@ import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
 import type { EmptyDirectory } from '../empty-directory.service.js'
+import type { StageInput } from '../git-diff.schema.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -37,6 +38,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface PrepareDone {
   readonly project: Project
+  readonly plannedMutantsFile: string | undefined
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
@@ -48,9 +50,8 @@ export interface PrepareDone {
   readonly frameworkClaimants: readonly FrameworkClaimant[]
 }
 
-export interface PrepareExecutorArgs {
+export interface PrepareExecutorArgs extends StageInput {
   cliOptions: Options.PartialStrykerOptions
-  targetMutatePatterns: string[] | undefined
 }
 
 const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
@@ -84,6 +85,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   yield* Queue.offer(raw.queue, RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
   return {
     project: raw.project,
+    plannedMutantsFile: raw.plannedMutantsFile,
     loadedPlugins: raw.loaded,
     ignorers: raw.ignorers,
     mutatorCatalogs: raw.mutatorCatalogs,

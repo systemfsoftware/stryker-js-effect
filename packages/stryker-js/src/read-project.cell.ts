@@ -23,9 +23,9 @@ import {
   IncrementalReportDiscard,
 } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
-import { DiffScopeCommand, type DiffScopeDecision, FullScope } from './git-diff.schema.js'
+import { diffScopeDecisionOf } from './git-diff.js'
+import { type DiffScopeDecision, type GitDiffError, type StageInput } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
-import { gitDiff } from './git-diff.workflow.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import { ALWAYS_IGNORE } from './project-ignores.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -87,9 +87,8 @@ const discardLogOf: (input: {
     () => Effect.void,
   )
 
-type ReadProjectInput = {
+type ReadProjectInput = StageInput & {
   readonly options: Options.StrykerOptions
-  readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
 }
 
@@ -357,14 +356,8 @@ interface DiffScope {
 
 const FULL_SCOPE: DiffScope = { scope: 'full', diffRanges: undefined }
 
-const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
-  const git = yield* GitDiff
-  const result = yield* git.changedSince({ cwd: basePath, ref })
-  const decision: DiffScopeDecision = Result.match(
-    gitDiff(DiffScopeCommand.make({ hunks: [...result.hunks], untrackedFiles: [...result.untrackedFiles] })),
-    { onFailure: () => FullScope.make({ reason: 'the diff could not be computed' }), onSuccess: (value) => value },
-  )
-  return yield* Match.value(decision).pipe(
+const scopeOfDecision = (decision: DiffScopeDecision): Effect.Effect<DiffScope> =>
+  Match.value(decision).pipe(
     Match.tag(
       'DiffScoped',
       (scoped): Effect.Effect<DiffScope> => Effect.succeed({ scope: 'diff', diffRanges: [...scoped.ranges] }),
@@ -376,7 +369,26 @@ const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
     ),
     Match.exhaustive,
   )
+
+const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
+  const git = yield* GitDiff
+  return yield* scopeOfDecision(diffScopeDecisionOf(yield* git.changedSince({ cwd: basePath, ref })))
 })
+
+const plannedDiffScopeOf = (input: ReadProjectInput): Effect.Effect<DiffScope, GitDiffError, GitDiff> =>
+  Option.match(Option.fromUndefinedOr(input.plannedDiff), {
+    onNone: () =>
+      Option.match(Option.fromUndefinedOr(input.options.since), {
+        onNone: () => Effect.succeed(FULL_SCOPE),
+        onSome: (ref) => diffScopeOf(ref, input.basePath),
+      }),
+    onSome: (planned) =>
+      Match.value(planned).pipe(
+        Match.tag('WholeProject', () => Effect.succeed(FULL_SCOPE)),
+        Match.tag('ChangedSince', (changed) => scopeOfDecision(diffScopeDecisionOf(changed.diff))),
+        Match.exhaustive,
+      ),
+  })
 
 const effectiveOptions = (scope: DiffScope, options: Options.StrykerOptions): Options.StrykerOptions => {
   const { since, ...withoutSince } = options
@@ -389,6 +401,7 @@ const effectiveOptions = (scope: DiffScope, options: Options.StrykerOptions): Op
 type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedMutantsFile: string | undefined
   readonly basePath: string
   readonly incremental: boolean
   readonly incrementalFile: string
@@ -401,10 +414,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
 const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
   const fs = yield* FileSystem.FileSystem
   const pathService = yield* Path.Path
-  const diffScope = yield* Option.match(Option.fromUndefinedOr(input.options.since), {
-    onNone: () => Effect.succeed(FULL_SCOPE),
-    onSome: (ref) => diffScopeOf(ref, input.basePath),
-  })
+  const diffScope = yield* plannedDiffScopeOf(input)
   const options = effectiveOptions(diffScope, input.options)
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
@@ -452,6 +462,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     runInputsDigest,
     options,
     targetMutatePatterns: input.targetMutatePatterns,
+    plannedMutantsFile: input.plannedMutantsFile,
     basePath: input.basePath,
     incremental: options.incremental,
     incrementalFile: options.incrementalFile,
@@ -466,6 +477,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
 export interface ReadProjectDone {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedMutantsFile: string | undefined
   readonly basePath: string
   readonly project: Project
   readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
@@ -504,6 +516,7 @@ const projectOf = ({
 }): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
+  plannedMutantsFile: command.plannedMutantsFile,
   basePath: command.basePath,
   project: makeProject(command.fileDescriptions, report, command.testFiles),
   incrementalReportDiscard: discard,
