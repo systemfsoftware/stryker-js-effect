@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 8.0.0
+
+Nothing you import changes: `Trace.layerTraceContextClient` and `Trace.layerTraceContextServer` keep their names, types and behaviour. Breaking: `Worker.WorkerOptions.layer` is now `Worker.WorkerOptions.layerConfig`, and `Worker.WorkerTelemetry.layer` is now `Worker.WorkerTelemetry.layerConfig`, because both build their service from configuration. Each keeps its type and behaviour. Rename the member where your worker entry provides it.
+
 ## 7.0.4
 
 Updated dependency @systemfsoftware/stryker-js-cli-contract to 0.5.0
