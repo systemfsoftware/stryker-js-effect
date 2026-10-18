@@ -1,20 +1,39 @@
+# Cost: about 256 runner-min/day (231-459) for the nightly scheduled Mutation run, on the
+# three-project corpus. The instrumenter and the HTML reporter add a share the first
+# nightly run measures.
+# Run shape: one scheduled run a day (17 3 * * *) plus any manual dispatch, never a push
+# or a pull request, and only on main: the guard job refuses any other ref, and the `sha`
+# input tests an older commit of main that carries every file the lane loads. A full run
+# holds the scoring lane, the kill-matrix lane and the drop audit; `lane: kill-matrix`
+# holds the last two.
+# Per lane, job-minutes read from the jobs API on 2026-10-13. Scoring lane, scheduled
+# `--full`: runs 38384850859 (47.7), 38239240750 (43.5), 38130563737 (44.5) and
+# 38042987222 (161.5), median 46.1 (43.5-161.5). Kill-matrix lane over 15 completed main
+# push runs 38290483095 (2026-10-12T18:22Z) through 38456457178 (2026-10-13T19:38Z):
+# median 209.0 job-min (187.2-297.0), wall time median 34.7 min. Drop audit: 0.97 job-min
+# (run 38344422811) and 0.67 (run 38366579884), with the Mutation build cache restored.
+# Rejected counterfactual, the push trigger this change removes: on main 115
+# first-parent commits from 2026-10-06T20:00Z to 2026-10-13T20:00Z (16.4 a day), and the
+# 12 completed push runs of 2026-10-13 took 4,006 job-min; push runs per day 2026-10-06 to
+# 2026-10-12 were 19, 14, 11, 14, 20, 2 and 11.
+# Why this header: pack rule ci-wall-clock/heavy-lanes-state-their-daily-minutes asks every
+# heavy lane to state what it costs a day.
 name: Mutation
+run-name: Mutation ${{ inputs.sha || github.sha }}
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - ".changeset/**"
-      - "docs/**"
   workflow_dispatch:
     inputs:
+      sha:
+        description: Commit of main to test. Empty tests the tip of main; any other commit must be in main's history.
+        type: string
+        default: ""
       full:
         description: Re-verify every mutant instead of reusing the incremental cache
         type: boolean
         default: false
       lane:
-        description: Which lane to run. `kill-matrix` runs only the full kill-matrix lane.
+        description: Which lane to run. `kill-matrix` runs the full kill-matrix lane and the drop audit of its matrix; `all` also runs the scoring lane.
         type: choice
         options:
           - all
@@ -23,29 +42,125 @@ on:
   schedule:
     - cron: "17 3 * * *"
 
-concurrency:
-  group: ${{ github.event.head_commit.author.username == 'github-actions[bot]' && format('mutation-release-{0}', github.run_id) || format('mutation-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 permissions:
   contents: read
 
 env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
-  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
+  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
-  INCREMENTAL_REPORTS: |
-    packages/stryker-js/reports/stryker-incremental.json
-    packages/stryker-js-typescript-checker/reports/stryker-incremental.json
-    packages/stryker-js-vitest-runner/reports/stryker-incremental.json
+  INCREMENTAL_REPORTS: packages/**/reports/stryker-incremental.json
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
+  guard:
+    name: guard · main only, and a commit from main's history
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.guard.outputs.sha }}
+    steps:
+      - id: start
+        name: Record the start time
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - id: checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: guard
+        name: Refuse a ref other than main, and a sha outside main's history or older than this lane
+        env:
+          REF: ${{ github.ref }}
+          TIP: ${{ github.sha }}
+          SHA_INPUT: ${{ inputs.sha }}
+          # Every in-repo file the lane's jobs load from the commit they test, besides each
+          # PROJECTS entry's stryker.config.ts: the local actions, the drop audit's verdict
+          # script, the flake that builds the released tarballs, and the install and build
+          # inputs. Extend it when a job loads another file from the tested commit.
+          LANE_FILES: |
+            .github/actions/released-tarballs/action.yml
+            .github/actions/mutation-build-key/action.yml
+            .github/actions/job-report/action.yml
+            scripts/drop-audit-verdict.ts
+            flake.nix
+            flake.lock
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            turbo.json
+        run: |
+          refuse() {
+            {
+              echo "reason=$1"
+              echo "next<<NEXT_EOF"
+              echo "$2"
+              echo "NEXT_EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "$1: $2"
+            exit 1
+          }
+          dispatch='gh workflow run mutation.yml --ref main'
+          if [ "$REF" != refs/heads/main ]; then
+            refuse GUARD_NOT_MAIN "Mutation runs only on refs/heads/main, and this run's ref is $REF. Next action: dispatch it from main ($dispatch). To test a commit of main other than its tip, pass that commit as the sha input ($dispatch -f sha=<commit>)."
+          fi
+          if [ -z "$SHA_INPUT" ]; then
+            sha=$TIP
+          elif ! [[ "$SHA_INPUT" =~ ^[0-9a-f]{7,40}$ ]]; then
+            refuse GUARD_SHA_UNKNOWN "The sha input is not a commit sha (7 to 40 lowercase hex digits); ref $REF. Next action: pass a commit from main's history ($dispatch -f sha=<commit>), or leave sha empty to test the tip of main."
+          elif ! sha=$(git rev-parse --verify --quiet "$SHA_INPUT^{commit}"); then
+            refuse GUARD_SHA_UNKNOWN "The sha input names no commit of this repository; ref $REF. Next action: pass a commit from main's history ($dispatch -f sha=<commit>), or leave sha empty to test the tip of main."
+          elif ! git merge-base --is-ancestor "$sha" origin/main; then
+            refuse GUARD_SHA_NOT_ON_MAIN "The sha input resolves to $sha, which is not an ancestor of origin/main, so it was never on main; ref $REF. Next action: land it on main first, or pass a commit from main's history ($dispatch -f sha=<commit>); an empty sha tests the tip of main."
+          fi
+          if [ -n "$SHA_INPUT" ]; then
+            mapfile -t lane_files < <(sed '/^$/d' <<< "$LANE_FILES"; tr ',' '\n' <<< "$PROJECTS" | sed 's|$|/stryker.config.ts|')
+            carries() {
+              local commit=$1 file
+              for file in "${lane_files[@]}"; do git cat-file -e "$commit:$file" 2>/dev/null || return 1; done
+            }
+            missing=()
+            for file in "${lane_files[@]}"; do git cat-file -e "$sha:$file" 2>/dev/null || missing+=("$file"); done
+            if [ "${#missing[@]}" -gt 0 ]; then
+              # The newest first-parent commit of main that adds a missing file is the earliest
+              # commit that can carry them all; name it only when it does.
+              earliest=
+              for file in "${missing[@]}"; do
+                added=$(git log --first-parent --diff-filter=A --format=%H -1 origin/main -- "$file")
+                if [ -z "$added" ]; then earliest=; break; fi
+                if [ -z "$earliest" ] || git merge-base --is-ancestor "$earliest" "$added"; then earliest=$added; fi
+              done
+              printf -v list '%s, ' "${missing[@]}"
+              lacks="The sha input resolves to $sha, a commit of main older than this lane: it lacks ${list%, }, which the lane's jobs load from the commit they test; ref $REF."
+              if [ -n "$earliest" ] && carries "$earliest"; then
+                refuse GUARD_SHA_PREDATES_LANE "$lacks Next action: pass $earliest, the earliest commit of main that carries them all, or a later one ($dispatch -f sha=$earliest); an empty sha tests the tip of main."
+              fi
+              refuse GUARD_SHA_PREDATES_LANE "$lacks Next action: leave sha empty to test the tip of main ($dispatch)."
+            fi
+          fi
+          {
+            echo "sha=$sha"
+            echo "reason=GUARD_OK"
+          } >> "$GITHUB_OUTPUT"
+          echo "Testing $sha of main (ref $REF)."
+
+      - name: Report the guard
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.guard.outputs.reason || 'GUARD_SETUP_FAILED' }}
+          next-action: ${{ steps.guard.outputs.next || 'A setup step failed before the guard ran; open the first failed step of this job.' }}
+          started-at: ${{ steps.start.outputs.at }}
+
   plan:
     name: plan · shards from the incremental cost record
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    needs: [guard]
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -56,6 +171,8 @@ jobs:
       incrementalKey: ${{ steps.cache-key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
       - id: cache-key
         name: Content key of the incremental report
@@ -101,21 +218,19 @@ jobs:
 
   build:
     name: build · once for every shard
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    needs: [guard]
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
 
-      # Hashed before install, so node_modules and dist never enter the key. Turbo re-hashes
-      # every task's inputs on restore, so a stale or partial cache only costs a rebuild.
       - id: key
-        name: Content key of the build
-        env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
-        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/mutation-build-key
 
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -132,7 +247,7 @@ jobs:
           path: .turbo/cache
           key: ${{ steps.key.outputs.key }}
           restore-keys: |
-            mutation-build-${{ runner.os }}-
+            ${{ steps.key.outputs.prefix }}
 
       - name: Build every mutated project
         run: |
@@ -155,7 +270,7 @@ jobs:
 
   mutation:
     name: mutation · shard ${{ matrix.shard }}
-    needs: [plan, build]
+    needs: [guard, plan, build]
     if: ${{ github.event.inputs.lane != 'kill-matrix' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -164,6 +279,8 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -255,8 +372,8 @@ jobs:
 
   report:
     name: Mutation report
-    needs: [plan, mutation]
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    needs: [guard, plan, mutation]
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && !cancelled() && needs.guard.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -264,6 +381,8 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -378,7 +497,139 @@ jobs:
 
   kill-matrix:
     name: Kill matrix
-    if: ${{ (github.event_name == 'push' && github.event.head_commit.author.username != 'github-actions[bot]') || github.event.inputs.lane == 'kill-matrix' }}
+    needs: [guard]
     permissions:
       contents: read
     uses: ./.github/workflows/kill-matrix.yml
+    with:
+      sha: ${{ needs.guard.outputs.sha }}
+
+  drop-audit:
+    name: drop-audit · audit this run's kill matrix
+    needs: [guard, kill-matrix]
+    if: ${{ !cancelled() && needs.guard.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MATRIX_DIR: kill-matrix
+      MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
+      AUDIT_OUT: reports/audit.json
+    steps:
+      - id: start
+        name: Record the start time
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - id: checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+
+      - id: build-key
+        uses: ./.github/actions/mutation-build-key
+
+      - id: pnpm
+        uses: pnpm/action-setup@v6
+      - id: node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - id: tarballs
+        uses: ./.github/actions/released-tarballs
+      - id: install
+        run: pnpm install --frozen-lockfile
+
+      - id: restore
+        name: Restore the build the build job cached
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.build-key.outputs.key }}
+          restore-keys: |
+            ${{ steps.build-key.outputs.prefix }}
+
+      - id: download
+        name: Download this run's kill matrix (not a verdict; matrix-check judges its outcome)
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.MATRIX_ARTIFACT }}
+          path: ${{ env.MATRIX_DIR }}
+
+      - id: matrix-check
+        name: Check the kill matrix covers the corpus
+        env:
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
+          DOWNLOAD: ${{ steps.download.outcome }}
+        run: node scripts/drop-audit-verdict.ts matrix-check
+
+      - id: build
+        name: Build the CLI and the audited projects
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - id: audit
+        name: stryker audit
+        shell: bash
+        env:
+          NO_COLOR: "1"
+        run: |
+          set +e
+          node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" 2>&1 | tee audit.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - id: judged
+        name: Check the audit judged at least one dropped mutant
+        run: node scripts/drop-audit-verdict.ts judged
+
+      - id: audit-summary
+        name: Copy the audit's output to the summary (report only)
+        if: ${{ !cancelled() && steps.audit.outcome != 'skipped' && hashFiles('audit.txt') != '' }}
+        run: |
+          {
+            echo "#### stryker audit against \`$MATRIX_ARTIFACT\` of this run"
+            echo
+            echo '```text'
+            cat audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: upload
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles(env.AUDIT_OUT) != '' }}
+        with:
+          name: drop-audit-${{ github.run_number }}
+          path: ${{ env.AUDIT_OUT }}
+          retention-days: 14
+          overwrite: true
+
+      - id: verdict
+        name: Verdict of the drop audit
+        if: always()
+        shell: bash
+        env:
+          STEPS: ${{ toJSON(steps) }}
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
+        run: |
+          if ! node scripts/drop-audit-verdict.ts verdict; then
+            {
+              echo 'reason=DROP_AUDIT_UNCLASSIFIED'
+              echo 'next=The verdict script could not run (no checkout or no Node). Next action: open the first failed step of this job.'
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Report the drop audit
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.verdict.outputs.reason }}
+          next-action: ${{ steps.verdict.outputs.next }}
+          started-at: ${{ steps.start.outputs.at }}
