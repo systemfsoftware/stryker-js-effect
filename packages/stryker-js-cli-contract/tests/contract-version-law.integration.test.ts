@@ -417,25 +417,27 @@ const countedCloneOf = (source: string, filter: readonly string[]) =>
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.realPath(yield* fs.makeTempDirectory())
-    const roundTrips = path.join(root, 'round-trips')
-    const uploadPack = path.join(root, 'upload-pack')
-    yield* fs.writeFileString(uploadPack, `#!/bin/sh\necho >> '${roundTrips}'\nexec git-upload-pack "$@"\n`)
-    yield* fs.chmod(uploadPack, 0o755)
-    const clone = path.join(root, 'clone')
-    yield* gitOutput(root, [
-      'clone',
-      '-q',
-      ...filter,
-      '--branch',
-      'main',
-      `--upload-pack=${uploadPack}`,
-      `file://${source}`,
-      clone,
-    ])
-    yield* gitOutput(clone, ['config', 'remote.origin.uploadpack', uploadPack])
-    yield* fs.writeFileString(roundTrips, '')
-    const counted: CountedClone = { root, clone, roundTrips }
-    return counted
+    return yield* Effect.gen(function*() {
+      const roundTrips = path.join(root, 'round-trips')
+      const uploadPack = path.join(root, 'upload-pack')
+      yield* fs.writeFileString(uploadPack, `#!/bin/sh\necho >> '${roundTrips}'\nexec git-upload-pack "$@"\n`)
+      yield* fs.chmod(uploadPack, 0o755)
+      const clone = path.join(root, 'clone')
+      yield* gitOutput(root, [
+        'clone',
+        '-q',
+        ...filter,
+        '--branch',
+        'main',
+        `--upload-pack=${uploadPack}`,
+        `file://${source}`,
+        clone,
+      ])
+      yield* gitOutput(clone, ['config', 'remote.origin.uploadpack', uploadPack])
+      yield* fs.writeFileString(roundTrips, '')
+      const counted: CountedClone = { root, clone, roundTrips }
+      return counted
+    }).pipe(Effect.onError(() => removeRepository(root)))
   }).pipe(Effect.orDie)
 
 const roundTripsOf = (counted: CountedClone) =>
@@ -1170,14 +1172,18 @@ Feature('The released contract documents bound what the workspace may declare ne
           )(
             'source',
             () =>
-              Effect.tap(
+              Effect.flatMap(
                 releasedRepository(['1.1.0', '1.2.0']),
-                (source) => commitsAfterTheRelease(source, '1.2.0', row.commits),
+                (source) =>
+                  commitsAfterTheRelease(source, '1.2.0', row.commits).pipe(
+                    Effect.as(source),
+                    Effect.onError(() => removeRepository(source)),
+                  ),
               ),
           ),
           Given(`${row.clone} of that origin, counting every round trip it makes to the origin after checkout`)(
             'counted',
-            (s) => countedCloneOf(s.source, row.filter),
+            (s) => countedCloneOf(s.source, row.filter).pipe(Effect.onError(() => removeRepository(s.source))),
           ),
           When('the law picks the version commit in that clone')(
             'outcome',
