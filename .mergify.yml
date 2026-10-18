@@ -1,0 +1,20 @@
+# Mergify: policy lives in systemfsoftware/.github (.mergify.yml). This file only names this repo's CI checks.
+extends: .github
+queue_rules:
+  - name: default
+    # Checked on the PR itself before it enters the queue.
+    queue_conditions:
+      - check-success = check
+      - or:
+          - check-success = lint PR commits
+          - check-skipped = lint PR commits
+      - or:
+          - check-success = check / a publishable-package change needs an intent
+          - check-skipped = check / a publishable-package change needs an intent
+      - check-success = flake outputs · x86_64-linux
+      - check-success = flake outputs · aarch64-linux
+    # Checked on Mergify's queue draft PR (mergify/merge-queue/*), i.e. CI on the PR rebased with main and any batch.
+    merge_conditions:
+      - check-success = check
+      - check-success = flake outputs · x86_64-linux
+      - check-success = flake outputs · aarch64-linux
