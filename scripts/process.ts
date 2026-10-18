@@ -4,7 +4,7 @@ export const PERMITTED_SCRATCH_DIR = '/tmp'
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
-export const cleanEnv = (overrides: Readonly<Record<string, string>> = {}): Record<string, string> => {
+const cleanEnv = (overrides: Readonly<Record<string, string>> = {}): Record<string, string> => {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(Deno.env.toObject())) {
     if (key.startsWith('GITHUB_') || key.startsWith('TURBO_')) continue
@@ -20,7 +20,7 @@ export const cleanEnv = (overrides: Readonly<Record<string, string>> = {}): Reco
   return { ...env, ...overrides }
 }
 
-export interface Ran {
+interface Ran {
   readonly code: number
   readonly stdout: string
   readonly stderr: string
@@ -42,7 +42,7 @@ export const git = async (dir: string, args: ReadonlyArray<string>): Promise<Ran
   return ran
 }
 
-export const head = async (dir: string): Promise<string> => (await git(dir, ['rev-parse', 'HEAD'])).stdout.trim()
+const head = async (dir: string): Promise<string> => (await git(dir, ['rev-parse', 'HEAD'])).stdout.trim()
 
 export const commit = async (
   dir: string,
