@@ -44,7 +44,7 @@ describe('corpusEntries', () => {
     { of: [S.String], subject: corpusEntries },
     (subject, [directory]) => {
       const vendored = `repos/${directory}/tsconfig.app.json`
-      const owned = 'packages/stryker-js/tsconfig.app.json'
+      const owned = `packages/${directory}/tsconfig.app.json`
       return subject([vendored, owned]).workspaceTsconfigs.join() === owned
     },
   )
