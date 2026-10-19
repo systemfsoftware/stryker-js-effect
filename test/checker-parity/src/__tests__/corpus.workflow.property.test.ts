@@ -1,7 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as S from 'effect/Schema'
 
-import { checkedOnLeg, ISOLATED_DECLARATIONS_PROJECT, projectOnLeg } from '../corpus.js'
+import { checkedOnLeg, corpusEntries, ISOLATED_DECLARATIONS_PROJECT, projectOnLeg } from '../corpus.js'
 import { ProjectLeg } from '../Parity.schema.js'
 import { inShard } from '../shard.js'
 
@@ -34,6 +34,18 @@ describe('checkedOnLeg', () => {
     (subject, [drawn, name]) => {
       const file = `${FIXTURE_DIRECTORY}${name}`
       return subject({ ...drawn, project: ISOLATED_DECLARATIONS_PROJECT })(file) === inShard(file, drawn.shard)
+    },
+  )
+})
+
+describe('corpusEntries', () => {
+  it.prop(
+    '∀d_VendoredSubtreeTsconfig_≡NotInTheWorkspaceCorpus',
+    { of: [S.String], subject: corpusEntries },
+    (subject, [directory]) => {
+      const vendored = `repos/${directory}/tsconfig.app.json`
+      const owned = 'packages/stryker-js/tsconfig.app.json'
+      return subject([vendored, owned]).workspaceTsconfigs.join() === owned
     },
   )
 })
