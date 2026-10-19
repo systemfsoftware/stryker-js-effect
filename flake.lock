@@ -420,11 +420,11 @@
         "rust-overlay": "rust-overlay_19"
       },
       "locked": {
-        "lastModified": 1791623562,
-        "narHash": "sha256-izDg0irkawru/08NJjNNHGdyp8+Wx81U9IpI8sENklA=",
+        "lastModified": 1791663728,
+        "narHash": "sha256-ggy1StwlilTlhEQdaDiPoJ5L4FOrndRF0BrLS94IdXQ=",
         "owner": "systemfsoftware",
         "repo": "gritlint",
-        "rev": "1d60be38284be2c9a8af73f67334d43a841c9fd7",
+        "rev": "fe886c5073e7a1d3327106fc05702053472325af",
         "type": "github"
       },
       "original": {
@@ -704,11 +704,11 @@
     },
     "nixpkgs_11": {
       "locked": {
-        "lastModified": 1791191277,
-        "narHash": "sha256-i8KuaINOYLvB2oQikGvtRmdZRxATRxsI9Yad2pp7dEA=",
+        "lastModified": 1791456040,
+        "narHash": "sha256-H83yz/do+hjOO0uujHyH8RgtIQP2v7Mw+cLwcZK/xKc=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "aa48d347080940b8a2b8d2f48228674e280a3514",
+        "rev": "e7439b6b14ad3cc35d05608ebca9bce01a25f5f8",
         "type": "github"
       },
       "original": {
@@ -1600,11 +1600,11 @@
         "pnpm-release-management": "pnpm-release-management_6"
       },
       "locked": {
-        "lastModified": 1791631487,
-        "narHash": "sha256-PEKS5YATpwWkZNqMgBRMgoyhQcN0QoDBHc6x5gHeh/g=",
+        "lastModified": 1792116965,
+        "narHash": "sha256-CtLFX0r42HOrpKTMhpwtoOaImffWCq6uK/xiM6aOB1Y=",
         "owner": "systemfsoftware",
         "repo": "systemfsoftware",
-        "rev": "9154691d4bd5c680b8164a9e9301e77518509312",
+        "rev": "a2cb24229020e1881d2a34f9f37be33bb93b5c27",
         "type": "github"
       },
       "original": {
