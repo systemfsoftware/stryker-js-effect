@@ -9,10 +9,13 @@ updates:
       interval: "weekly"
       day: "monday"
     groups:
-      github-actions:
+      github-actions-minor-patch:
         patterns:
           - "*"
 
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: "npm"
     directories:
       - "/"
@@ -106,3 +109,10 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
