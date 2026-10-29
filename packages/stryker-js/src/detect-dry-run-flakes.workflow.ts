@@ -11,26 +11,32 @@ import { type DryRunPass, DryRunPassSchema } from './dry-run-coverage.schema.js'
 const DryRunFlakeDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/DryRunFlakeDecision')
 type DryRunFlakeDecisionTypeId = typeof DryRunFlakeDecisionTypeId
 
-export class DryRunFlakesDetected extends S.TaggedClass<DryRunFlakesDetected>()('DryRunFlakesDetected', {
-  flakyTestIds: S.Array(S.String),
-  flakyMutantIds: S.Array(S.String),
-}) {
+export class DryRunFlakesDetected
+  extends S.TaggedClass<DryRunFlakesDetected, { readonly brand: unique symbol }>()('DryRunFlakesDetected', {
+    flakyTestIds: S.Array(S.String),
+    flakyMutantIds: S.Array(S.String),
+  })
+{
   readonly [DryRunFlakeDecisionTypeId] = DryRunFlakeDecisionTypeId
 }
 
-export class DryRunFlakesAbsent extends S.TaggedClass<DryRunFlakesAbsent>()('DryRunFlakesAbsent', {}) {
+export class DryRunFlakesAbsent
+  extends S.TaggedClass<DryRunFlakesAbsent, { readonly brand: unique symbol }>()('DryRunFlakesAbsent', {})
+{
   readonly [DryRunFlakeDecisionTypeId] = DryRunFlakeDecisionTypeId
 }
 
 export type DryRunFlakeDecision = DryRunFlakesDetected | DryRunFlakesAbsent
 
-export class DetectDryRunFlakesCommand extends S.TaggedClass<DetectDryRunFlakesCommand>()(
-  'DetectDryRunFlakesCommand',
-  {
-    first: DryRunPassSchema,
-    second: DryRunPassSchema,
-  },
-) {
+export class DetectDryRunFlakesCommand
+  extends S.TaggedClass<DetectDryRunFlakesCommand, { readonly brand: unique symbol }>()(
+    'DetectDryRunFlakesCommand',
+    {
+      first: DryRunPassSchema,
+      second: DryRunPassSchema,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

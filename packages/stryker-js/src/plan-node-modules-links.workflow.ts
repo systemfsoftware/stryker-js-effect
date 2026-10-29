@@ -7,24 +7,32 @@ import * as S from 'effect/Schema'
 const PlanNodeModulesLinksTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PlanNodeModulesLinks')
 type PlanNodeModulesLinksTypeId = typeof PlanNodeModulesLinksTypeId
 
-export class NodeModulesSearchCommand extends S.TaggedClass<NodeModulesSearchCommand>()('NodeModulesSearchCommand', {
-  linking: S.Boolean,
-  found: S.Array(S.String),
-}) {
+export class NodeModulesSearchCommand
+  extends S.TaggedClass<NodeModulesSearchCommand, { readonly brand: unique symbol }>()('NodeModulesSearchCommand', {
+    linking: S.Boolean,
+    found: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class NodeModulesNotLinked extends S.TaggedClass<NodeModulesNotLinked>()('NodeModulesNotLinked', {}) {
+export class NodeModulesNotLinked
+  extends S.TaggedClass<NodeModulesNotLinked, { readonly brand: unique symbol }>()('NodeModulesNotLinked', {})
+{
   readonly [PlanNodeModulesLinksTypeId] = PlanNodeModulesLinksTypeId
 }
 
-export class NodeModulesNotFound extends S.TaggedClass<NodeModulesNotFound>()('NodeModulesNotFound', {}) {
+export class NodeModulesNotFound
+  extends S.TaggedClass<NodeModulesNotFound, { readonly brand: unique symbol }>()('NodeModulesNotFound', {})
+{
   readonly [PlanNodeModulesLinksTypeId] = PlanNodeModulesLinksTypeId
 }
 
-export class NodeModulesLinked extends S.TaggedClass<NodeModulesLinked>()('NodeModulesLinked', {
-  nodeModules: S.NonEmptyArray(S.String),
-}) {
+export class NodeModulesLinked
+  extends S.TaggedClass<NodeModulesLinked, { readonly brand: unique symbol }>()('NodeModulesLinked', {
+    nodeModules: S.NonEmptyArray(S.String),
+  })
+{
   readonly [PlanNodeModulesLinksTypeId] = PlanNodeModulesLinksTypeId
 }
 

@@ -37,7 +37,7 @@ const scorePercentageOf = (counts: {
   readonly counted: number
 }): Option.Option<number> => counts.counted > 0 ? Option.some((counts.detected / counts.counted) * 100) : Option.none()
 
-export class Metrics extends S.Class<Metrics>('Metrics')({
+export class Metrics extends S.Class<Metrics, { readonly brand: unique symbol }>('Metrics')({
   pending: NonNegativeInt,
   killed: NonNegativeInt,
   timeout: NonNegativeInt,

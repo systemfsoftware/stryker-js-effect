@@ -5,10 +5,12 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class DryRunObservation extends S.TaggedClass<DryRunObservation>()('DryRunObservation', {
-  dryRunResult: TestRunner.DryRunResultSchema,
-  allowEmpty: S.Boolean,
-}) {
+export class DryRunObservation
+  extends S.TaggedClass<DryRunObservation, { readonly brand: unique symbol }>()('DryRunObservation', {
+    dryRunResult: TestRunner.DryRunResultSchema,
+    allowEmpty: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -19,23 +21,29 @@ const DryRunObservationDecisionTypeId: unique symbol = Symbol.for(
 )
 type DryRunObservationDecisionTypeId = typeof DryRunObservationDecisionTypeId
 
-export class DryRunObservedComplete extends S.TaggedClass<DryRunObservedComplete>()('DryRunObservedComplete', {
-  testCount: S.Finite,
-  failedTestCount: S.Finite,
-  failedTests: S.Array(FailureSummarySchema),
-}) {
+export class DryRunObservedComplete
+  extends S.TaggedClass<DryRunObservedComplete, { readonly brand: unique symbol }>()('DryRunObservedComplete', {
+    testCount: S.Finite,
+    failedTestCount: S.Finite,
+    failedTests: S.Array(FailureSummarySchema),
+  })
+{
   readonly [DryRunObservationDecisionTypeId] = DryRunObservationDecisionTypeId
 }
 
-export class DryRunObservedFailed extends S.TaggedClass<DryRunObservedFailed>()('DryRunObservedFailed', {
-  errorMessage: S.String,
-}) {
+export class DryRunObservedFailed
+  extends S.TaggedClass<DryRunObservedFailed, { readonly brand: unique symbol }>()('DryRunObservedFailed', {
+    errorMessage: S.String,
+  })
+{
   readonly [DryRunObservationDecisionTypeId] = DryRunObservationDecisionTypeId
 }
 
-export class DryRunObservedTimedOut extends S.TaggedClass<DryRunObservedTimedOut>()('DryRunObservedTimedOut', {
-  reason: S.optional(S.String),
-}) {
+export class DryRunObservedTimedOut
+  extends S.TaggedClass<DryRunObservedTimedOut, { readonly brand: unique symbol }>()('DryRunObservedTimedOut', {
+    reason: S.optional(S.String),
+  })
+{
   readonly [DryRunObservationDecisionTypeId] = DryRunObservationDecisionTypeId
 }
 

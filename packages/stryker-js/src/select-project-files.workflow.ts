@@ -410,31 +410,37 @@ const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Mutant.Location)])
 
 const FileDescriptionsSchema = S.Record(S.String, S.Struct({ mutate: MutateDescriptionSchema }))
 
-export class ProjectSelectionCommand extends S.TaggedClass<ProjectSelectionCommand>()('ProjectSelectionCommand', {
-  inputFileNames: S.Array(S.String),
-  mutatePatterns: S.Array(S.String),
-  targetMutatePatterns: S.Array(S.String).pipe(S.optional),
-  diffRanges: S.Array(S.String).pipe(S.optional),
-  testFilePatterns: S.Array(S.String),
-  testFileIgnores: S.Array(S.String).pipe(S.optional),
-  basePath: S.String,
-}) {
+export class ProjectSelectionCommand
+  extends S.TaggedClass<ProjectSelectionCommand, { readonly brand: unique symbol }>()('ProjectSelectionCommand', {
+    inputFileNames: S.Array(S.String),
+    mutatePatterns: S.Array(S.String),
+    targetMutatePatterns: S.Array(S.String).pipe(S.optional),
+    diffRanges: S.Array(S.String).pipe(S.optional),
+    testFilePatterns: S.Array(S.String),
+    testFileIgnores: S.Array(S.String).pipe(S.optional),
+    basePath: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     basePath: 'stryker.project_selection.base_path',
   } as const
 }
 
-export class ProjectFilesDiscovered extends S.TaggedClass<ProjectFilesDiscovered>()('ProjectFilesDiscovered', {
-  fileDescriptions: FileDescriptionsSchema,
-  testFiles: S.Array(S.String),
-}) {
+export class ProjectFilesDiscovered
+  extends S.TaggedClass<ProjectFilesDiscovered, { readonly brand: unique symbol }>()('ProjectFilesDiscovered', {
+    fileDescriptions: FileDescriptionsSchema,
+    testFiles: S.Array(S.String),
+  })
+{
   readonly [ProjectSelectionTypeId] = ProjectSelectionTypeId
 }
 
-export class ProjectFilesNoneDiscovered extends S.TaggedClass<ProjectFilesNoneDiscovered>()(
-  'ProjectFilesNoneDiscovered',
-  {},
-) {
+export class ProjectFilesNoneDiscovered
+  extends S.TaggedClass<ProjectFilesNoneDiscovered, { readonly brand: unique symbol }>()(
+    'ProjectFilesNoneDiscovered',
+    {},
+  )
+{
   readonly [ProjectSelectionTypeId] = ProjectSelectionTypeId
 }
 

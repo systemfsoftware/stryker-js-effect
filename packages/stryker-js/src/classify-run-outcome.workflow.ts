@@ -20,7 +20,9 @@ import {
   RunSurvivorsRejectedObservation,
 } from './RunOutcomeCommand.schema.js'
 
-export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: Plugin.ExitCode }) {
+export class RunExit
+  extends S.TaggedError<RunExit, { readonly brand: unique symbol }>()('RunExit', { code: Plugin.ExitCode })
+{
   override get [Runtime.errorExitCode](): number {
     return this.code
   }
@@ -44,15 +46,17 @@ const classCode = (exitClass: Plugin.ExitClass): number =>
 const RunOutcomeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/RunOutcome')
 type RunOutcomeTypeId = typeof RunOutcomeTypeId
 
-export class RunOk extends S.TaggedClass<RunOk>()('RunOk', {
+export class RunOk extends S.TaggedClass<RunOk, { readonly brand: unique symbol }>()('RunOk', {
   help: S.Boolean,
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
-export class RunInterrupted extends S.TaggedError<RunInterrupted>()('RunInterrupted', {
-  code: Plugin.ExitCode,
-}) {
+export class RunInterrupted
+  extends S.TaggedError<RunInterrupted, { readonly brand: unique symbol }>()('RunInterrupted', {
+    code: Plugin.ExitCode,
+  })
+{
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 
   override get message(): string {
@@ -60,33 +64,39 @@ export class RunInterrupted extends S.TaggedError<RunInterrupted>()('RunInterrup
   }
 }
 
-export class RunParseFailed extends S.TaggedClass<RunParseFailed>()('RunParseFailed', {
-  unrecognized: S.optional(S.String),
-}) {
+export class RunParseFailed
+  extends S.TaggedClass<RunParseFailed, { readonly brand: unique symbol }>()('RunParseFailed', {
+    unrecognized: S.optional(S.String),
+  })
+{
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
-export class RunSurvivorsRejected extends S.TaggedClass<RunSurvivorsRejected>()('RunSurvivorsRejected', {
-  reason: S.Literals(['no-report', 'mismatch']),
-  diagnostic: S.optional(S.String),
-}) {
+export class RunSurvivorsRejected
+  extends S.TaggedClass<RunSurvivorsRejected, { readonly brand: unique symbol }>()('RunSurvivorsRejected', {
+    reason: S.Literals(['no-report', 'mismatch']),
+    diagnostic: S.optional(S.String),
+  })
+{
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
-export class RunConfigFailed extends S.TaggedClass<RunConfigFailed>()('RunConfigFailed', {
-  detail: S.optional(S.String),
-}) {
+export class RunConfigFailed
+  extends S.TaggedClass<RunConfigFailed, { readonly brand: unique symbol }>()('RunConfigFailed', {
+    detail: S.optional(S.String),
+  })
+{
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
-export class RunRefused extends S.TaggedClass<RunRefused>()('RunRefused', {
+export class RunRefused extends S.TaggedClass<RunRefused, { readonly brand: unique symbol }>()('RunRefused', {
   rule: RunEvent.RefusalRule,
   message: S.String,
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
-export class RunFailed extends S.TaggedClass<RunFailed>()('RunFailed', {
+export class RunFailed extends S.TaggedClass<RunFailed, { readonly brand: unique symbol }>()('RunFailed', {
   code: Plugin.ExitCode,
   diagnostic: S.optional(S.String),
 }) {

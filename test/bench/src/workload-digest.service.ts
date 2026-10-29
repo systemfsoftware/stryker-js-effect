@@ -9,9 +9,8 @@ import {
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
-import * as Crypto from 'effect/Crypto'
+import * as Digest from 'effect/crypto/Digest'
 import * as Effect from 'effect/Effect'
-import { Hex } from 'effect/encoding'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
@@ -186,13 +185,10 @@ const digestInput = (entries: ReadonlyArray<DigestFile>): Uint8Array => {
   return buffer
 }
 
-const digestOf = (entries: ReadonlyArray<DigestFile>): Effect.Effect<string, string, Crypto.Crypto> =>
+const digestOf = (entries: ReadonlyArray<DigestFile>): Effect.Effect<string, string, Digest.Digest> =>
   Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
-    return yield* crypto.digest('SHA-256', digestInput(dedupe(entries))).pipe(
-      Effect.map(Hex.encode),
-      Effect.mapError(() => 'sha256 digest failed'),
-    )
+    const digest = yield* Digest.Digest
+    return yield* digest.digestHex(Digest.sha256, digestInput(dedupe(entries)))
   })
 
 const digestOfFound = (
@@ -200,7 +196,7 @@ const digestOfFound = (
   path: Path.Path,
   input: WorkloadDigestInput,
   found: CoveringTestFilesFound,
-): Effect.Effect<string, string, Crypto.Crypto> =>
+): Effect.Effect<string, string, Digest.Digest> =>
   Effect.gen(function*() {
     const workload = yield* readEntries(
       fs,
@@ -219,7 +215,7 @@ const digestFromReport = (
   path: Path.Path,
   input: WorkloadDigestInput,
   reportText: string,
-): Effect.Effect<string, string, Crypto.Crypto> =>
+): Effect.Effect<string, string, Digest.Digest> =>
   Effect.gen(function*() {
     const covered = coveringTestFiles(CoveringTestFilesCommand.make({ report: reportText }))
     if (Result.isFailure(covered)) {
@@ -230,7 +226,7 @@ const digestFromReport = (
 
 export const workloadDigest = (
   input: WorkloadDigestInput,
-): Effect.Effect<WorkloadDigest, never, FileSystem.FileSystem | Path.Path | Crypto.Crypto> =>
+): Effect.Effect<WorkloadDigest, never, FileSystem.FileSystem | Path.Path | Digest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path

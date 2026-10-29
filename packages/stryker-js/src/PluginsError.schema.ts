@@ -3,9 +3,11 @@ import { Schema as S } from 'effect'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
-export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('PluginNotFoundError', {
-  descriptor: S.String,
-}) {
+export class PluginNotFoundError
+  extends S.TaggedError<PluginNotFoundError, { readonly brand: unique symbol }>()('PluginNotFoundError', {
+    descriptor: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
@@ -24,7 +26,7 @@ const FAILURE_EXIT_CLASS: Record<RunEvent.PluginLoadFailureReason['_tag'], Plugi
   ImportFailed: 'InternalError',
 }
 
-export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError>()(
+export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError, { readonly brand: unique symbol }>()(
   'PluginLoadRefusedError',
   {
     descriptor: S.String,

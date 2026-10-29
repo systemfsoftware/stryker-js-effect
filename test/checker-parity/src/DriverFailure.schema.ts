@@ -14,7 +14,7 @@ export const DriverFailureCode = S.Literals([
   'io-failed',
 ])
 
-export class DriverFailure extends S.TaggedError<DriverFailure>()('DriverFailure', {
+export class DriverFailure extends S.TaggedError<DriverFailure, { readonly brand: unique symbol }>()('DriverFailure', {
   schemaVersion: S.Literal(1),
   code: DriverFailureCode,
   reason: S.String,
@@ -25,7 +25,7 @@ export class DriverFailure extends S.TaggedError<DriverFailure>()('DriverFailure
   }
 }
 
-export class ReportedExit extends S.TaggedError<ReportedExit>()('ReportedExit', {
+export class ReportedExit extends S.TaggedError<ReportedExit, { readonly brand: unique symbol }>()('ReportedExit', {
   exitCode: S.Int,
 }) {
   override get message(): string {

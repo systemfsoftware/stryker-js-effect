@@ -5,7 +5,7 @@ import * as S from 'effect/Schema'
 const LegClockTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/LegClock')
 type LegClockTypeId = typeof LegClockTypeId
 
-export class LegElapsed extends S.TaggedClass<LegElapsed>()('LegElapsed', {
+export class LegElapsed extends S.TaggedClass<LegElapsed, { readonly brand: unique symbol }>()('LegElapsed', {
   wallMs: S.Finite.pipe(
     S.check(
       S.isGreaterThanOrEqualTo(0, {
@@ -17,7 +17,9 @@ export class LegElapsed extends S.TaggedClass<LegElapsed>()('LegElapsed', {
   readonly [LegClockTypeId] = LegClockTypeId
 }
 
-export class LegClockBehind extends S.TaggedClass<LegClockBehind>()('LegClockBehind', {}) {
+export class LegClockBehind
+  extends S.TaggedClass<LegClockBehind, { readonly brand: unique symbol }>()('LegClockBehind', {})
+{
   readonly [LegClockTypeId] = LegClockTypeId
 }
 

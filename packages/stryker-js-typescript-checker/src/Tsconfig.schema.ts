@@ -6,16 +6,18 @@ import * as HashSet from 'effect/HashSet'
 import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 
-export class TsConfigParseError extends S.TaggedError<TsConfigParseError>()('TsConfigParseError', {
-  file: S.String,
-  reason: S.String,
-}) {
+export class TsConfigParseError
+  extends S.TaggedError<TsConfigParseError, { readonly brand: unique symbol }>()('TsConfigParseError', {
+    file: S.String,
+    reason: S.String,
+  })
+{
   override get message(): string {
     return `Could not parse tsconfig file '${this.file}': ${this.reason}`
   }
 }
 
-export class TsConfigNotFoundError extends S.TaggedError<TsConfigNotFoundError>()(
+export class TsConfigNotFoundError extends S.TaggedError<TsConfigNotFoundError, { readonly brand: unique symbol }>()(
   'TsConfigNotFoundError',
   {
     file: S.String,

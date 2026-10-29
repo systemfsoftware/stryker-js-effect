@@ -9,16 +9,18 @@ import { VitestDryRunCommand } from './vitest-run-command.schema.js'
 const VitestDryRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestDryRun')
 type VitestDryRunTypeId = typeof VitestDryRunTypeId
 
-export class DryRunComplete extends S.TaggedClass<DryRunComplete>()('Complete', {
+export class DryRunComplete extends S.TaggedClass<DryRunComplete, { readonly brand: unique symbol }>()('Complete', {
   tests: S.Array(TestRunner.TestResultSchema),
 }) {
   readonly [VitestDryRunTypeId] = VitestDryRunTypeId
 }
 
-export class DryRunExternalError extends S.TaggedClass<DryRunExternalError>()('Error', {
-  tests: S.Array(TestRunner.TestResultSchema),
-  errorMessage: S.String,
-}) {
+export class DryRunExternalError
+  extends S.TaggedClass<DryRunExternalError, { readonly brand: unique symbol }>()('Error', {
+    tests: S.Array(TestRunner.TestResultSchema),
+    errorMessage: S.String,
+  })
+{
   readonly [VitestDryRunTypeId] = VitestDryRunTypeId
 }
 

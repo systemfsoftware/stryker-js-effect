@@ -8,7 +8,7 @@ const globalNamespace = inject('globalNamespace') as '__stryker__' | '__stryker2
 const mutantActivation = inject('mutantActivation') as 'runtime' | 'static' | undefined
 const mode = inject('mode') as 'dry-run' | 'mutant'
 
-const ns: Types.Mutable<Instrument.InstrumenterContext> = globalThis[globalNamespace] ??
+const ns: Types.Mutable<Omit<Instrument.InstrumenterContext, 'brand'>> = globalThis[globalNamespace] ??
   (globalThis[globalNamespace] = {})
 
 interface SuiteWithTaskMeta {

@@ -35,18 +35,22 @@ const min = Math.min
 const max = Math.max
 const abs = Math.abs
 
-export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
-  sha: S.String,
-  baseSha: S.String,
-  ref: S.NonEmptyString,
-  runs: S.Array(BenchRun),
-}) {
+export class SummarizeBenchCommand
+  extends S.TaggedClass<SummarizeBenchCommand, { readonly brand: unique symbol }>()('SummarizeBenchCommand', {
+    sha: S.String,
+    baseSha: S.String,
+    ref: S.NonEmptyString,
+    runs: S.Array(BenchRun),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class BenchRunsInvalid extends S.TaggedError<BenchRunsInvalid>()('BenchRunsInvalid', {
-  runs: S.Array(BenchRun),
-}) {
+export class BenchRunsInvalid
+  extends S.TaggedError<BenchRunsInvalid, { readonly brand: unique symbol }>()('BenchRunsInvalid', {
+    runs: S.Array(BenchRun),
+  })
+{
   override get message(): string {
     const labels = Arr.map(this.runs, (run) => run.key.label).join(', ')
     return `cannot summarize ${this.runs.length} invalid bench run(s): ${labels}`

@@ -29,7 +29,7 @@ export const readsEditSites = (importerCheck: ImporterCheck): boolean => importe
 
 // ── command ────────────────────────────────────────────────────────────────
 
-export class CheckMutantsCommand extends S.TaggedClass<CheckMutantsCommand>()(
+export class CheckMutantsCommand extends S.TaggedClass<CheckMutantsCommand, { readonly brand: unique symbol }>()(
   'CheckMutantsCommand',
   {
     mutants: S.Array(Checker.CheckerMutantWire),

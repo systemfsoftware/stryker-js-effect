@@ -8,20 +8,24 @@ import { FixtureKeyRef } from './bake-key.schema.js'
 const entryNameOf = (fixture: { readonly fixtureId: string; readonly key: string }): string =>
   `${fixture.fixtureId}.${fixture.key}`
 
-export class MissingFixturesCommand extends S.TaggedClass<MissingFixturesCommand>()('MissingFixturesCommand', {
-  fixtures: S.Array(FixtureKeyRef),
-  present: S.Array(S.String),
-}) {
+export class MissingFixturesCommand
+  extends S.TaggedClass<MissingFixturesCommand, { readonly brand: unique symbol }>()('MissingFixturesCommand', {
+    fixtures: S.Array(FixtureKeyRef),
+    present: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const MissingFixtureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/MissingFixture')
 type MissingFixtureTypeId = typeof MissingFixtureTypeId
 
-export class MissingFixture extends S.TaggedClass<MissingFixture>()('MissingFixture', {
-  fixtureId: S.String,
-  key: S.String,
-}) {
+export class MissingFixture
+  extends S.TaggedClass<MissingFixture, { readonly brand: unique symbol }>()('MissingFixture', {
+    fixtureId: S.String,
+    key: S.String,
+  })
+{
   readonly [MissingFixtureTypeId] = MissingFixtureTypeId
 }
 

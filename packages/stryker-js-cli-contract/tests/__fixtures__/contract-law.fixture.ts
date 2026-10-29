@@ -64,7 +64,9 @@ const releaseNextOf = (pkg: string): string =>
 
 const baselineFields = { package: S.String, manifest: S.String, version: S.String }
 
-export class NoVersionCommit extends S.TaggedError<NoVersionCommit>()('NoVersionCommit', baselineFields) {
+export class NoVersionCommit
+  extends S.TaggedError<NoVersionCommit, { readonly brand: unique symbol }>()('NoVersionCommit', baselineFields)
+{
   readonly code = 'no-version-commit'
   get reason(): string {
     return `no commit on main's first-parent history sets "version": "${this.version}" in ${this.manifest}, so the commit that released ${this.version} cannot be found`
@@ -74,10 +76,12 @@ export class NoVersionCommit extends S.TaggedError<NoVersionCommit>()('NoVersion
   }
 }
 
-export class HistoryTruncated extends S.TaggedError<HistoryTruncated>()('HistoryTruncated', {
-  ...baselineFields,
-  boundary: S.String,
-}) {
+export class HistoryTruncated
+  extends S.TaggedError<HistoryTruncated, { readonly brand: unique symbol }>()('HistoryTruncated', {
+    ...baselineFields,
+    boundary: S.String,
+  })
+{
   readonly code = 'history-truncated'
   get reason(): string {
     return `the history of this checkout ends at ${this.boundary}, so whether that commit set ${this.version} in ${this.manifest} cannot be read`
@@ -87,10 +91,12 @@ export class HistoryTruncated extends S.TaggedError<HistoryTruncated>()('History
   }
 }
 
-export class VersionUnchanged extends S.TaggedError<VersionUnchanged>()('VersionUnchanged', {
-  ...baselineFields,
-  commit: S.String,
-}) {
+export class VersionUnchanged
+  extends S.TaggedError<VersionUnchanged, { readonly brand: unique symbol }>()('VersionUnchanged', {
+    ...baselineFields,
+    commit: S.String,
+  })
+{
   readonly code = 'version-unchanged'
   get reason(): string {
     return `${this.commit} rewrites the line declaring ${this.version} in ${this.manifest} while its parent already declares ${this.version}, so it cannot be told apart from the commit that released ${this.version}`
@@ -100,11 +106,13 @@ export class VersionUnchanged extends S.TaggedError<VersionUnchanged>()('Version
   }
 }
 
-export class VersionRollback extends S.TaggedError<VersionRollback>()('VersionRollback', {
-  ...baselineFields,
-  commit: S.String,
-  parentVersion: S.String,
-}) {
+export class VersionRollback
+  extends S.TaggedError<VersionRollback, { readonly brand: unique symbol }>()('VersionRollback', {
+    ...baselineFields,
+    commit: S.String,
+    parentVersion: S.String,
+  })
+{
   readonly code = 'version-rollback'
   get reason(): string {
     return `${this.commit} moves ${this.manifest} back from ${this.parentVersion} to ${this.version}, so its documents are not the ones ${this.version} shipped`

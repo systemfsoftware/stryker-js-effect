@@ -28,11 +28,13 @@ import {
   type VacuousReason,
 } from './audit.schema.js'
 
-export class AuditDropsCommand extends S.TaggedClass<AuditDropsCommand>()('AuditDropsCommand', {
-  scope: AuditScope,
-  drops: S.Array(AuditedDrop),
-  matrix: S.Array(MatrixProject),
-}) {
+export class AuditDropsCommand
+  extends S.TaggedClass<AuditDropsCommand, { readonly brand: unique symbol }>()('AuditDropsCommand', {
+    scope: AuditScope,
+    drops: S.Array(AuditedDrop),
+    matrix: S.Array(MatrixProject),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

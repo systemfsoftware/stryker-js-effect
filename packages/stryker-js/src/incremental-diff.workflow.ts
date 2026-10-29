@@ -24,18 +24,20 @@ const NO_PREVIOUS_RECORDS: readonly PreviousReuseRecord[] = []
 const IncrementalDiffTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/IncrementalDiff')
 type IncrementalDiffTypeId = typeof IncrementalDiffTypeId
 
-export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand>()('IncrementalDiffCommand', {
-  currentMutants: S.Array(Mutant.Mutant),
-  previousRecords: S.Array(PreviousReuseRecordSchema),
-  closureDigestsByMutantId: S.Record(Mutant.MutantId, S.String),
-  closureAnalysisFailed: S.Boolean,
-  engineDigest: S.String,
-  mutantSetPolicy: Options.MutantSetPolicy,
-  runInputsDigest: S.String,
-  force: S.Boolean,
-  flakyMutantIds: S.String.pipe(S.Array, S.optional),
-  programDigest: S.optional(S.String),
-}) {
+export class IncrementalDiffCommand
+  extends S.TaggedClass<IncrementalDiffCommand, { readonly brand: unique symbol }>()('IncrementalDiffCommand', {
+    currentMutants: S.Array(Mutant.Mutant),
+    previousRecords: S.Array(PreviousReuseRecordSchema),
+    closureDigestsByMutantId: S.Record(Mutant.MutantId, S.String),
+    closureAnalysisFailed: S.Boolean,
+    engineDigest: S.String,
+    mutantSetPolicy: Options.MutantSetPolicy,
+    runInputsDigest: S.String,
+    force: S.Boolean,
+    flakyMutantIds: S.String.pipe(S.Array, S.optional),
+    programDigest: S.optional(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.incremental_diff.force',
   } as const
@@ -50,26 +52,30 @@ const rememberedFields = {
   killedBy: S.String.pipe(S.Array, S.optional),
 }
 
-export class MutantRememberedIgnored extends S.TaggedClass<MutantRememberedIgnored>()('MutantRemembered', {
-  ...rememberedFields,
-  status: S.Literal('Ignored'),
-  statusReason: Mutant.IgnoreStatusReasonText,
-}) {
+export class MutantRememberedIgnored
+  extends S.TaggedClass<MutantRememberedIgnored, { readonly brand: unique symbol }>()('MutantRemembered', {
+    ...rememberedFields,
+    status: S.Literal('Ignored'),
+    statusReason: Mutant.IgnoreStatusReasonText,
+  })
+{
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
 
-export class MutantRememberedSettled extends S.TaggedClass<MutantRememberedSettled>()('MutantRemembered', {
-  ...rememberedFields,
-  status: Mutant.SettledStatusSchema,
-  statusReason: S.optional(S.String),
-}) {
+export class MutantRememberedSettled
+  extends S.TaggedClass<MutantRememberedSettled, { readonly brand: unique symbol }>()('MutantRemembered', {
+    ...rememberedFields,
+    status: Mutant.SettledStatusSchema,
+    statusReason: S.optional(S.String),
+  })
+{
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
 
 export const MutantRemembered = S.Union([MutantRememberedIgnored, MutantRememberedSettled])
 export type MutantRemembered = typeof MutantRemembered.Type
 
-export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
+export class MutantToRun extends S.TaggedClass<MutantToRun, { readonly brand: unique symbol }>()('MutantToRun', {
   mutant: Mutant.Mutant,
   refusal: ReuseRefusalReasonSchema,
   priorTimeout: S.optional(TimeoutEvidenceSchema),

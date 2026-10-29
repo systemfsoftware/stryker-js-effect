@@ -1,6 +1,6 @@
 import type { Readiness } from '@systemfsoftware/effect-readiness'
 import { Context, type Effect } from 'effect'
-import type * as Crypto from 'effect/Crypto'
+import type * as SecureRandom from 'effect/crypto/SecureRandom'
 import type * as FileSystem from 'effect/FileSystem'
 
 import type { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
@@ -18,7 +18,7 @@ export interface GuestJobsShape {
   ) => Effect.Effect<
     void,
     ExitFailure | GuestJobFailure | GuestSignaledFailure,
-    Crypto.Crypto | FileSystem.FileSystem | Readiness.HostProber
+    SecureRandom.SecureRandom | FileSystem.FileSystem | Readiness.HostProber
   >
 }
 

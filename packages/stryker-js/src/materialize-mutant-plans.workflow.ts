@@ -34,28 +34,34 @@ const EarlyResultPlanSchema = S.Struct({
 const MaterializedPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MaterializedPlan')
 type MaterializedPlanTypeId = typeof MaterializedPlanTypeId
 
-export class MutantRunPlanMaterialized extends S.TaggedClass<MutantRunPlanMaterialized>()('MutantRunPlanMaterialized', {
-  plan: RunPlanSchema,
-}) {
+export class MutantRunPlanMaterialized
+  extends S.TaggedClass<MutantRunPlanMaterialized, { readonly brand: unique symbol }>()('MutantRunPlanMaterialized', {
+    plan: RunPlanSchema,
+  })
+{
   readonly [MaterializedPlanTypeId] = MaterializedPlanTypeId
 }
 
-export class MutantEarlyResultPlanMaterialized extends S.TaggedClass<MutantEarlyResultPlanMaterialized>()(
-  'MutantEarlyResultPlanMaterialized',
-  { plan: EarlyResultPlanSchema },
-) {
+export class MutantEarlyResultPlanMaterialized
+  extends S.TaggedClass<MutantEarlyResultPlanMaterialized, { readonly brand: unique symbol }>()(
+    'MutantEarlyResultPlanMaterialized',
+    { plan: EarlyResultPlanSchema },
+  )
+{
   readonly [MaterializedPlanTypeId] = MaterializedPlanTypeId
 }
 
 export type MaterializedMutantPlan = MutantRunPlanMaterialized | MutantEarlyResultPlanMaterialized
 
-export class MaterializeMutantPlanCommand extends S.TaggedClass<MaterializeMutantPlanCommand>()(
-  'MaterializeMutantPlanCommand',
-  {
-    mutant: Mutant.Mutant,
-    plan: S.Union([PlannedRunMutant, PlannedEarlyResultMutant]),
-  },
-) {
+export class MaterializeMutantPlanCommand
+  extends S.TaggedClass<MaterializeMutantPlanCommand, { readonly brand: unique symbol }>()(
+    'MaterializeMutantPlanCommand',
+    {
+      mutant: Mutant.Mutant,
+      plan: S.Union([PlannedRunMutant, PlannedEarlyResultMutant]),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

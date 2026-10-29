@@ -8,20 +8,24 @@ type KeepTempDirTypeId = typeof KeepTempDirTypeId
 
 const CleanTempDirOption = S.Literals(['always', false, true])
 
-export class TempDirKept extends S.TaggedClass<TempDirKept>()('TempDirKept', {}) {
+export class TempDirKept extends S.TaggedClass<TempDirKept, { readonly brand: unique symbol }>()('TempDirKept', {}) {
   readonly [KeepTempDirTypeId] = KeepTempDirTypeId
 }
 
-export class TempDirRemoved extends S.TaggedClass<TempDirRemoved>()('TempDirRemoved', {}) {
+export class TempDirRemoved
+  extends S.TaggedClass<TempDirRemoved, { readonly brand: unique symbol }>()('TempDirRemoved', {})
+{
   readonly [KeepTempDirTypeId] = KeepTempDirTypeId
 }
 
 export type KeepTempDirOutcome = TempDirKept | TempDirRemoved
 
-export class KeepTempDirCommand extends S.TaggedClass<KeepTempDirCommand>()('KeepTempDirCommand', {
-  cleanTempDir: CleanTempDirOption,
-  failed: S.Boolean,
-}) {
+export class KeepTempDirCommand
+  extends S.TaggedClass<KeepTempDirCommand, { readonly brand: unique symbol }>()('KeepTempDirCommand', {
+    cleanTempDir: CleanTempDirOption,
+    failed: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

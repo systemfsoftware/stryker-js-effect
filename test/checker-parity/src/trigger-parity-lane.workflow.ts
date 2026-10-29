@@ -21,18 +21,20 @@ const SHARED_FILES: ReadonlyArray<string> = [
 
 const SHARED_DIRECTORIES: ReadonlyArray<string> = ['.github/actions/', 'test/e2e/testResources/']
 
-export class TriggerParityLaneCommand extends S.TaggedClass<TriggerParityLaneCommand>()('TriggerParityLaneCommand', {
-  fullCorpus: S.Boolean,
-  closureDirectories: S.Array(S.String),
-  changedFiles: S.Array(S.String),
-}) {
+export class TriggerParityLaneCommand
+  extends S.TaggedClass<TriggerParityLaneCommand, { readonly brand: unique symbol }>()('TriggerParityLaneCommand', {
+    fullCorpus: S.Boolean,
+    closureDirectories: S.Array(S.String),
+    changedFiles: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export const RunReason = S.Literals(['full-corpus', 'closure-changed', 'shared-input-changed'])
 export type RunReason = typeof RunReason.Type
 
-export class RunLane extends S.TaggedClass<RunLane>()('RunLane', {
+export class RunLane extends S.TaggedClass<RunLane, { readonly brand: unique symbol }>()('RunLane', {
   schemaVersion: S.Literal(1),
   reason: RunReason,
   matchedCount: S.Int,
@@ -41,7 +43,7 @@ export class RunLane extends S.TaggedClass<RunLane>()('RunLane', {
   readonly [TriggerTypeId] = TriggerTypeId
 }
 
-export class SkipLane extends S.TaggedClass<SkipLane>()('SkipLane', {
+export class SkipLane extends S.TaggedClass<SkipLane, { readonly brand: unique symbol }>()('SkipLane', {
   schemaVersion: S.Literal(1),
   reason: S.Literal('no-closure-change'),
   changedCount: S.Int,

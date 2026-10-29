@@ -15,10 +15,12 @@ export type MutantSetFacts = typeof MutantSetFactsSchema.Type
 export const MutantSetRuleId = S.Literals(['equivalent-to-original', 'duplicate-at-site'])
 export type MutantSetRuleId = typeof MutantSetRuleId.Type
 
-export class MutantSetPolicyCommand extends S.TaggedClass<MutantSetPolicyCommand>()('MutantSetPolicyCommand', {
-  policy: Options.MutantSetPolicy,
-  candidates: S.Array(MutantSetFactsSchema),
-}) {
+export class MutantSetPolicyCommand
+  extends S.TaggedClass<MutantSetPolicyCommand, { readonly brand: unique symbol }>()('MutantSetPolicyCommand', {
+    policy: Options.MutantSetPolicy,
+    candidates: S.Array(MutantSetFactsSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -27,14 +29,16 @@ const MutantSetOutcomeTypeId: unique symbol = Symbol.for(
 )
 type MutantSetOutcomeTypeId = typeof MutantSetOutcomeTypeId
 
-export class MutantSuppressed extends S.TaggedClass<MutantSuppressed>()('MutantSuppressed', {
-  ruleId: MutantSetRuleId,
-  detail: S.String,
-}) {
+export class MutantSuppressed
+  extends S.TaggedClass<MutantSuppressed, { readonly brand: unique symbol }>()('MutantSuppressed', {
+    ruleId: MutantSetRuleId,
+    detail: S.String,
+  })
+{
   readonly [MutantSetOutcomeTypeId] = MutantSetOutcomeTypeId
 }
 
-export class MutantKept extends S.TaggedClass<MutantKept>()('MutantKept', {}) {
+export class MutantKept extends S.TaggedClass<MutantKept, { readonly brand: unique symbol }>()('MutantKept', {}) {
   readonly [MutantSetOutcomeTypeId] = MutantSetOutcomeTypeId
 }
 

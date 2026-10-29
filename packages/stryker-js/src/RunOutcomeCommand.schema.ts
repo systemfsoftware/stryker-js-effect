@@ -68,8 +68,10 @@ export type RunClassedObservation = typeof RunClassedObservation.Type
 export type RunGenericFailureObservation = typeof RunGenericFailureObservation.Type
 export type RunRefusedObservation = typeof RunRefusedObservation.Type
 
-export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
-  observation: RunOutcomeObservation,
-}) {
+export class RunOutcomeCommand
+  extends S.TaggedClass<RunOutcomeCommand, { readonly brand: unique symbol }>()('RunOutcomeCommand', {
+    observation: RunOutcomeObservation,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

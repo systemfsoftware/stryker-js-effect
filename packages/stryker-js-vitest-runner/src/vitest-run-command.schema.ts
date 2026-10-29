@@ -29,29 +29,33 @@ export const VitestTestRun = S.Struct({
 })
 export type VitestTestRun = S.Schema.Type<typeof VitestTestRun>
 
-export class VitestDryRunCommand extends S.TaggedClass<VitestDryRunCommand>()('VitestDryRunCommand', {
-  projectRoot: S.String,
-  tests: S.Array(TestRunner.TestResultSchema),
-  hasExternalError: S.Boolean,
-  externalErrorText: S.String,
-}) {
+export class VitestDryRunCommand
+  extends S.TaggedClass<VitestDryRunCommand, { readonly brand: unique symbol }>()('VitestDryRunCommand', {
+    projectRoot: S.String,
+    tests: S.Array(TestRunner.TestResultSchema),
+    hasExternalError: S.Boolean,
+    externalErrorText: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     projectRoot: 'stryker.vitest.project_root',
   } as const
 }
 
-export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand>()('VitestMutantRunCommand', {
-  tests: S.Array(TestRunner.TestResultSchema),
-  hasExternalError: S.Boolean,
-  externalErrorText: S.String,
-  hitCount: S.optional(Report.NonNegativeInt),
-  hitLimit: S.optional(Report.NonNegativeInt),
-  reportAllKillers: S.Boolean,
-  activeMutantId: Mutant.MutantId,
-  activeMutantFileName: Mutant.CanonicalFileName,
-  timeoutTrapFile: S.optional(S.String),
-  timeoutTrapMutantId: S.optional(Mutant.MutantId),
-}) {
+export class VitestMutantRunCommand
+  extends S.TaggedClass<VitestMutantRunCommand, { readonly brand: unique symbol }>()('VitestMutantRunCommand', {
+    tests: S.Array(TestRunner.TestResultSchema),
+    hasExternalError: S.Boolean,
+    externalErrorText: S.String,
+    hitCount: S.optional(Report.NonNegativeInt),
+    hitLimit: S.optional(Report.NonNegativeInt),
+    reportAllKillers: S.Boolean,
+    activeMutantId: Mutant.MutantId,
+    activeMutantFileName: Mutant.CanonicalFileName,
+    timeoutTrapFile: S.optional(S.String),
+    timeoutTrapMutantId: S.optional(Mutant.MutantId),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     activeMutantId: 'stryker.vitest.active_mutant_id',
     reportAllKillers: 'stryker.vitest.report_all_killers',

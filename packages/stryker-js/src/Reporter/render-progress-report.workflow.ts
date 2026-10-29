@@ -47,31 +47,39 @@ export const ProgressStateSchema = S.Struct({
 })
 export type ProgressState = typeof ProgressStateSchema.Type
 
-export class ProgressReportCommand extends S.TaggedClass<ProgressReportCommand>()('ProgressReportCommand', {
-  state: ProgressStateSchema,
-  event: S.UndefinedOr(Reporter.ReporterEventUnion),
-  now: S.Finite,
-}) {
+export class ProgressReportCommand
+  extends S.TaggedClass<ProgressReportCommand, { readonly brand: unique symbol }>()('ProgressReportCommand', {
+    state: ProgressStateSchema,
+    event: S.UndefinedOr(Reporter.ReporterEventUnion),
+    now: S.Finite,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { now: 'stryker.report.rendered' } as const
 }
 
-export class ProgressBarTick extends S.TaggedClass<ProgressBarTick>()('ProgressBarTick', {
-  chunk: S.String,
-  state: ProgressStateSchema,
-}) {
+export class ProgressBarTick
+  extends S.TaggedClass<ProgressBarTick, { readonly brand: unique symbol }>()('ProgressBarTick', {
+    chunk: S.String,
+    state: ProgressStateSchema,
+  })
+{
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-export class ProgressLineBreak extends S.TaggedClass<ProgressLineBreak>()('ProgressLineBreak', {
-  chunk: S.String,
-  state: ProgressStateSchema,
-}) {
+export class ProgressLineBreak
+  extends S.TaggedClass<ProgressLineBreak, { readonly brand: unique symbol }>()('ProgressLineBreak', {
+    chunk: S.String,
+    state: ProgressStateSchema,
+  })
+{
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-export class ProgressChunkSuppressed extends S.TaggedClass<ProgressChunkSuppressed>()('ProgressChunkSuppressed', {
-  state: ProgressStateSchema,
-}) {
+export class ProgressChunkSuppressed
+  extends S.TaggedClass<ProgressChunkSuppressed, { readonly brand: unique symbol }>()('ProgressChunkSuppressed', {
+    state: ProgressStateSchema,
+  })
+{
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 

@@ -128,20 +128,22 @@ export type CliRequest =
   | FeedbackRouteRequest
   | McpRouteRequest
 
-export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
-  route: S.Union([
-    S.TaggedStruct('help', {}),
-    MergeRequestSchema,
-    RunRequestSchema,
-    CompareRequestSchema,
-    GateRequestSchema,
-    AnnotateRequestSchema,
-    PlanRequestSchema,
-    AuditRequestSchema,
-    ServeRouteRequestSchema,
-    FeedbackRouteRequestSchema,
-    McpRouteRequestSchema,
-  ]),
-}) {
+export class CliRouteCommand
+  extends S.TaggedClass<CliRouteCommand, { readonly brand: unique symbol }>()('CliRouteCommand', {
+    route: S.Union([
+      S.TaggedStruct('help', {}),
+      MergeRequestSchema,
+      RunRequestSchema,
+      CompareRequestSchema,
+      GateRequestSchema,
+      AnnotateRequestSchema,
+      PlanRequestSchema,
+      AuditRequestSchema,
+      ServeRouteRequestSchema,
+      FeedbackRouteRequestSchema,
+      McpRouteRequestSchema,
+    ]),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

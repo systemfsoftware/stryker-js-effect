@@ -128,10 +128,12 @@ const calleeDetail = (callee: AridCallee): string =>
     }),
   )
 
-export class AridCodeCommand extends S.TaggedClass<AridCodeCommand>()('AridCodeCommand', {
-  policy: Options.MutantSetPolicy,
-  frames: S.Array(AridFrameSchema),
-}) {
+export class AridCodeCommand
+  extends S.TaggedClass<AridCodeCommand, { readonly brand: unique symbol }>()('AridCodeCommand', {
+    policy: Options.MutantSetPolicy,
+    frames: S.Array(AridFrameSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -140,14 +142,16 @@ const AridCodeDecisionTypeId: unique symbol = Symbol.for(
 )
 type AridCodeDecisionTypeId = typeof AridCodeDecisionTypeId
 
-export class AridSuppressed extends S.TaggedClass<AridSuppressed>()('AridSuppressed', {
-  ruleId: AridRuleId,
-  detail: S.String,
-}) {
+export class AridSuppressed
+  extends S.TaggedClass<AridSuppressed, { readonly brand: unique symbol }>()('AridSuppressed', {
+    ruleId: AridRuleId,
+    detail: S.String,
+  })
+{
   readonly [AridCodeDecisionTypeId] = AridCodeDecisionTypeId
 }
 
-export class AridKept extends S.TaggedClass<AridKept>()('AridKept', {}) {
+export class AridKept extends S.TaggedClass<AridKept, { readonly brand: unique symbol }>()('AridKept', {}) {
   readonly [AridCodeDecisionTypeId] = AridCodeDecisionTypeId
 }
 

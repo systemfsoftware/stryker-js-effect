@@ -81,27 +81,29 @@ const isIncluded = (
     true,
   )
 
-export class DiscoveredEntryCommand extends S.TaggedClass<DiscoveredEntryCommand>()('DiscoveredEntryCommand', {
-  ignorePatterns: S.Array(S.String),
-  outputPatterns: S.Array(S.String),
-  outputCaseSensitive: S.Boolean,
-  entryName: S.String,
-  entryPath: S.String,
-  isDirectory: S.Boolean,
-}) {
+export class DiscoveredEntryCommand
+  extends S.TaggedClass<DiscoveredEntryCommand, { readonly brand: unique symbol }>()('DiscoveredEntryCommand', {
+    ignorePatterns: S.Array(S.String),
+    outputPatterns: S.Array(S.String),
+    outputCaseSensitive: S.Boolean,
+    entryName: S.String,
+    entryPath: S.String,
+    isDirectory: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     entryName: 'stryker.discovered_entry.name',
     isDirectory: 'stryker.discovered_entry.is_directory',
   } as const
 }
 
-export class EntryIncluded extends S.TaggedClass<EntryIncluded>()('EntryIncluded', {
+export class EntryIncluded extends S.TaggedClass<EntryIncluded, { readonly brand: unique symbol }>()('EntryIncluded', {
   entryName: S.String,
 }) {
   readonly [DiscoveredEntryTypeId] = DiscoveredEntryTypeId
 }
 
-export class EntryIgnored extends S.TaggedClass<EntryIgnored>()('EntryIgnored', {
+export class EntryIgnored extends S.TaggedClass<EntryIgnored, { readonly brand: unique symbol }>()('EntryIgnored', {
   entryName: S.String,
 }) {
   readonly [DiscoveredEntryTypeId] = DiscoveredEntryTypeId

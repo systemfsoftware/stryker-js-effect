@@ -18,19 +18,25 @@ const swapCase = (name: string) =>
 
 const swapsCaseCleanly = (name: string) => Boolean.every([swapCase(name) !== name, swapCase(swapCase(name)) === name])
 
-export class CaseProbeCommand extends S.TaggedClass<CaseProbeCommand>()('CaseProbeCommand', {
-  names: S.Array(S.String),
-}) {
+export class CaseProbeCommand
+  extends S.TaggedClass<CaseProbeCommand, { readonly brand: unique symbol }>()('CaseProbeCommand', {
+    names: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class CaseProbePairs extends S.TaggedClass<CaseProbePairs>()('CaseProbePairs', {
-  pairs: S.NonEmptyArray(S.Struct({ name: S.String, swapped: S.String })),
-}) {
+export class CaseProbePairs
+  extends S.TaggedClass<CaseProbePairs, { readonly brand: unique symbol }>()('CaseProbePairs', {
+    pairs: S.NonEmptyArray(S.Struct({ name: S.String, swapped: S.String })),
+  })
+{
   readonly [CaseProbeTypeId] = CaseProbeTypeId
 }
 
-export class NoCaseToProbe extends S.TaggedClass<NoCaseToProbe>()('NoCaseToProbe', {}) {
+export class NoCaseToProbe
+  extends S.TaggedClass<NoCaseToProbe, { readonly brand: unique symbol }>()('NoCaseToProbe', {})
+{
   readonly [CaseProbeTypeId] = CaseProbeTypeId
 }
 

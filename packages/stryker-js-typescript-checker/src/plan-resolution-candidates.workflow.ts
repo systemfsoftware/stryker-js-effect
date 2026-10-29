@@ -10,15 +10,19 @@ const ExtensionlessTypeId: unique symbol = Symbol.for(
 )
 type ExtensionlessTypeId = typeof ExtensionlessTypeId
 
-export class ExtensionNamedPath extends S.TaggedClass<ExtensionNamedPath>()('ExtensionNamedPath', {
-  candidates: S.Array(S.String),
-}) {
+export class ExtensionNamedPath
+  extends S.TaggedClass<ExtensionNamedPath, { readonly brand: unique symbol }>()('ExtensionNamedPath', {
+    candidates: S.Array(S.String),
+  })
+{
   readonly [ExtensionlessTypeId] = ExtensionlessTypeId
 }
 
-export class ExtensionlessPath extends S.TaggedClass<ExtensionlessPath>()('ExtensionlessPath', {
-  candidates: S.Array(S.String),
-}) {
+export class ExtensionlessPath
+  extends S.TaggedClass<ExtensionlessPath, { readonly brand: unique symbol }>()('ExtensionlessPath', {
+    candidates: S.Array(S.String),
+  })
+{
   readonly [ExtensionlessTypeId] = ExtensionlessTypeId
 }
 

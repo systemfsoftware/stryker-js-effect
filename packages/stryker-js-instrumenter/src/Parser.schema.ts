@@ -1,17 +1,17 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class ParseFailed
-  extends S.TaggedError<ParseFailed>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/ParseFailed')(
-    'ParseFailed',
-    {
-      fileName: S.String,
-      message: S.String,
-      location: Mutant.Position,
-      cause: S.Defect(),
-    },
-  )
-{
+export class ParseFailed extends S.TaggedError<ParseFailed, { readonly brand: unique symbol }>(
+  '@systemfsoftware/stryker-js-instrumenter/Parser.schema/ParseFailed',
+)(
+  'ParseFailed',
+  {
+    fileName: S.String,
+    message: S.String,
+    location: Mutant.Position,
+    cause: S.Defect(),
+  },
+) {
   override get message(): string {
     return `Failed to parse ${this.fileName} at ${this.location.line}:${this.location.column}: ${this.message}`
   }

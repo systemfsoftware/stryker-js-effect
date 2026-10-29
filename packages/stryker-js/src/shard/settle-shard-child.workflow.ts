@@ -14,23 +14,31 @@ const verdictFailCode: number | undefined = Option.getOrUndefined(
   S.decodeOption(Plugin.ExitCodeFromClass)('VerdictFail'),
 )
 
-export class SettleShardChildCommand extends S.TaggedClass<SettleShardChildCommand>()('SettleShardChildCommand', {
-  exitCode: S.Int,
-}) {
+export class SettleShardChildCommand
+  extends S.TaggedClass<SettleShardChildCommand, { readonly brand: unique symbol }>()('SettleShardChildCommand', {
+    exitCode: S.Int,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ShardChildCompleted extends S.TaggedClass<ShardChildCompleted>()('ShardChildCompleted', {}) {
+export class ShardChildCompleted
+  extends S.TaggedClass<ShardChildCompleted, { readonly brand: unique symbol }>()('ShardChildCompleted', {})
+{
   readonly [SettleShardChildTypeId] = SettleShardChildTypeId
 }
 
-export class ShardChildVerdictFailed extends S.TaggedClass<ShardChildVerdictFailed>()('ShardChildVerdictFailed', {}) {
+export class ShardChildVerdictFailed
+  extends S.TaggedClass<ShardChildVerdictFailed, { readonly brand: unique symbol }>()('ShardChildVerdictFailed', {})
+{
   readonly [SettleShardChildTypeId] = SettleShardChildTypeId
 }
 
-export class ShardChildAborted extends S.TaggedClass<ShardChildAborted>()('ShardChildAborted', {
-  exitCode: S.Int,
-}) {
+export class ShardChildAborted
+  extends S.TaggedClass<ShardChildAborted, { readonly brand: unique symbol }>()('ShardChildAborted', {
+    exitCode: S.Int,
+  })
+{
   readonly [SettleShardChildTypeId] = SettleShardChildTypeId
 }
 

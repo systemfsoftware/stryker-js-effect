@@ -10,20 +10,22 @@ import * as Str from 'effect/String'
 const ReuseTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReuseCachedVerdicts')
 type ReuseTypeId = typeof ReuseTypeId
 
-export class VerdictCacheIdentity extends S.Class<VerdictCacheIdentity>('VerdictCacheIdentity')({
-  schemaVersion: S.Literal(1),
-  bundleHash: S.String,
-  programDigest: S.String,
-  wires: S.Array(Checker.CheckerMutantWire),
-}) {}
+export class VerdictCacheIdentity
+  extends S.Class<VerdictCacheIdentity, { readonly brand: unique symbol }>('VerdictCacheIdentity')({
+    schemaVersion: S.Literal(1),
+    bundleHash: S.String,
+    programDigest: S.String,
+    wires: S.Array(Checker.CheckerMutantWire),
+  })
+{}
 
-export class BatchInterrupts extends S.Class<BatchInterrupts>('BatchInterrupts')({
+export class BatchInterrupts extends S.Class<BatchInterrupts, { readonly brand: unique symbol }>('BatchInterrupts')({
   identity: VerdictCacheIdentity,
   interrupts: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 }) {}
 
 export class ReuseCachedVerdictsCommand
-  extends S.TaggedClass<ReuseCachedVerdictsCommand>()('ReuseCachedVerdictsCommand', {
+  extends S.TaggedClass<ReuseCachedVerdictsCommand, { readonly brand: unique symbol }>()('ReuseCachedVerdictsCommand', {
     current: VerdictCacheIdentity,
     stored: S.NullOr(VerdictCacheIdentity),
   })
@@ -31,7 +33,9 @@ export class ReuseCachedVerdictsCommand
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class VerdictsReused extends S.TaggedClass<VerdictsReused>()('VerdictsReused', {}) {
+export class VerdictsReused
+  extends S.TaggedClass<VerdictsReused, { readonly brand: unique symbol }>()('VerdictsReused', {})
+{
   readonly [ReuseTypeId] = ReuseTypeId
 }
 
@@ -43,7 +47,9 @@ export const FreshReason = S.Literals([
 ])
 export type FreshReason = typeof FreshReason.Type
 
-export class CheckFreshly extends S.TaggedClass<CheckFreshly>()('CheckFreshly', { reason: FreshReason }) {
+export class CheckFreshly
+  extends S.TaggedClass<CheckFreshly, { readonly brand: unique symbol }>()('CheckFreshly', { reason: FreshReason })
+{
   readonly [ReuseTypeId] = ReuseTypeId
 }
 

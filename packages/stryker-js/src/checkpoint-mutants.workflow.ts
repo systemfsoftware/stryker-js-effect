@@ -8,30 +8,36 @@ import * as S from 'effect/Schema'
 const CheckpointRowTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckpointMutantRow')
 type CheckpointRowTypeId = typeof CheckpointRowTypeId
 
-export class CheckpointSettledMutant extends S.TaggedClass<CheckpointSettledMutant>()('CheckpointSettledMutant', {
-  mutant: Mutant.Mutant,
-  status: Mutant.MutantStatusSchema,
-  killedBy: S.String.pipe(S.Array, S.optional),
-}) {
+export class CheckpointSettledMutant
+  extends S.TaggedClass<CheckpointSettledMutant, { readonly brand: unique symbol }>()('CheckpointSettledMutant', {
+    mutant: Mutant.Mutant,
+    status: Mutant.MutantStatusSchema,
+    killedBy: S.String.pipe(S.Array, S.optional),
+  })
+{
   readonly [CheckpointRowTypeId] = CheckpointRowTypeId
 }
 
-export class CheckpointPendingMutant extends S.TaggedClass<CheckpointPendingMutant>()('CheckpointPendingMutant', {
-  mutant: Mutant.Mutant,
-}) {
+export class CheckpointPendingMutant
+  extends S.TaggedClass<CheckpointPendingMutant, { readonly brand: unique symbol }>()('CheckpointPendingMutant', {
+    mutant: Mutant.Mutant,
+  })
+{
   readonly [CheckpointRowTypeId] = CheckpointRowTypeId
 }
 
 export const CheckpointMutantRow = S.Union([CheckpointSettledMutant, CheckpointPendingMutant])
 export type CheckpointMutantRow = typeof CheckpointMutantRow.Type
 
-export class CheckpointMutantsCommand extends S.TaggedClass<CheckpointMutantsCommand>()(
-  'CheckpointMutantsCommand',
-  {
-    plannedMutants: S.Array(Mutant.Mutant),
-    settled: S.Array(CheckpointSettledMutant),
-  },
-) {
+export class CheckpointMutantsCommand
+  extends S.TaggedClass<CheckpointMutantsCommand, { readonly brand: unique symbol }>()(
+    'CheckpointMutantsCommand',
+    {
+      plannedMutants: S.Array(Mutant.Mutant),
+      settled: S.Array(CheckpointSettledMutant),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

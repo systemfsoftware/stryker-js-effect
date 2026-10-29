@@ -19,22 +19,26 @@ import {
 const AnswerTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/AnswerDecision')
 type AnswerTypeId = typeof AnswerTypeId
 
-export class AnswerAssignable extends S.TaggedClass<AnswerAssignable>()('AnswerAssignable', {
-  candidateType: S.String,
-}) {
-  readonly [AnswerTypeId] = AnswerTypeId
-}
-
-export class AnswerNotAssignable extends S.TaggedClass<AnswerNotAssignable>()('AnswerNotAssignable', {
-  candidateType: S.String,
-  contextualType: S.String,
-}) {
-  readonly [AnswerTypeId] = AnswerTypeId
-}
-
-export class AnswerUnknown
-  extends S.TaggedClass<AnswerUnknown>()('AnswerUnknown', { reason: TypeQuery.UnknownReason })
+export class AnswerAssignable
+  extends S.TaggedClass<AnswerAssignable, { readonly brand: unique symbol }>()('AnswerAssignable', {
+    candidateType: S.String,
+  })
 {
+  readonly [AnswerTypeId] = AnswerTypeId
+}
+
+export class AnswerNotAssignable
+  extends S.TaggedClass<AnswerNotAssignable, { readonly brand: unique symbol }>()('AnswerNotAssignable', {
+    candidateType: S.String,
+    contextualType: S.String,
+  })
+{
+  readonly [AnswerTypeId] = AnswerTypeId
+}
+
+export class AnswerUnknown extends S.TaggedClass<AnswerUnknown, { readonly brand: unique symbol }>()('AnswerUnknown', {
+  reason: TypeQuery.UnknownReason,
+}) {
   readonly [AnswerTypeId] = AnswerTypeId
 }
 

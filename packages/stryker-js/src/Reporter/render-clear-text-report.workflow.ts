@@ -52,26 +52,30 @@ export const ClearTextRenderOptions = S.Struct({
 })
 export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
 
-export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand>()('ClearTextReportCommand', {
-  reported: S.optional(Report.MutationTestResult),
-  computed: S.optional(Report.MetricsResultSchema),
-  static: S.optional(Report.StaticClassSummarySchema),
-  render: ClearTextRenderOptions,
-  rendered: S.Boolean,
-}) {
+export class ClearTextReportCommand
+  extends S.TaggedClass<ClearTextReportCommand, { readonly brand: unique symbol }>()('ClearTextReportCommand', {
+    reported: S.optional(Report.MutationTestResult),
+    computed: S.optional(Report.MetricsResultSchema),
+    static: S.optional(Report.StaticClassSummarySchema),
+    render: ClearTextRenderOptions,
+    rendered: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { rendered: 'stryker.report.render' } as const
 }
 
-export class ClearTextReportRendered extends S.TaggedClass<ClearTextReportRendered>()('ClearTextReportRendered', {
-  stdout: S.Array(ReportChunkSchema),
-  diagnostics: S.Array(ReportChunkSchema),
-  stderr: S.Array(ReportChunkSchema),
-}) {
+export class ClearTextReportRendered
+  extends S.TaggedClass<ClearTextReportRendered, { readonly brand: unique symbol }>()('ClearTextReportRendered', {
+    stdout: S.Array(ReportChunkSchema),
+    diagnostics: S.Array(ReportChunkSchema),
+    stderr: S.Array(ReportChunkSchema),
+  })
+{
   readonly [ClearTextReportTypeId] = ClearTextReportTypeId
 }
 
 export class ClearTextReportSuppressed
-  extends S.TaggedClass<ClearTextReportSuppressed>()('ClearTextReportSuppressed', {})
+  extends S.TaggedClass<ClearTextReportSuppressed, { readonly brand: unique symbol }>()('ClearTextReportSuppressed', {})
 {
   readonly [ClearTextReportTypeId] = ClearTextReportTypeId
 }

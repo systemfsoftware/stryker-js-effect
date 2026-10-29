@@ -20,36 +20,44 @@ import { ReportMutant } from './match.schema.js'
 const MatchedAnnotationTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/MatchedAnnotation')
 type MatchedAnnotationTypeId = typeof MatchedAnnotationTypeId
 
-export class MatchedAnnotation extends S.TaggedClass<MatchedAnnotation>()('MatchedAnnotation', {
-  mutant: ReportMutant,
-  annotation: SourcedAnnotation,
-}) {
+export class MatchedAnnotation
+  extends S.TaggedClass<MatchedAnnotation, { readonly brand: unique symbol }>()('MatchedAnnotation', {
+    mutant: ReportMutant,
+    annotation: SourcedAnnotation,
+  })
+{
   readonly [MatchedAnnotationTypeId] = MatchedAnnotationTypeId
 }
 
-export class MatchAnnotationsCommand extends S.TaggedClass<MatchAnnotationsCommand>()('MatchAnnotationsCommand', {
-  slice: S.String,
-  annotations: S.Array(SourcedAnnotation),
-  mutants: S.Array(ReportMutant),
-}) {
+export class MatchAnnotationsCommand
+  extends S.TaggedClass<MatchAnnotationsCommand, { readonly brand: unique symbol }>()('MatchAnnotationsCommand', {
+    slice: S.String,
+    annotations: S.Array(SourcedAnnotation),
+    mutants: S.Array(ReportMutant),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class MutantUnmatched extends S.TaggedError<MutantUnmatched>()('MutantUnmatched', {
-  file: S.String,
-  line: S.Int,
-  column: S.Int,
-  mutator: S.String,
-}) {
+export class MutantUnmatched
+  extends S.TaggedError<MutantUnmatched, { readonly brand: unique symbol }>()('MutantUnmatched', {
+    file: S.String,
+    line: S.Int,
+    column: S.Int,
+    mutator: S.String,
+  })
+{
   override get message(): string {
     return `${this.file}:${this.line}:${this.column}: no annotation covers the ${this.mutator} mutant`
   }
 }
 
-export class AnnotationDangling extends S.TaggedError<AnnotationDangling>()('AnnotationDangling', {
-  file: S.String,
-  line: S.Int,
-}) {
+export class AnnotationDangling
+  extends S.TaggedError<AnnotationDangling, { readonly brand: unique symbol }>()('AnnotationDangling', {
+    file: S.String,
+    line: S.Int,
+  })
+{
   override get message(): string {
     return `${this.file}:${this.line}: the annotation claims no mutant`
   }
@@ -58,13 +66,15 @@ export class AnnotationDangling extends S.TaggedError<AnnotationDangling>()('Ann
 export const AnnotationClaim = S.Struct({ file: S.String, line: S.Int })
 export type AnnotationClaim = typeof AnnotationClaim.Type
 
-export class MutantClaimedTwice extends S.TaggedError<MutantClaimedTwice>()('MutantClaimedTwice', {
-  file: S.String,
-  line: S.Int,
-  column: S.Int,
-  mutator: S.String,
-  claimedBy: S.Array(AnnotationClaim),
-}) {
+export class MutantClaimedTwice
+  extends S.TaggedError<MutantClaimedTwice, { readonly brand: unique symbol }>()('MutantClaimedTwice', {
+    file: S.String,
+    line: S.Int,
+    column: S.Int,
+    mutator: S.String,
+    claimedBy: S.Array(AnnotationClaim),
+  })
+{
   override get message(): string {
     const claims = this.claimedBy.map((claim) => `${claim.file}:${claim.line}`).join(', ')
     return `${this.file}:${this.line}:${this.column}: the ${this.mutator} mutant is claimed at one scope by ${claims}`

@@ -13,12 +13,14 @@ const FormatClaimSchema = S.Struct({
 
 type FormatClaimInput = typeof FormatClaimSchema.Type
 
-export class FormatResolutionCommand extends S.TaggedClass<FormatResolutionCommand>()('FormatResolutionCommand', {
-  fileName: S.String,
-  extension: S.String,
-  formatId: S.optional(S.String),
-  claims: S.Array(FormatClaimSchema),
-}) {
+export class FormatResolutionCommand
+  extends S.TaggedClass<FormatResolutionCommand, { readonly brand: unique symbol }>()('FormatResolutionCommand', {
+    fileName: S.String,
+    extension: S.String,
+    formatId: S.optional(S.String),
+    claims: S.Array(FormatClaimSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -27,16 +29,18 @@ const FormatResolutionTypeId: unique symbol = Symbol.for(
 )
 type FormatResolutionTypeId = typeof FormatResolutionTypeId
 
-export class FormatAssigned extends S.TaggedClass<FormatAssigned>()('FormatAssigned', {
-  fileName: S.String,
-  formatId: S.String,
-  language: S.String,
-  kind: S.Literals(['script', 'embedded']),
-}) {
+export class FormatAssigned
+  extends S.TaggedClass<FormatAssigned, { readonly brand: unique symbol }>()('FormatAssigned', {
+    fileName: S.String,
+    formatId: S.String,
+    language: S.String,
+    kind: S.Literals(['script', 'embedded']),
+  })
+{
   readonly [FormatResolutionTypeId] = FormatResolutionTypeId
 }
 
-export class FormatSkipped extends S.TaggedClass<FormatSkipped>()('FormatSkipped', {
+export class FormatSkipped extends S.TaggedClass<FormatSkipped, { readonly brand: unique symbol }>()('FormatSkipped', {
   fileName: S.String,
   extension: S.String,
   reason: S.String,
@@ -46,11 +50,13 @@ export class FormatSkipped extends S.TaggedClass<FormatSkipped>()('FormatSkipped
 
 export type FormatResolutionDecision = FormatAssigned | FormatSkipped
 
-export class FormatOverrideUnclaimed extends S.TaggedError<FormatOverrideUnclaimed>()('FormatOverrideUnclaimed', {
-  fileName: S.String,
-  formatId: S.String,
-  reason: S.String,
-}) {
+export class FormatOverrideUnclaimed
+  extends S.TaggedError<FormatOverrideUnclaimed, { readonly brand: unique symbol }>()('FormatOverrideUnclaimed', {
+    fileName: S.String,
+    formatId: S.String,
+    reason: S.String,
+  })
+{
   override get message(): string {
     return `Cannot instrument ${this.fileName}: ${this.reason}`
   }

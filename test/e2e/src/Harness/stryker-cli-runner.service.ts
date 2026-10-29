@@ -1,5 +1,6 @@
-import { type Config, Context, type Crypto, type Effect } from 'effect'
+import { type Config, Context, type Effect } from 'effect'
 import type { Scope } from 'effect'
+import type * as SecureRandom from 'effect/crypto/SecureRandom'
 
 import type { ExecResult } from './guest-job.schema.js'
 import type { SandboxForkFailure } from './harness-failure.schema.js'
@@ -21,14 +22,18 @@ export interface StrykerCliRunnerShape {
     warm: Warm.WarmSandbox,
     label: string,
     runEnvironment?: Readonly<Record<string, string>> | undefined,
-  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
+  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, SecureRandom.SecureRandom | Scope.Scope>
   readonly streamRun: (
     args: ReadonlyArray<string>,
     warm: Warm.WarmSandbox,
     label: string,
     runEnvironment: Readonly<Record<string, string>> | undefined,
     interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
-  ) => Effect.Effect<ForkedStreamedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
+  ) => Effect.Effect<
+    ForkedStreamedRun,
+    Config.ConfigError | SandboxForkFailure,
+    SecureRandom.SecureRandom | Scope.Scope
+  >
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(

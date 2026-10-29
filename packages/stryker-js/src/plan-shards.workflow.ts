@@ -37,19 +37,21 @@ const plannedMutantsAreDistinct = S.makeFilter(
 
 const PlannedMutants = S.Array(PlannedMutant).check(plannedMutantsAreDistinct)
 
-export class PlanShardsCommand extends S.TaggedClass<PlanShardsCommand>()('PlanShardsCommand', {
-  targetSeconds: PositiveSeconds,
-  maxShards: S.optional(PositiveInt),
-  mutants: PlannedMutants,
-  dryRunCosts: S.Record(S.String, CostMs),
-}) {
+export class PlanShardsCommand
+  extends S.TaggedClass<PlanShardsCommand, { readonly brand: unique symbol }>()('PlanShardsCommand', {
+    targetSeconds: PositiveSeconds,
+    maxShards: S.optional(PositiveInt),
+    mutants: PlannedMutants,
+    dryRunCosts: S.Record(S.String, CostMs),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const ShardPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PlannedShards')
 type ShardPlanTypeId = typeof ShardPlanTypeId
 
-export class PlannedShard extends S.TaggedClass<PlannedShard>()('PlannedShard', {
+export class PlannedShard extends S.TaggedClass<PlannedShard, { readonly brand: unique symbol }>()('PlannedShard', {
   index: S.Int,
   count: S.Int,
   predictedSeconds: Report.NonNegativeFinite,

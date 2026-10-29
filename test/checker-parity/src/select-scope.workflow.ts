@@ -15,16 +15,18 @@ type SelectScopeTypeId = typeof SelectScopeTypeId
 
 type Wire = Checker.CheckerMutantWire
 
-export class SelectScopeCommand extends S.TaggedClass<SelectScopeCommand>()('SelectScopeCommand', {
-  changedFiles: S.Array(S.String),
-  sampleFile: S.NullOr(S.String),
-  mutants: S.Array(Checker.CheckerMutantWire),
-  settings: ScopeSettings,
-}) {
+export class SelectScopeCommand
+  extends S.TaggedClass<SelectScopeCommand, { readonly brand: unique symbol }>()('SelectScopeCommand', {
+    changedFiles: S.Array(S.String),
+    sampleFile: S.NullOr(S.String),
+    mutants: S.Array(Checker.CheckerMutantWire),
+    settings: ScopeSettings,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ScopeSelected extends S.TaggedClass<ScopeSelected>()('ScopeSelected', {
+export class ScopeSelected extends S.TaggedClass<ScopeSelected, { readonly brand: unique symbol }>()('ScopeSelected', {
   changed: S.Array(Checker.CheckerMutantWire),
   sampled: S.Array(Checker.CheckerMutantWire),
   wires: S.Array(Checker.CheckerMutantWire),
@@ -32,7 +34,9 @@ export class ScopeSelected extends S.TaggedClass<ScopeSelected>()('ScopeSelected
   readonly [SelectScopeTypeId] = SelectScopeTypeId
 }
 
-export class NothingSelected extends S.TaggedClass<NothingSelected>()('NothingSelected', {}) {
+export class NothingSelected
+  extends S.TaggedClass<NothingSelected, { readonly brand: unique symbol }>()('NothingSelected', {})
+{
   readonly [SelectScopeTypeId] = SelectScopeTypeId
 }
 

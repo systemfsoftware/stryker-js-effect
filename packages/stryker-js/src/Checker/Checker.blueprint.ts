@@ -68,7 +68,7 @@ const acquire = Effect.fnUntraced(function*(spec: CheckerSpec) {
         Match.exhaustive,
       )
     ),
-    Effect.tapError(() => Metric.update(checkerProcessCrashes, 1)),
+    Effect.trackErrors(checkerProcessCrashes, () => 1),
   )
   return serviceOf(makeCheckerHandle(client))
 })

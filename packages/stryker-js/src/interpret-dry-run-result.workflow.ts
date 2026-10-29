@@ -8,7 +8,7 @@ import * as S from 'effect/Schema'
 const MutantRunDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantRunDecision')
 type MutantRunDecisionTypeId = typeof MutantRunDecisionTypeId
 
-export class MutantRunErrored extends S.TaggedClass<MutantRunErrored>()('Error', {
+export class MutantRunErrored extends S.TaggedClass<MutantRunErrored, { readonly brand: unique symbol }>()('Error', {
   errorMessage: S.String,
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
@@ -18,7 +18,7 @@ export class MutantRunErrored extends S.TaggedClass<MutantRunErrored>()('Error',
   }
 }
 
-export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', {
+export class MutantRunKilled extends S.TaggedClass<MutantRunKilled, { readonly brand: unique symbol }>()('Killed', {
   failureMessage: S.String,
   killedBy: S.Array(TestRunner.TestId),
   nrOfTests: S.Natural,
@@ -37,10 +37,12 @@ export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', 
   }
 }
 
-export class MutantRunSurvived extends S.TaggedClass<MutantRunSurvived>()('Survived', {
-  nrOfTests: S.Natural,
-  executedTests: S.Array(TestRunner.ExecutedTestSchema),
-}) {
+export class MutantRunSurvived
+  extends S.TaggedClass<MutantRunSurvived, { readonly brand: unique symbol }>()('Survived', {
+    nrOfTests: S.Natural,
+    executedTests: S.Array(TestRunner.ExecutedTestSchema),
+  })
+{
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
   get asResult(): TestRunner.MutantRunResult {
@@ -48,9 +50,11 @@ export class MutantRunSurvived extends S.TaggedClass<MutantRunSurvived>()('Survi
   }
 }
 
-export class MutantRunTimedOut extends S.TaggedClass<MutantRunTimedOut>()('Timeout', {
-  reason: S.optional(S.String),
-}) {
+export class MutantRunTimedOut
+  extends S.TaggedClass<MutantRunTimedOut, { readonly brand: unique symbol }>()('Timeout', {
+    reason: S.optional(S.String),
+  })
+{
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
   get asResult(): TestRunner.MutantRunResult {
@@ -63,10 +67,12 @@ export class MutantRunTimedOut extends S.TaggedClass<MutantRunTimedOut>()('Timeo
 
 export type MutantRunDecision = MutantRunErrored | MutantRunKilled | MutantRunSurvived | MutantRunTimedOut
 
-export class InterpretDryRunResultCommand extends S.TaggedClass<InterpretDryRunResultCommand>()(
-  'InterpretDryRunResultCommand',
-  { dryRunResult: TestRunner.DryRunResultSchema },
-) {
+export class InterpretDryRunResultCommand
+  extends S.TaggedClass<InterpretDryRunResultCommand, { readonly brand: unique symbol }>()(
+    'InterpretDryRunResultCommand',
+    { dryRunResult: TestRunner.DryRunResultSchema },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

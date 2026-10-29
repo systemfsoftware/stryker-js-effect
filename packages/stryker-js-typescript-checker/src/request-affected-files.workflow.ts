@@ -10,13 +10,17 @@ import { RequestAffectedFilesCommand } from './CheckerCommands.schema.js'
 const RequestTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/RequestAffectedFiles')
 type RequestTypeId = typeof RequestTypeId
 
-export class AffectedFilesRequested extends S.TaggedClass<AffectedFilesRequested>()('AffectedFilesRequested', {
-  fileNames: S.Array(S.String),
-}) {
+export class AffectedFilesRequested
+  extends S.TaggedClass<AffectedFilesRequested, { readonly brand: unique symbol }>()('AffectedFilesRequested', {
+    fileNames: S.Array(S.String),
+  })
+{
   readonly [RequestTypeId] = RequestTypeId
 }
 
-export class NoAffectedFileRequested extends S.TaggedClass<NoAffectedFileRequested>()('NoAffectedFileRequested', {}) {
+export class NoAffectedFileRequested
+  extends S.TaggedClass<NoAffectedFileRequested, { readonly brand: unique symbol }>()('NoAffectedFileRequested', {})
+{
   readonly [RequestTypeId] = RequestTypeId
 }
 

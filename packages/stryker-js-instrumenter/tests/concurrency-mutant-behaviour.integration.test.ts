@@ -248,14 +248,11 @@ const freePermits = (sem: Semaphore.Semaphore): Effect.Effect<number> => {
       Semaphore.takeIfAvailable(sem, 1),
       (tookOne) => (tookOne ? drain(taken + 1) : Effect.succeed(taken)),
     )
-  return Effect.flatMap(drain(0), (free) => Effect.as(Semaphore.release(sem, free), free))
+  return Effect.tap(drain(0), (free) => Semaphore.release(sem, free))
 }
 
 const suspendingInner = (started: Deferred.Deferred<void>, gate: Deferred.Deferred<void>): Effect.Effect<number> =>
-  Effect.flatMap(
-    Deferred.succeed(started, undefined),
-    () => Effect.map(Deferred.await(gate), () => RESULT),
-  )
+  Effect.as(Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(gate)), RESULT)
 
 interface RefCase {
   readonly start: number

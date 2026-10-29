@@ -29,11 +29,13 @@ const PlacedMutantSchema = S.Struct({
 })
 export type PlacedMutant = typeof PlacedMutantSchema.Type
 
-export class PlaceMutantsCommand extends S.TaggedClass<PlaceMutantsCommand>()('PlaceMutantsCommand', {
-  fileName: S.String,
-  facts: PlacementFactsSchema,
-  mutants: S.Array(PlacedMutantSchema),
-}) {
+export class PlaceMutantsCommand
+  extends S.TaggedClass<PlaceMutantsCommand, { readonly brand: unique symbol }>()('PlaceMutantsCommand', {
+    fileName: S.String,
+    facts: PlacementFactsSchema,
+    mutants: S.Array(PlacedMutantSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -42,24 +44,28 @@ const PlacementDecisionTypeId: unique symbol = Symbol.for(
 )
 type PlacementDecisionTypeId = typeof PlacementDecisionTypeId
 
-export class ExpressionSite extends S.TaggedClass<ExpressionSite>()('ExpressionSite', {
+export class ExpressionSite
+  extends S.TaggedClass<ExpressionSite, { readonly brand: unique symbol }>()('ExpressionSite', {
+    fileName: S.String,
+    mutantIds: S.Array(Mutant.MutantId),
+  })
+{
+  readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
+}
+
+export class StatementSite extends S.TaggedClass<StatementSite, { readonly brand: unique symbol }>()('StatementSite', {
   fileName: S.String,
   mutantIds: S.Array(Mutant.MutantId),
 }) {
   readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
 }
 
-export class StatementSite extends S.TaggedClass<StatementSite>()('StatementSite', {
-  fileName: S.String,
-  mutantIds: S.Array(Mutant.MutantId),
-}) {
-  readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
-}
-
-export class SwitchCaseSite extends S.TaggedClass<SwitchCaseSite>()('SwitchCaseSite', {
-  fileName: S.String,
-  mutantIds: S.Array(Mutant.MutantId),
-}) {
+export class SwitchCaseSite
+  extends S.TaggedClass<SwitchCaseSite, { readonly brand: unique symbol }>()('SwitchCaseSite', {
+    fileName: S.String,
+    mutantIds: S.Array(Mutant.MutantId),
+  })
+{
   readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
 }
 
@@ -69,21 +75,25 @@ export type PlacementDecision = EditSite
 const ExpectedKindSchema = S.Literals(['an expression', 'a statement', 'a switch case'])
 type ExpectedKind = typeof ExpectedKindSchema.Type
 
-export class MutantKindMismatch extends S.TaggedError<MutantKindMismatch>()('MutantKindMismatch', {
-  fileName: S.String,
-  placer: PlacerNameSchema,
-  mutantId: Mutant.MutantId,
-  mutatorName: MutatorNameSchema,
-  expected: ExpectedKindSchema,
-}) {
+export class MutantKindMismatch
+  extends S.TaggedError<MutantKindMismatch, { readonly brand: unique symbol }>()('MutantKindMismatch', {
+    fileName: S.String,
+    placer: PlacerNameSchema,
+    mutantId: Mutant.MutantId,
+    mutatorName: MutatorNameSchema,
+    expected: ExpectedKindSchema,
+  })
+{
   override get message(): string {
     return `Expected ${this.expected} for mutant ${this.mutantId} (${this.mutatorName}) in ${this.fileName}`
   }
 }
 
-export class NoPlacerClaimsNode extends S.TaggedError<NoPlacerClaimsNode>()('NoPlacerClaimsNode', {
-  fileName: S.String,
-}) {
+export class NoPlacerClaimsNode
+  extends S.TaggedError<NoPlacerClaimsNode, { readonly brand: unique symbol }>()('NoPlacerClaimsNode', {
+    fileName: S.String,
+  })
+{
   override get message(): string {
     return `No placer claims the node in ${this.fileName}`
   }

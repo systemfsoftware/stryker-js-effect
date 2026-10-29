@@ -26,31 +26,39 @@ export type ValidationSchemaDocument<A = unknown> = {
   readonly [key: string]: A
 }
 
-export class ValidateOptionsCommand extends S.TaggedClass<ValidateOptionsCommand>()('ValidateOptionsCommand', {
-  options: S.Record(S.String, S.Unknown),
-  schema: ValidationSchemaDocumentSchema,
-}) {
+export class ValidateOptionsCommand
+  extends S.TaggedClass<ValidateOptionsCommand, { readonly brand: unique symbol }>()('ValidateOptionsCommand', {
+    options: S.Record(S.String, S.Unknown),
+    schema: ValidationSchemaDocumentSchema,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class OptionsValidated extends S.TaggedClass<OptionsValidated>()('OptionsValidated', {
-  options: DecodedOptions,
-  warnings: S.Array(S.String),
-}) {
+export class OptionsValidated
+  extends S.TaggedClass<OptionsValidated, { readonly brand: unique symbol }>()('OptionsValidated', {
+    options: DecodedOptions,
+    warnings: S.Array(S.String),
+  })
+{
   readonly [ValidateOptionsDecisionTypeId] = ValidateOptionsDecisionTypeId
 }
 
-export class OptionsRefused extends S.TaggedClass<OptionsRefused>()('OptionsRefused', {
-  errors: S.Array(S.String),
-  warnings: S.Array(S.String),
-}) {
+export class OptionsRefused
+  extends S.TaggedClass<OptionsRefused, { readonly brand: unique symbol }>()('OptionsRefused', {
+    errors: S.Array(S.String),
+    warnings: S.Array(S.String),
+  })
+{
   readonly [ValidateOptionsDecisionTypeId] = ValidateOptionsDecisionTypeId
 }
 
-export class OptionsUndecodable extends S.TaggedClass<OptionsUndecodable>()('OptionsUndecodable', {
-  message: S.String,
-  warnings: S.Array(S.String),
-}) {
+export class OptionsUndecodable
+  extends S.TaggedClass<OptionsUndecodable, { readonly brand: unique symbol }>()('OptionsUndecodable', {
+    message: S.String,
+    warnings: S.Array(S.String),
+  })
+{
   readonly [ValidateOptionsDecisionTypeId] = ValidateOptionsDecisionTypeId
 }
 
