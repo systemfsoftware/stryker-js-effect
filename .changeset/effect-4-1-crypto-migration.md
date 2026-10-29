@@ -5,7 +5,6 @@
 "@systemfsoftware/stryker-js-instrumenter": patch
 "@systemfsoftware/stryker-js-plugin-interface": patch
 "@systemfsoftware/stryker-js-plugin-runtime": patch
-"@systemfsoftware/stryker-js-cli-contract": patch
 "@systemfsoftware/stryker-js-html-reporter": patch
 ---
 
