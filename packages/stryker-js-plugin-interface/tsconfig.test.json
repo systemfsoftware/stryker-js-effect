@@ -26,7 +26,17 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/platform-node-shared/NodeFileSystem",
+          "@effect/platform-node-shared/NodePath",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/rpc/Rpc",
+          "effect/rpc/RpcGroup",
+          "effect/rpc/RpcMiddleware",
+          "effect/rpc/RpcSchema"
+        ]
       }
     ]
   },

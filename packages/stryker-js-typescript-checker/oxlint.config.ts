@@ -3,7 +3,6 @@ import { defineConfig } from 'oxlint'
 
 export default defineConfig({
   extends: [recommended],
-  overrides: [{ files: ['**/*.ts'], rules: { 'effecttsgo/unstable-api-usage': 'off' } }],
   rules: {
     'effecttsgo/unstable-api-usage': 'off',
     'typescript/no-unnecessary-condition': 'error',

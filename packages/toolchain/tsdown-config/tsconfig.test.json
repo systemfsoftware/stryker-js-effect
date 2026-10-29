@@ -1,6 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": ["@systemfsoftware/tsconfig/tsc/dom/library-monorepo"],
+  "extends": [
+    "@systemfsoftware/tsconfig/tsc/dom/library-monorepo"
+  ],
   "compilerOptions": {
     "composite": true,
     "noEmit": false,
@@ -9,11 +11,16 @@
     "outDir": "node_modules/.cache/tsc/test",
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "effect/Arbitrary"
+        ]
       }
     ]
   },
-  "include": ["tests"],
+  "include": [
+    "tests"
+  ],
   "references": [
     {
       "path": "./tsconfig.app.json"

@@ -25,7 +25,19 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/platform-node-shared/NodeCrypto",
+          "@effect/platform-node/NodeRuntime",
+          "@effect/platform-node/NodeServices",
+          "effect/Arbitrary",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/PlatformError",
+          "effect/crypto/Digest",
+          "effect/process/ChildProcess",
+          "effect/process/ChildProcessSpawner"
+        ]
       }
     ]
   },

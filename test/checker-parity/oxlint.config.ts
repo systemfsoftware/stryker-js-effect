@@ -33,7 +33,6 @@ export default defineConfig({
   },
 
   overrides: [
-    { files: ['**/*.ts'], rules: { 'effecttsgo/unstable-api-usage': 'off' } },
     {
       files: pureCore,
       rules: {

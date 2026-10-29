@@ -12,7 +12,6 @@ export default defineConfig({
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
 
-  overrides: [{ files: ['**/*.ts'], rules: { 'effecttsgo/unstable-api-usage': 'off' } }],
   ignorePatterns: [
     ...(recommended.ignorePatterns ?? []),
     '**/src/generated/**',

@@ -25,7 +25,21 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/PlatformError",
+          "effect/http/Headers",
+          "effect/net/NetAddress",
+          "effect/rpc/Rpc",
+          "effect/rpc/RpcGroup",
+          "effect/rpc/RpcMessage",
+          "effect/rpc/RpcMiddleware",
+          "effect/rpc/RpcSerialization",
+          "effect/rpc/RpcServer",
+          "effect/socket/SocketServer"
+        ]
       }
     ]
   },

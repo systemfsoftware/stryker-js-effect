@@ -18,7 +18,13 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/platform-node/NodeFileSystem",
+          "effect/Arbitrary",
+          "effect/FileSystem",
+          "effect/PlatformError"
+        ]
       }
     ]
   },

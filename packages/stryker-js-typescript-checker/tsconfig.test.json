@@ -18,7 +18,20 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/opentelemetry/NodeSdk",
+          "@effect/platform-node-shared/NodeChildProcessSpawner",
+          "@effect/platform-node-shared/NodeSocketServer",
+          "@effect/platform-node/NodeFileSystem",
+          "@effect/platform-node/NodePath",
+          "@effect/platform-node/NodeRuntime",
+          "effect/Arbitrary",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/process/ChildProcess",
+          "effect/process/ChildProcessSpawner"
+        ]
       }
     ]
   },
