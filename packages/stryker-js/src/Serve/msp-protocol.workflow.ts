@@ -19,52 +19,66 @@ import {
 const MspDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MspDecision')
 type MspDecisionTypeId = typeof MspDecisionTypeId
 
-export class MspConfigureRequested extends S.TaggedClass<MspConfigureRequested>()('MspConfigureRequested', {
-  id: JsonRpcId,
-  configFilePath: S.optionalKey(S.String),
-}) {
+export class MspConfigureRequested
+  extends S.TaggedClass<MspConfigureRequested, { readonly brand: unique symbol }>()('MspConfigureRequested', {
+    id: JsonRpcId,
+    configFilePath: S.optionalKey(S.String),
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspDiscoverRequested extends S.TaggedClass<MspDiscoverRequested>()('MspDiscoverRequested', {
-  id: JsonRpcId,
-  params: DiscoverParams,
-}) {
+export class MspDiscoverRequested
+  extends S.TaggedClass<MspDiscoverRequested, { readonly brand: unique symbol }>()('MspDiscoverRequested', {
+    id: JsonRpcId,
+    params: DiscoverParams,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspMutationTestRequested extends S.TaggedClass<MspMutationTestRequested>()('MspMutationTestRequested', {
-  id: JsonRpcId,
-  params: MutationTestParams,
-}) {
+export class MspMutationTestRequested
+  extends S.TaggedClass<MspMutationTestRequested, { readonly brand: unique symbol }>()('MspMutationTestRequested', {
+    id: JsonRpcId,
+    params: MutationTestParams,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspMethodNotFound extends S.TaggedClass<MspMethodNotFound>()('MspMethodNotFound', {
-  id: JsonRpcId,
-  method: S.String,
-}) {
+export class MspMethodNotFound
+  extends S.TaggedClass<MspMethodNotFound, { readonly brand: unique symbol }>()('MspMethodNotFound', {
+    id: JsonRpcId,
+    method: S.String,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspInvalidParams extends S.TaggedClass<MspInvalidParams>()('MspInvalidParams', {
-  id: JsonRpcId,
-  method: S.String,
-  issue: S.String,
-}) {
+export class MspInvalidParams
+  extends S.TaggedClass<MspInvalidParams, { readonly brand: unique symbol }>()('MspInvalidParams', {
+    id: JsonRpcId,
+    method: S.String,
+    issue: S.String,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspRequestBusy extends S.TaggedClass<MspRequestBusy>()('MspRequestBusy', {
-  id: JsonRpcId,
-  method: S.String,
-}) {
+export class MspRequestBusy
+  extends S.TaggedClass<MspRequestBusy, { readonly brand: unique symbol }>()('MspRequestBusy', {
+    id: JsonRpcId,
+    method: S.String,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
-export class MspNotificationIgnored extends S.TaggedClass<MspNotificationIgnored>()('MspNotificationIgnored', {
-  method: S.String,
-}) {
+export class MspNotificationIgnored
+  extends S.TaggedClass<MspNotificationIgnored, { readonly brand: unique symbol }>()('MspNotificationIgnored', {
+    method: S.String,
+  })
+{
   readonly [MspDecisionTypeId] = MspDecisionTypeId
 }
 
@@ -77,12 +91,14 @@ export type MspDecision =
   | MspRequestBusy
   | MspNotificationIgnored
 
-export class MspRequestCommand extends S.TaggedClass<MspRequestCommand>()('MspRequestCommand', {
-  id: S.optionalKey(JsonRpcId),
-  method: S.String,
-  params: S.optionalKey(S.Json),
-  busy: S.Boolean,
-}) {
+export class MspRequestCommand
+  extends S.TaggedClass<MspRequestCommand, { readonly brand: unique symbol }>()('MspRequestCommand', {
+    id: S.optionalKey(JsonRpcId),
+    method: S.String,
+    params: S.optionalKey(S.Json),
+    busy: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

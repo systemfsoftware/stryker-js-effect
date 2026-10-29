@@ -8,37 +8,45 @@ import * as S from 'effect/Schema'
 
 import { CatalogEntryRef, PlacementWaiver } from './closure.schema.js'
 
-export class PlacementClosureCommand extends S.TaggedClass<PlacementClosureCommand>()('PlacementClosureCommand', {
-  entries: S.Array(CatalogEntryRef),
-  witnessed: S.Array(Mutant.MutatorName),
-  waivers: S.Array(PlacementWaiver),
-}) {
+export class PlacementClosureCommand
+  extends S.TaggedClass<PlacementClosureCommand, { readonly brand: unique symbol }>()('PlacementClosureCommand', {
+    entries: S.Array(CatalogEntryRef),
+    witnessed: S.Array(Mutant.MutatorName),
+    waivers: S.Array(PlacementWaiver),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const PlacementClosureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/PlacementClosure')
 type PlacementClosureTypeId = typeof PlacementClosureTypeId
 
-export class PlacementClosure extends S.TaggedClass<PlacementClosure>()('PlacementClosure', {
-  entries: S.Array(CatalogEntryRef),
-}) {
+export class PlacementClosure
+  extends S.TaggedClass<PlacementClosure, { readonly brand: unique symbol }>()('PlacementClosure', {
+    entries: S.Array(CatalogEntryRef),
+  })
+{
   readonly [PlacementClosureTypeId] = PlacementClosureTypeId
 }
 
-export class PlacementUnwitnessed extends S.TaggedError<PlacementUnwitnessed>()('PlacementUnwitnessed', {
-  name: S.String,
-  tier: S.String,
-}) {
+export class PlacementUnwitnessed
+  extends S.TaggedError<PlacementUnwitnessed, { readonly brand: unique symbol }>()('PlacementUnwitnessed', {
+    entryName: S.String,
+    tier: S.String,
+  })
+{
   override get message(): string {
-    return `the ${this.tier} catalog entry "${this.name}" has neither an annotated witness nor a named waiver`
+    return `the ${this.tier} catalog entry "${this.entryName}" has neither an annotated witness nor a named waiver`
   }
 }
 
-export class PlacementWaiverStale extends S.TaggedError<PlacementWaiverStale>()('PlacementWaiverStale', {
-  name: S.String,
-}) {
+export class PlacementWaiverStale
+  extends S.TaggedError<PlacementWaiverStale, { readonly brand: unique symbol }>()('PlacementWaiverStale', {
+    entryName: S.String,
+  })
+{
   override get message(): string {
-    return `the placement waiver for "${this.name}" names an entry that is witnessed or is not in the catalog`
+    return `the placement waiver for "${this.entryName}" names an entry that is witnessed or is not in the catalog`
   }
 }
 
@@ -65,7 +73,7 @@ const unwitnessedRefusal = (
 ): Result.Result<void, PlacementClosureFailure> =>
   Option.match(Arr.head(unwitnessedOf(command)), {
     onNone: () => Result.succeed(undefined),
-    onSome: (entry) => Result.fail(PlacementUnwitnessed.make({ name: entry.name, tier: entry.tier })),
+    onSome: (entry) => Result.fail(PlacementUnwitnessed.make({ entryName: entry.name, tier: entry.tier })),
   })
 
 const staleWaiverRefusal = (
@@ -73,7 +81,7 @@ const staleWaiverRefusal = (
 ): Result.Result<PlacementClosure, PlacementClosureFailure> =>
   Option.match(Arr.findFirst(command.waivers, (waiver) => waiverIsStale(command, waiver)), {
     onNone: () => Result.succeed(PlacementClosure.make({ entries: [...command.entries] })),
-    onSome: (waiver) => Result.fail(PlacementWaiverStale.make({ name: waiver.name })),
+    onSome: (waiver) => Result.fail(PlacementWaiverStale.make({ entryName: waiver.name })),
   })
 
 const decide = (command: PlacementClosureCommand): Result.Result<PlacementClosure, PlacementClosureFailure> =>

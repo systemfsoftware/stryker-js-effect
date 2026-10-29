@@ -14,9 +14,11 @@ export const CompileErrorProbeSchema = S.Struct({
   files: S.Record(S.String, S.Struct({ mutants: S.Array(S.Struct({ status: S.String })) })),
 })
 
-export class PlanShardsRefused extends S.TaggedError<PlanShardsRefused>()('PlanShardsRefused', {
-  detail: S.String,
-}) {
+export class PlanShardsRefused
+  extends S.TaggedError<PlanShardsRefused, { readonly brand: unique symbol }>()('PlanShardsRefused', {
+    detail: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
   readonly next =
     'Pass --target-seconds above 0 and --max-shards of 1 or more, and name each project directory once in --projects.'

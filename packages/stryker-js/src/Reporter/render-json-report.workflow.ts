@@ -10,23 +10,29 @@ export const JsonReporterName = S.Literal('json')
 const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/JsonReport')
 type JsonReportTypeId = typeof JsonReportTypeId
 
-export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonReportCommand', {
-  reported: S.optional(Report.MutationTestResult),
-  rendered: S.Boolean,
-  debug: S.Boolean,
-  fileName: S.String,
-}) {
+export class JsonReportCommand
+  extends S.TaggedClass<JsonReportCommand, { readonly brand: unique symbol }>()('JsonReportCommand', {
+    reported: S.optional(Report.MutationTestResult),
+    rendered: S.Boolean,
+    debug: S.Boolean,
+    fileName: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { rendered: 'stryker.report.render' } as const
 }
 
-export class JsonReportRendered extends S.TaggedClass<JsonReportRendered>()('JsonReportRendered', {
-  report: Report.MutationTestResult,
-  announceFileName: S.Option(S.String),
-}) {
+export class JsonReportRendered
+  extends S.TaggedClass<JsonReportRendered, { readonly brand: unique symbol }>()('JsonReportRendered', {
+    report: Report.MutationTestResult,
+    announceFileName: S.Option(S.String),
+  })
+{
   readonly [JsonReportTypeId] = JsonReportTypeId
 }
 
-export class JsonReportSuppressed extends S.TaggedClass<JsonReportSuppressed>()('JsonReportSuppressed', {}) {
+export class JsonReportSuppressed
+  extends S.TaggedClass<JsonReportSuppressed, { readonly brand: unique symbol }>()('JsonReportSuppressed', {})
+{
   readonly [JsonReportTypeId] = JsonReportTypeId
 }
 

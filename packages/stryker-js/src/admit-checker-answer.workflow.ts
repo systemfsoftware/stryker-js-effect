@@ -7,15 +7,17 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class CheckerAnsweredUnrequested extends S.TaggedError<CheckerAnsweredUnrequested>()(
-  'CheckerAnsweredUnrequested',
-  {
-    checkerName: S.String,
-    phase: S.Literals(['check', 'group']),
-    unrequestedIds: S.Array(S.String),
-    requestedIds: S.Array(S.String),
-  },
-) {
+export class CheckerAnsweredUnrequested
+  extends S.TaggedError<CheckerAnsweredUnrequested, { readonly brand: unique symbol }>()(
+    'CheckerAnsweredUnrequested',
+    {
+      checkerName: S.String,
+      phase: S.Literals(['check', 'group']),
+      unrequestedIds: S.Array(S.String),
+      requestedIds: S.Array(S.String),
+    },
+  )
+{
   override get message(): string {
     return `Checker "${this.checkerName}" answered about mutants it was not asked about (${this.phase} phase): ${
       this.unrequestedIds.join(', ')
@@ -23,14 +25,16 @@ export class CheckerAnsweredUnrequested extends S.TaggedError<CheckerAnsweredUnr
   }
 }
 
-export class CheckerSkippedRequested extends S.TaggedError<CheckerSkippedRequested>()(
-  'CheckerSkippedRequested',
-  {
-    checkerName: S.String,
-    phase: S.Literals(['check', 'group']),
-    missingIds: S.Array(S.String),
-  },
-) {
+export class CheckerSkippedRequested
+  extends S.TaggedError<CheckerSkippedRequested, { readonly brand: unique symbol }>()(
+    'CheckerSkippedRequested',
+    {
+      checkerName: S.String,
+      phase: S.Literals(['check', 'group']),
+      missingIds: S.Array(S.String),
+    },
+  )
+{
   override get message(): string {
     return `Checker "${this.checkerName}" skipped requested mutants (${this.phase} phase): ${
       this.missingIds.join(', ')
@@ -38,14 +42,16 @@ export class CheckerSkippedRequested extends S.TaggedError<CheckerSkippedRequest
   }
 }
 
-export class CheckerIgnoredWithoutRule extends S.TaggedError<CheckerIgnoredWithoutRule>()(
-  'CheckerIgnoredWithoutRule',
-  {
-    checkerName: S.String,
-    mutantId: S.String,
-    answered: S.String,
-  },
-) {
+export class CheckerIgnoredWithoutRule
+  extends S.TaggedError<CheckerIgnoredWithoutRule, { readonly brand: unique symbol }>()(
+    'CheckerIgnoredWithoutRule',
+    {
+      checkerName: S.String,
+      mutantId: S.String,
+      answered: S.String,
+    },
+  )
+{
   override get message(): string {
     return `Checker "${this.checkerName}" ignored mutant ${this.mutantId} without a reason naming a rule from the ignore-rule vocabulary (\`<rule-id>: <detail>\`): it answered ${this.answered}. Fix the checker to answer \`{ status: 'ignored', reason: 'checker: <why>' }\`, or answer \`passed\` to keep the mutant.`
   }
@@ -53,13 +59,15 @@ export class CheckerIgnoredWithoutRule extends S.TaggedError<CheckerIgnoredWitho
 
 export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedRequested | CheckerIgnoredWithoutRule
 
-export class CheckerCommand extends S.TaggedClass<CheckerCommand>()('CheckerCommand', {
-  checkerName: S.String,
-  requestedIds: S.Array(Mutant.MutantId),
-  phase: S.Literals(['check', 'group']),
-  idGroups: S.String.pipe(S.Array, S.Array, S.optional),
-  answers: S.optional(S.Record(S.String, Checker.CheckAnswerSchema)),
-}) {
+export class CheckerCommand
+  extends S.TaggedClass<CheckerCommand, { readonly brand: unique symbol }>()('CheckerCommand', {
+    checkerName: S.String,
+    requestedIds: S.Array(Mutant.MutantId),
+    phase: S.Literals(['check', 'group']),
+    idGroups: S.String.pipe(S.Array, S.Array, S.optional),
+    answers: S.optional(S.Record(S.String, Checker.CheckAnswerSchema)),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     checkerName: 'stryker.checker.name',
   } as const
@@ -68,17 +76,21 @@ export class CheckerCommand extends S.TaggedClass<CheckerCommand>()('CheckerComm
 const CheckerDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckerDecision')
 type CheckerDecisionTypeId = typeof CheckerDecisionTypeId
 
-export class CheckGroupDecision extends S.TaggedClass<CheckGroupDecision>()('CheckGroupDecision', {
-  groups: S.String.pipe(S.Array, S.Array),
-}) {
+export class CheckGroupDecision
+  extends S.TaggedClass<CheckGroupDecision, { readonly brand: unique symbol }>()('CheckGroupDecision', {
+    groups: S.String.pipe(S.Array, S.Array),
+  })
+{
   readonly [CheckerDecisionTypeId] = CheckerDecisionTypeId
 }
 
 const AdmittedCheckPair = S.Struct({ id: S.String, result: Checker.CheckResultSchema })
 
-export class CheckResultDecision extends S.TaggedClass<CheckResultDecision>()('CheckResultDecision', {
-  pairs: S.Array(AdmittedCheckPair),
-}) {
+export class CheckResultDecision
+  extends S.TaggedClass<CheckResultDecision, { readonly brand: unique symbol }>()('CheckResultDecision', {
+    pairs: S.Array(AdmittedCheckPair),
+  })
+{
   readonly [CheckerDecisionTypeId] = CheckerDecisionTypeId
 }
 

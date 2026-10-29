@@ -89,20 +89,26 @@ type SarifResult = typeof SarifResultSchema.Type
 const SarifReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SarifReportDecision')
 type SarifReportTypeId = typeof SarifReportTypeId
 
-export class SarifReportRendered extends S.TaggedClass<SarifReportRendered>()('SarifReportRendered', {
-  log: SarifLogSchema,
-}) {
+export class SarifReportRendered
+  extends S.TaggedClass<SarifReportRendered, { readonly brand: unique symbol }>()('SarifReportRendered', {
+    log: SarifLogSchema,
+  })
+{
   readonly [SarifReportTypeId] = SarifReportTypeId
 }
 
-export class SarifReportTruncated extends S.TaggedClass<SarifReportTruncated>()('SarifReportTruncated', {
-  log: SarifLogSchema,
-  omitted: S.Natural,
-}) {
+export class SarifReportTruncated
+  extends S.TaggedClass<SarifReportTruncated, { readonly brand: unique symbol }>()('SarifReportTruncated', {
+    log: SarifLogSchema,
+    omitted: S.Natural,
+  })
+{
   readonly [SarifReportTypeId] = SarifReportTypeId
 }
 
-export class SarifReportSuppressed extends S.TaggedClass<SarifReportSuppressed>()('SarifReportSuppressed', {}) {
+export class SarifReportSuppressed
+  extends S.TaggedClass<SarifReportSuppressed, { readonly brand: unique symbol }>()('SarifReportSuppressed', {})
+{
   readonly [SarifReportTypeId] = SarifReportTypeId
 }
 
@@ -118,11 +124,13 @@ export type SarifReported = typeof SarifReported.Type
 export const SarifNotReported = S.TaggedStruct('SarifNotReported', {})
 export type SarifNotReported = typeof SarifNotReported.Type
 
-export class SarifReportCommand extends S.TaggedClass<SarifReportCommand>()('SarifReportCommand', {
-  reported: S.Union([SarifReported, SarifNotReported]),
-  tool: SarifToolSchema,
-  maxResults: S.Natural,
-}) {
+export class SarifReportCommand
+  extends S.TaggedClass<SarifReportCommand, { readonly brand: unique symbol }>()('SarifReportCommand', {
+    reported: S.Union([SarifReported, SarifNotReported]),
+    tool: SarifToolSchema,
+    maxResults: S.Natural,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

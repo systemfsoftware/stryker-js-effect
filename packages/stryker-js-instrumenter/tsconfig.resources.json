@@ -132,6 +132,12 @@
               }
             }
           }
+        ],
+        "allowedUnstableApis": [
+          "@effect/platform-node/NodeFileSystem",
+          "effect/Arbitrary",
+          "effect/FileSystem",
+          "effect/PlatformError"
         ]
       }
     ]

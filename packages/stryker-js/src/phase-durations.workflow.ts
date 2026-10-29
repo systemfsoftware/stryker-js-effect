@@ -14,12 +14,14 @@ import {
   PhaseMarkSchema,
 } from './phase-durations.schema.js'
 
-export class PhaseDurationsCommand extends S.TaggedClass<PhaseDurationsCommand>()('PhaseDurationsCommand', {
-  marks: S.Array(PhaseMarkSchema),
-  elapsedMs: Report.NonNegativeFinite,
-  checkerBusy: S.Array(CheckerBusyIntervalSchema),
-  checkersConfigured: S.Boolean,
-}) {
+export class PhaseDurationsCommand
+  extends S.TaggedClass<PhaseDurationsCommand, { readonly brand: unique symbol }>()('PhaseDurationsCommand', {
+    marks: S.Array(PhaseMarkSchema),
+    elapsedMs: Report.NonNegativeFinite,
+    checkerBusy: S.Array(CheckerBusyIntervalSchema),
+    checkersConfigured: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     elapsedMs: 'stryker.phase_durations.elapsed_ms',
     checkersConfigured: 'stryker.phase_durations.checkers_configured',
@@ -29,15 +31,19 @@ export class PhaseDurationsCommand extends S.TaggedClass<PhaseDurationsCommand>(
 const PhaseDurationsDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PhaseDurationsDecision')
 type PhaseDurationsDecisionTypeId = typeof PhaseDurationsDecisionTypeId
 
-export class PhaseDurationsComputed extends S.TaggedClass<PhaseDurationsComputed>()('PhaseDurationsComputed', {
-  durations: RunEvent.PhaseDurations,
-}) {
+export class PhaseDurationsComputed
+  extends S.TaggedClass<PhaseDurationsComputed, { readonly brand: unique symbol }>()('PhaseDurationsComputed', {
+    durations: RunEvent.PhaseDurations,
+  })
+{
   readonly [PhaseDurationsDecisionTypeId] = PhaseDurationsDecisionTypeId
 }
 
-export class PhaseMarksMissing extends S.TaggedClass<PhaseMarksMissing>()('PhaseMarksMissing', {
-  phases: S.Array(RunEvent.RunPhase),
-}) {
+export class PhaseMarksMissing
+  extends S.TaggedClass<PhaseMarksMissing, { readonly brand: unique symbol }>()('PhaseMarksMissing', {
+    phases: S.Array(RunEvent.RunPhase),
+  })
+{
   readonly [PhaseDurationsDecisionTypeId] = PhaseDurationsDecisionTypeId
 }
 

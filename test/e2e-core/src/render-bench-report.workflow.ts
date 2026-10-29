@@ -29,9 +29,11 @@ import {
   Workload,
 } from './bench-summary.schema.js'
 
-export class RenderBenchReportCommand extends S.TaggedClass<RenderBenchReportCommand>()('RenderBenchReportCommand', {
-  report: BenchReport,
-}) {
+export class RenderBenchReportCommand
+  extends S.TaggedClass<RenderBenchReportCommand, { readonly brand: unique symbol }>()('RenderBenchReportCommand', {
+    report: BenchReport,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

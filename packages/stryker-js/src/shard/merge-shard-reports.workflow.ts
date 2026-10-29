@@ -42,22 +42,28 @@ export const MergedShardProject = S.Struct({
 })
 export type MergedShardProject = typeof MergedShardProject.Type
 
-export class MergeShardReportsCommand extends S.Class<MergeShardReportsCommand>('MergeShardReportsCommand')({
-  shards: S.Array(PlannedShard),
-  reports: S.Array(ReportedShardProject),
-}) {
+export class MergeShardReportsCommand
+  extends S.Class<MergeShardReportsCommand, { readonly brand: unique symbol }>('MergeShardReportsCommand')({
+    shards: S.Array(PlannedShard),
+    reports: S.Array(ReportedShardProject),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class MergedShardReports extends S.TaggedClass<MergedShardReports>()('MergedShardReports', {
-  projects: S.Array(MergedShardProject),
-}) {
+export class MergedShardReports
+  extends S.TaggedClass<MergedShardReports, { readonly brand: unique symbol }>()('MergedShardReports', {
+    projects: S.Array(MergedShardProject),
+  })
+{
   readonly [MergeShardReportsTypeId] = MergeShardReportsTypeId
 }
 
-export class ShardReportGap extends S.TaggedError<ShardReportGap>()('ShardReportGap', {
-  mutants: S.Array(S.String),
-}) {
+export class ShardReportGap
+  extends S.TaggedError<ShardReportGap, { readonly brand: unique symbol }>()('ShardReportGap', {
+    mutants: S.Array(S.String),
+  })
+{
   readonly [MergeShardReportsTypeId] = MergeShardReportsTypeId
 
   override get message(): string {
@@ -65,9 +71,11 @@ export class ShardReportGap extends S.TaggedError<ShardReportGap>()('ShardReport
   }
 }
 
-export class ShardReportOverlap extends S.TaggedError<ShardReportOverlap>()('ShardReportOverlap', {
-  mutants: S.Array(S.String),
-}) {
+export class ShardReportOverlap
+  extends S.TaggedError<ShardReportOverlap, { readonly brand: unique symbol }>()('ShardReportOverlap', {
+    mutants: S.Array(S.String),
+  })
+{
   readonly [MergeShardReportsTypeId] = MergeShardReportsTypeId
 
   override get message(): string {

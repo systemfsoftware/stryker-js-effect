@@ -11,7 +11,7 @@ type BreakThreshold = JudgeMutationScoreCommand['breakingThreshold']
 const thresholdExceeds = (percentage: number, threshold: number): boolean => Math.sign(threshold - percentage) === 1
 
 const expectedJudgement = (score: Report.MutationScore, breakingThreshold: BreakThreshold): object =>
-  Report.MutationScore.match<object>(score, {
+  Report.MutationScore.match(score, {
     Scored: ({ percentage }) =>
       Match.valueTags(breakingThreshold, {
         NoBreakThreshold: () => ({ _tag: 'ScoredWithoutThreshold', percentage, exitClass: null }),

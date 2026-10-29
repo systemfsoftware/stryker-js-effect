@@ -30,25 +30,34 @@ export const TsconfigParsed = S.TaggedStruct('TsconfigParsed', {
 })
 
 export class RewriteSandboxTsconfigCommand
-  extends S.TaggedClass<RewriteSandboxTsconfigCommand>()('RewriteSandboxTsconfigCommand', {
-    tsconfig: S.Union([TsconfigMissing, TsconfigUnparsable, TsconfigParsed]),
-  })
+  extends S.TaggedClass<RewriteSandboxTsconfigCommand, { readonly brand: unique symbol }>()(
+    'RewriteSandboxTsconfigCommand',
+    {
+      tsconfig: S.Union([TsconfigMissing, TsconfigUnparsable, TsconfigParsed]),
+    },
+  )
 {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class TsconfigSkipped extends S.TaggedClass<TsconfigSkipped>()('TsconfigSkipped', {}) {
+export class TsconfigSkipped
+  extends S.TaggedClass<TsconfigSkipped, { readonly brand: unique symbol }>()('TsconfigSkipped', {})
+{
   readonly [RewriteSandboxTsconfigTypeId] = RewriteSandboxTsconfigTypeId
 }
 
-export class TsconfigKept extends S.TaggedClass<TsconfigKept>()('TsconfigKept', { reason: S.String }) {
+export class TsconfigKept
+  extends S.TaggedClass<TsconfigKept, { readonly brand: unique symbol }>()('TsconfigKept', { reason: S.String })
+{
   readonly [RewriteSandboxTsconfigTypeId] = RewriteSandboxTsconfigTypeId
 }
 
-export class TsconfigRewritten extends S.TaggedClass<TsconfigRewritten>()('TsconfigRewritten', {
-  config: TsConfigSchema,
-  follow: S.Array(S.String),
-}) {
+export class TsconfigRewritten
+  extends S.TaggedClass<TsconfigRewritten, { readonly brand: unique symbol }>()('TsconfigRewritten', {
+    config: TsConfigSchema,
+    follow: S.Array(S.String),
+  })
+{
   readonly [RewriteSandboxTsconfigTypeId] = RewriteSandboxTsconfigTypeId
 }
 

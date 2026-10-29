@@ -11,7 +11,7 @@ import { fileIdsOf } from './FileIds.schema.js'
 const GroupingTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/Grouping')
 type GroupingTypeId = typeof GroupingTypeId
 
-export class MutantGroup extends S.TaggedClass<MutantGroup>()('MutantGroup', {
+export class MutantGroup extends S.TaggedClass<MutantGroup, { readonly brand: unique symbol }>()('MutantGroup', {
   ids: S.Array(S.String),
 }) {
   readonly [GroupingTypeId] = GroupingTypeId

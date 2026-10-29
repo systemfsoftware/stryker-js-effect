@@ -89,9 +89,9 @@
     "vitest": "catalog:"
   },
   "inlinedDependencies": {
-    "@effect/opentelemetry": "4.0.0",
-    "@effect/platform-node": "4.0.0",
-    "@effect/platform-node-shared": "4.0.0",
+    "@effect/opentelemetry": "4.1.0",
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@eslint-community/regexpp": "4.12.2",
     "@jsr/std__jsonc": "1.0.2",
     "@noble/hashes": "2.4.0",
@@ -110,9 +110,8 @@
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@systemfsoftware/effect-cell-types": "12.0.0",
-    "effect": "4.0.0",
-    "oxc-parser": "0.150.0",
-    "ws": "8.22.0"
+    "effect": "4.1.0",
+    "oxc-parser": "0.150.0"
   },
   "publishConfig": {
     "access": "public",

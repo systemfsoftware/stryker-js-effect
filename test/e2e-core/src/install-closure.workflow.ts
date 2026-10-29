@@ -9,41 +9,49 @@ import * as S from 'effect/Schema'
 
 import { type PackedManifest, PackedMember, StagedFixtureManifest } from './install-closure.schema.js'
 
-export class InstallClosureCommand extends S.TaggedClass<InstallClosureCommand>()('InstallClosureCommand', {
-  members: S.Array(PackedMember),
-  fixtures: S.Array(StagedFixtureManifest),
-  workspace: S.Array(S.String),
-}) {
+export class InstallClosureCommand
+  extends S.TaggedClass<InstallClosureCommand, { readonly brand: unique symbol }>()('InstallClosureCommand', {
+    members: S.Array(PackedMember),
+    fixtures: S.Array(StagedFixtureManifest),
+    workspace: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const ClosureInstallTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/ClosureInstall')
 type ClosureInstallTypeId = typeof ClosureInstallTypeId
 
-export class ClosureInstall extends S.TaggedClass<ClosureInstall>()('ClosureInstall', {
-  specs: S.Array(S.String),
-  dependencies: S.Record(S.String, S.String),
-}) {
+export class ClosureInstall
+  extends S.TaggedClass<ClosureInstall, { readonly brand: unique symbol }>()('ClosureInstall', {
+    specs: S.Array(S.String),
+    dependencies: S.Record(S.String, S.String),
+  })
+{
   readonly [ClosureInstallTypeId] = ClosureInstallTypeId
 }
 
-export class UnpackedWorkspaceDependency extends S.TaggedError<UnpackedWorkspaceDependency>()(
-  'UnpackedWorkspaceDependency',
-  {
-    dependent: S.String,
-    dependency: S.String,
-    target: S.String,
-  },
-) {
+export class UnpackedWorkspaceDependency
+  extends S.TaggedError<UnpackedWorkspaceDependency, { readonly brand: unique symbol }>()(
+    'UnpackedWorkspaceDependency',
+    {
+      dependent: S.String,
+      dependency: S.String,
+      target: S.String,
+    },
+  )
+{
   override get message(): string {
     return `${this.dependent} depends on the workspace package ${this.target} as "${this.dependency}", but the packed closure carries no tarball for it, so npm would resolve it from the registry`
   }
 }
 
-export class ConflictingAliasTargets extends S.TaggedError<ConflictingAliasTargets>()('ConflictingAliasTargets', {
-  dependency: S.String,
-  targets: S.Array(S.String),
-}) {
+export class ConflictingAliasTargets
+  extends S.TaggedError<ConflictingAliasTargets, { readonly brand: unique symbol }>()('ConflictingAliasTargets', {
+    dependency: S.String,
+    targets: S.Array(S.String),
+  })
+{
   override get message(): string {
     return `the packed closure installs "${this.dependency}" as more than one package (${
       this.targets.join(', ')
@@ -51,14 +59,16 @@ export class ConflictingAliasTargets extends S.TaggedError<ConflictingAliasTarge
   }
 }
 
-export class FixtureNamesWorkspacePackage extends S.TaggedError<FixtureNamesWorkspacePackage>()(
-  'FixtureNamesWorkspacePackage',
-  {
-    fixture: S.String,
-    dependency: S.String,
-    target: S.String,
-  },
-) {
+export class FixtureNamesWorkspacePackage
+  extends S.TaggedError<FixtureNamesWorkspacePackage, { readonly brand: unique symbol }>()(
+    'FixtureNamesWorkspacePackage',
+    {
+      fixture: S.String,
+      dependency: S.String,
+      target: S.String,
+    },
+  )
+{
   override get message(): string {
     return `${this.fixture} depends on the workspace package ${this.target} as "${this.dependency}", but the fixture's own npm install resolves it from the registry; the bake installs the packed closure into every fixture, so drop the edge`
   }

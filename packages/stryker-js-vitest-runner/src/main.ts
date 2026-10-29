@@ -1,6 +1,6 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { NodeFileSystem, NodePath, NodeSocketServer } from '@effect/platform-node'
-import { layer as NodeCryptoLayer } from '@effect/platform-node/NodeCrypto'
+import { layerSecureRandom as NodeCryptoLayer } from '@effect/platform-node/NodeCrypto'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'

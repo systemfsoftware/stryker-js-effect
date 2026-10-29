@@ -723,7 +723,11 @@ export const dryRunCell: Cell.Cell<InstrumentDone, DryRunDone, StageError, Stage
 )(readDryRun).decide(dryRun).write({
   DryRunPassed: (_decision, raw) => writeDryRunPassed(raw),
   DryRunFailed: ({ testCount, failedTestCount, failedTests }, _raw) =>
-    writeDryRunFailed({ testCount, failedTestCount, failedTests }),
+    writeDryRunFailed({
+      testCount,
+      failedTestCount,
+      failedTests: failedTests.map(({ failureMessage, name }) => FailedTestSummary.make({ failureMessage, name })),
+    }),
   DryRunError: ({ stage, reason }) =>
     Effect.fail(StageError.make({ stage, reason, cause: DryRunError.make({ stage, reason }) })),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'dryRun', reason: issue })),

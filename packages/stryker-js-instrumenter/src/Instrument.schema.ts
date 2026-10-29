@@ -5,15 +5,15 @@ import * as S from 'effect/Schema'
 import { MutatorNameSchema } from './directives/directive.schema.js'
 import type { MutatorSelection } from './Mutator.service.js'
 
-export class InstrumentError
-  extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
-    'InstrumentError',
-    {
-      message: S.String,
-      cause: S.Defect(),
-    },
-  )
-{
+export class InstrumentError extends S.TaggedError<InstrumentError, { readonly brand: unique symbol }>(
+  '@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError',
+)(
+  'InstrumentError',
+  {
+    message: S.String,
+    cause: S.Defect(),
+  },
+) {
   override get message(): string {
     return Boolean.match(this.message.length === 0, {
       onTrue: () => 'Instrumenter failure',
@@ -50,66 +50,82 @@ export type InstrumenterOptions = Omit<typeof InstrumenterOptionsSchema.Type, 'm
   readonly mutators: MutatorSelection
 }
 
-export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
-  file: S.String,
-  extension: S.String,
-  reason: S.String,
-}) {}
+export class InstrumentFileSkip
+  extends S.TaggedClass<InstrumentFileSkip, { readonly brand: unique symbol }>()('InstrumentFileSkip', {
+    file: S.String,
+    extension: S.String,
+    reason: S.String,
+  })
+{}
 
-export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand>()('InstrumentFilesCommand', {
-  fileCount: S.Finite,
-  claimedCount: S.Finite,
-  skipped: S.Array(InstrumentFileSkip),
-}) {
+export class InstrumentFilesCommand
+  extends S.TaggedClass<InstrumentFilesCommand, { readonly brand: unique symbol }>()('InstrumentFilesCommand', {
+    fileCount: S.Finite,
+    claimedCount: S.Finite,
+    skipped: S.Array(InstrumentFileSkip),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
-  files: S.Array(FileSchema),
-  mutants: S.Array(Mutant.Mutant),
-  skipped: S.Array(InstrumentFileSkip),
-}) {}
+export class InstrumentResult
+  extends S.TaggedClass<InstrumentResult, { readonly brand: unique symbol }>()('InstrumentResult', {
+    files: S.Array(FileSchema),
+    mutants: S.Array(Mutant.Mutant),
+    skipped: S.Array(InstrumentFileSkip),
+  })
+{}
 
 export const PlacerNameSchema = S.Literals(['expression', 'statement', 'switch-case'])
 export type PlacerName = typeof PlacerNameSchema.Type
 
-export class MutantsUnapplied extends S.TaggedError<MutantsUnapplied>()('MutantsUnapplied', {
-  fileName: S.String,
-  placer: PlacerNameSchema,
-  mutatorNames: S.Array(MutatorNameSchema),
-  cause: S.Defect(),
-}) {
+export class MutantsUnapplied
+  extends S.TaggedError<MutantsUnapplied, { readonly brand: unique symbol }>()('MutantsUnapplied', {
+    fileName: S.String,
+    placer: PlacerNameSchema,
+    mutatorNames: S.Array(MutatorNameSchema),
+    cause: S.Defect(),
+  })
+{
   override get message(): string {
     return `Failed to apply ${this.mutatorNames.join(', ')} in ${this.fileName}`
   }
 }
 
-export class MutantNotApplied extends S.TaggedError<MutantNotApplied>()('MutantNotApplied', {
-  fileName: S.String,
-  mutatorName: MutatorNameSchema,
-}) {
+export class MutantNotApplied
+  extends S.TaggedError<MutantNotApplied, { readonly brand: unique symbol }>()('MutantNotApplied', {
+    fileName: S.String,
+    mutatorName: MutatorNameSchema,
+  })
+{
   override get message(): string {
     return `Could not apply the ${this.mutatorName} mutant in ${this.fileName}`
   }
 }
 
-export class NodeWithoutSpan extends S.TaggedError<NodeWithoutSpan>()('NodeWithoutSpan', {
-  fileName: S.String,
-}) {
+export class NodeWithoutSpan
+  extends S.TaggedError<NodeWithoutSpan, { readonly brand: unique symbol }>()('NodeWithoutSpan', {
+    fileName: S.String,
+  })
+{
   override get message(): string {
     return `Node without a span in ${this.fileName}`
   }
 }
 
-export class MutantsUnplaced extends S.TaggedError<MutantsUnplaced>()('MutantsUnplaced', {
-  fileName: S.String,
-  detail: S.String,
-}) {
+export class MutantsUnplaced
+  extends S.TaggedError<MutantsUnplaced, { readonly brand: unique symbol }>()('MutantsUnplaced', {
+    fileName: S.String,
+    detail: S.String,
+  })
+{
   override get message(): string {
     return `Mutants cannot be placed. This shouldn't happen! Unplaced mutants: ${this.detail}`
   }
 }
 
-export class PlacementRefused extends S.TaggedError<PlacementRefused>()('PlacementRefused', {
-  message: S.String,
-}) {}
+export class PlacementRefused
+  extends S.TaggedError<PlacementRefused, { readonly brand: unique symbol }>()('PlacementRefused', {
+    message: S.String,
+  })
+{}

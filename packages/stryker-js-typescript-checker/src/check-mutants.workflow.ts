@@ -12,20 +12,20 @@ import { CheckMutantsInput, type DiagnosticDecoded, type TceOutcome } from './Ch
 const CheckTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckOutcome')
 type CheckTypeId = typeof CheckTypeId
 
-export class MutantPassed extends S.TaggedClass<MutantPassed>()('MutantPassed', {
+export class MutantPassed extends S.TaggedClass<MutantPassed, { readonly brand: unique symbol }>()('MutantPassed', {
   id: Mutant.MutantId,
 }) {
   readonly [CheckTypeId] = CheckTypeId
 }
 
-export class MutantFailed extends S.TaggedClass<MutantFailed>()('MutantFailed', {
+export class MutantFailed extends S.TaggedClass<MutantFailed, { readonly brand: unique symbol }>()('MutantFailed', {
   id: Mutant.MutantId,
   reason: S.String,
 }) {
   readonly [CheckTypeId] = CheckTypeId
 }
 
-export class MutantIgnored extends S.TaggedClass<MutantIgnored>()('MutantIgnored', {
+export class MutantIgnored extends S.TaggedClass<MutantIgnored, { readonly brand: unique symbol }>()('MutantIgnored', {
   id: Mutant.MutantId,
   reason: S.String,
 }) {

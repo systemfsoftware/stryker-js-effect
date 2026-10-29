@@ -11,30 +11,38 @@ type LoadConfigDecisionTypeId = typeof LoadConfigDecisionTypeId
 
 const DecodedOptions = S.toType(Options.StrykerOptionsSchema)
 
-export class ConfigOptionsRefused extends S.TaggedError<ConfigOptionsRefused>()('ConfigOptionsRefused', {
-  message: S.String,
-}) {}
+export class ConfigOptionsRefused
+  extends S.TaggedError<ConfigOptionsRefused, { readonly brand: unique symbol }>()('ConfigOptionsRefused', {
+    message: S.String,
+  })
+{}
 
-export class ConfigFromFile extends S.TaggedClass<ConfigFromFile>()('ConfigFromFile', {
-  options: DecodedOptions,
-}) {
+export class ConfigFromFile
+  extends S.TaggedClass<ConfigFromFile, { readonly brand: unique symbol }>()('ConfigFromFile', {
+    options: DecodedOptions,
+  })
+{
   readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ConfigFromDefaults extends S.TaggedClass<ConfigFromDefaults>()('ConfigFromDefaults', {
-  options: DecodedOptions,
-}) {
+export class ConfigFromDefaults
+  extends S.TaggedClass<ConfigFromDefaults, { readonly brand: unique symbol }>()('ConfigFromDefaults', {
+    options: DecodedOptions,
+  })
+{
   readonly [LoadConfigDecisionTypeId] = LoadConfigDecisionTypeId
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export type LoadConfigDecision = ConfigFromFile | ConfigFromDefaults
 
-export class LoadConfigCommand extends S.TaggedClass<LoadConfigCommand>()('LoadConfigCommand', {
-  document: ConfigDocumentSchema,
-  fileFound: S.Boolean,
-}) {
+export class LoadConfigCommand
+  extends S.TaggedClass<LoadConfigCommand, { readonly brand: unique symbol }>()('LoadConfigCommand', {
+    document: ConfigDocumentSchema,
+    fileFound: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

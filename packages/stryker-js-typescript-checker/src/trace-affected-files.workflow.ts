@@ -12,15 +12,19 @@ import { TraceAffectedFilesCommand } from './CheckerCommands.schema.js'
 const TraceTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TraceAffectedFiles')
 type TraceTypeId = typeof TraceTypeId
 
-export class MutatedFileAffected extends S.TaggedClass<MutatedFileAffected>()('MutatedFileAffected', {
-  fileName: S.String,
-}) {
+export class MutatedFileAffected
+  extends S.TaggedClass<MutatedFileAffected, { readonly brand: unique symbol }>()('MutatedFileAffected', {
+    fileName: S.String,
+  })
+{
   readonly [TraceTypeId] = TraceTypeId
 }
 
-export class DependentFileAffected extends S.TaggedClass<DependentFileAffected>()('DependentFileAffected', {
-  fileName: S.String,
-}) {
+export class DependentFileAffected
+  extends S.TaggedClass<DependentFileAffected, { readonly brand: unique symbol }>()('DependentFileAffected', {
+    fileName: S.String,
+  })
+{
   readonly [TraceTypeId] = TraceTypeId
 }
 

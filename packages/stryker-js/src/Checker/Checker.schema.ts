@@ -8,11 +8,13 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
-export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('UndescribableMutant', {
-  id: Mutant.MutantId,
-  fileName: Mutant.CanonicalFileName,
-  reason: S.String,
-}) {
+export class UndescribableMutant
+  extends S.TaggedError<UndescribableMutant, { readonly brand: unique symbol }>()('UndescribableMutant', {
+    id: Mutant.MutantId,
+    fileName: Mutant.CanonicalFileName,
+    reason: S.String,
+  })
+{
   override get message(): string {
     return `Mutant ${this.id} in ${this.fileName} cannot be described to a checker: ${this.reason}`
   }
@@ -52,9 +54,12 @@ const DescriptionCandidate = S.Struct({
  * `id` and `fileName` name it when it is refused.
  */
 export class DescribeCheckerMutantsCommand
-  extends S.TaggedClass<DescribeCheckerMutantsCommand>()('DescribeCheckerMutantsCommand', {
-    candidates: S.Array(DescriptionCandidate),
-  })
+  extends S.TaggedClass<DescribeCheckerMutantsCommand, { readonly brand: unique symbol }>()(
+    'DescribeCheckerMutantsCommand',
+    {
+      candidates: S.Array(DescriptionCandidate),
+    },
+  )
 {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -62,15 +67,19 @@ export class DescribeCheckerMutantsCommand
 const MutantDescriptionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantDescription')
 type MutantDescriptionTypeId = typeof MutantDescriptionTypeId
 
-export class MutantDescribed extends S.TaggedClass<MutantDescribed>()('MutantDescribed', {
-  wire: Checker.CheckerMutantWire,
-}) {
+export class MutantDescribed
+  extends S.TaggedClass<MutantDescribed, { readonly brand: unique symbol }>()('MutantDescribed', {
+    wire: Checker.CheckerMutantWire,
+  })
+{
   readonly [MutantDescriptionTypeId] = MutantDescriptionTypeId
 }
 
-export class MutantUndescribable extends S.TaggedClass<MutantUndescribable>()('MutantUndescribable', {
-  undescribable: UndescribableMutant,
-}) {
+export class MutantUndescribable
+  extends S.TaggedClass<MutantUndescribable, { readonly brand: unique symbol }>()('MutantUndescribable', {
+    undescribable: UndescribableMutant,
+  })
+{
   readonly [MutantDescriptionTypeId] = MutantDescriptionTypeId
 }
 

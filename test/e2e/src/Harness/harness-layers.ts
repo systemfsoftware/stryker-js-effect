@@ -1,6 +1,7 @@
 import { Layer } from 'effect'
 import type { OtlpExporter } from 'effect/observability'
 
+import { layerDigest, layerSecureRandom } from '@effect/platform-node/NodeCrypto'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
@@ -19,6 +20,8 @@ export const HarnessServicesLive = Layer.mergeAll(BakedFixtureCache.layer, stryk
 export const HarnessPlatformLive = Layer.mergeAll(
   guestJobsLayer,
   nodeServicesLayer,
+  layerSecureRandom,
+  layerDigest,
   Readiness.NodeHostProber.layer,
   harnessTelemetryLayer,
 )

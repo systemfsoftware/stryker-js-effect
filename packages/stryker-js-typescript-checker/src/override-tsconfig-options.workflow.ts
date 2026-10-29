@@ -10,18 +10,22 @@ import type { TsConfigCompilerOptions, TsConfigDocument } from './Tsconfig.schem
 const OverrideTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TsconfigOverride')
 type OverrideTypeId = typeof OverrideTypeId
 
-export class ProjectReferencesOverride extends S.TaggedClass<ProjectReferencesOverride>()(
-  'ProjectReferencesOverride',
-  {
-    text: S.String,
-  },
-) {
+export class ProjectReferencesOverride
+  extends S.TaggedClass<ProjectReferencesOverride, { readonly brand: unique symbol }>()(
+    'ProjectReferencesOverride',
+    {
+      text: S.String,
+    },
+  )
+{
   readonly [OverrideTypeId] = OverrideTypeId
 }
 
-export class SingleProjectOverride extends S.TaggedClass<SingleProjectOverride>()('SingleProjectOverride', {
-  text: S.String,
-}) {
+export class SingleProjectOverride
+  extends S.TaggedClass<SingleProjectOverride, { readonly brand: unique symbol }>()('SingleProjectOverride', {
+    text: S.String,
+  })
+{
   readonly [OverrideTypeId] = OverrideTypeId
 }
 

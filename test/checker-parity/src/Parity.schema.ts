@@ -31,7 +31,7 @@ const NonNegativeFinite = S.Finite.check(S.isGreaterThanOrEqualTo(0))
 const SCHEMA_VERSION = S.Literal(1)
 
 /** `line` is the mutant's 1-based start line; `reason` carries the checker's status-reason text. */
-export class Verdict extends S.TaggedClass<Verdict>()('Verdict', {
+export class Verdict extends S.TaggedClass<Verdict, { readonly brand: unique symbol }>()('Verdict', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -43,7 +43,7 @@ export class Verdict extends S.TaggedClass<Verdict>()('Verdict', {
   cached: S.Boolean,
 }) {}
 
-export class CheckCall extends S.TaggedClass<CheckCall>()('CheckCall', {
+export class CheckCall extends S.TaggedClass<CheckCall, { readonly brand: unique symbol }>()('CheckCall', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -54,7 +54,7 @@ export class CheckCall extends S.TaggedClass<CheckCall>()('CheckCall', {
   cached: S.Boolean,
 }) {}
 
-export class GroupCall extends S.TaggedClass<GroupCall>()('GroupCall', {
+export class GroupCall extends S.TaggedClass<GroupCall, { readonly brand: unique symbol }>()('GroupCall', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -63,7 +63,7 @@ export class GroupCall extends S.TaggedClass<GroupCall>()('GroupCall', {
   cached: S.Boolean,
 }) {}
 
-export class DigestCall extends S.TaggedClass<DigestCall>()('DigestCall', {
+export class DigestCall extends S.TaggedClass<DigestCall, { readonly brand: unique symbol }>()('DigestCall', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -72,7 +72,7 @@ export class DigestCall extends S.TaggedClass<DigestCall>()('DigestCall', {
   cached: S.Boolean,
 }) {}
 
-export class Counts extends S.TaggedClass<Counts>()('Counts', {
+export class Counts extends S.TaggedClass<Counts, { readonly brand: unique symbol }>()('Counts', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -85,20 +85,24 @@ export class Counts extends S.TaggedClass<Counts>()('Counts', {
   checkSpans: NonNegativeInt,
 }) {}
 
-export class ProjectBootFailed extends S.TaggedClass<ProjectBootFailed>()('ProjectBootFailed', {
-  schemaVersion: SCHEMA_VERSION,
-  side: Side,
-  project: S.String,
-  reason: S.String,
-}) {}
+export class ProjectBootFailed
+  extends S.TaggedClass<ProjectBootFailed, { readonly brand: unique symbol }>()('ProjectBootFailed', {
+    schemaVersion: SCHEMA_VERSION,
+    side: Side,
+    project: S.String,
+    reason: S.String,
+  })
+{}
 
-export class ProjectSkipped extends S.TaggedClass<ProjectSkipped>()('ProjectSkipped', {
-  schemaVersion: SCHEMA_VERSION,
-  project: S.String,
-  reason: S.String,
-}) {}
+export class ProjectSkipped
+  extends S.TaggedClass<ProjectSkipped, { readonly brand: unique symbol }>()('ProjectSkipped', {
+    schemaVersion: SCHEMA_VERSION,
+    project: S.String,
+    reason: S.String,
+  })
+{}
 
-export class CacheEntry extends S.TaggedClass<CacheEntry>()('CacheEntry', {
+export class CacheEntry extends S.TaggedClass<CacheEntry, { readonly brand: unique symbol }>()('CacheEntry', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
@@ -107,40 +111,46 @@ export class CacheEntry extends S.TaggedClass<CacheEntry>()('CacheEntry', {
   hit: S.Boolean,
 }) {}
 
-export class TelemetryMissing extends S.TaggedClass<TelemetryMissing>()('TelemetryMissing', {
-  schemaVersion: SCHEMA_VERSION,
-  side: Side,
-  project: S.String,
-  expectedSpans: NonNegativeInt,
-  receivedSpans: NonNegativeInt,
-}) {}
+export class TelemetryMissing
+  extends S.TaggedClass<TelemetryMissing, { readonly brand: unique symbol }>()('TelemetryMissing', {
+    schemaVersion: SCHEMA_VERSION,
+    side: Side,
+    project: S.String,
+    expectedSpans: NonNegativeInt,
+    receivedSpans: NonNegativeInt,
+  })
+{}
 
-export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerLine', {
-  schemaVersion: SCHEMA_VERSION,
-  side: S.Literal('branch'),
-  project: S.String,
-  mutantId: S.String,
-  fileName: S.String,
-  line: PositiveInt,
-  column: PositiveInt,
-  candidate: S.String,
-  siteKind: TypeQuery.TypeQuerySiteKind,
-  siteType: S.optional(S.String),
-  contextualType: S.optional(S.String),
-  answer: TypeQuery.TypeAnswer,
-}) {}
+export class TypeAnswerLine
+  extends S.TaggedClass<TypeAnswerLine, { readonly brand: unique symbol }>()('TypeAnswerLine', {
+    schemaVersion: SCHEMA_VERSION,
+    side: S.Literal('branch'),
+    project: S.String,
+    mutantId: S.String,
+    fileName: S.String,
+    line: PositiveInt,
+    column: PositiveInt,
+    candidate: S.String,
+    siteKind: TypeQuery.TypeQuerySiteKind,
+    siteType: S.optional(S.String),
+    contextualType: S.optional(S.String),
+    answer: TypeQuery.TypeAnswer,
+  })
+{}
 
 export const TypeQueryRefusalReason = S.Union([TypeQuery.FileRefusedReason, TypeQuery.TypeQueryRefusedReason])
 export type TypeQueryRefusalReason = typeof TypeQueryRefusalReason.Type
 
-export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()('TypeQueryFileRefused', {
-  schemaVersion: SCHEMA_VERSION,
-  project: S.String,
-  fileName: S.String,
-  reason: TypeQueryRefusalReason,
-  nextAction: S.String,
-  mutantCount: NonNegativeInt,
-}) {}
+export class TypeQueryFileRefused
+  extends S.TaggedClass<TypeQueryFileRefused, { readonly brand: unique symbol }>()('TypeQueryFileRefused', {
+    schemaVersion: SCHEMA_VERSION,
+    project: S.String,
+    fileName: S.String,
+    reason: TypeQueryRefusalReason,
+    nextAction: S.String,
+    mutantCount: NonNegativeInt,
+  })
+{}
 
 /**
  * Legacy, decode-only: an earlier driver wrote one `TypeQueryServers` line per branch project recording the
@@ -151,14 +161,16 @@ export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()(
  * add a project to `projectCount` or `typeQuery.projects` nor drop a skipped project from `summary.skipped`,
  * and the report's shard hints ignore it.
  */
-export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
-  schemaVersion: SCHEMA_VERSION,
-  side: S.Literal('branch'),
-  project: S.String,
-  peakLiveServers: NonNegativeInt,
-}) {}
+export class TypeQueryServers
+  extends S.TaggedClass<TypeQueryServers, { readonly brand: unique symbol }>()('TypeQueryServers', {
+    schemaVersion: SCHEMA_VERSION,
+    side: S.Literal('branch'),
+    project: S.String,
+    peakLiveServers: NonNegativeInt,
+  })
+{}
 
-export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
+export class Deferred extends S.TaggedClass<Deferred, { readonly brand: unique symbol }>()('Deferred', {
   schemaVersion: SCHEMA_VERSION,
   side: S.NullOr(Side),
   project: S.String,
@@ -167,15 +179,17 @@ export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
   reason: S.Literals(['deadline-passed', 'interrupted-at-deadline']),
 }) {}
 
-export class UnitOverBudget extends S.TaggedClass<UnitOverBudget>()('UnitOverBudget', {
-  schemaVersion: SCHEMA_VERSION,
-  side: Side,
-  project: S.String,
-  fileName: S.String,
-  mutantIds: S.Array(S.String),
-  interrupts: PositiveInt,
-  ms: NonNegativeFinite,
-}) {}
+export class UnitOverBudget
+  extends S.TaggedClass<UnitOverBudget, { readonly brand: unique symbol }>()('UnitOverBudget', {
+    schemaVersion: SCHEMA_VERSION,
+    side: Side,
+    project: S.String,
+    fileName: S.String,
+    mutantIds: S.Array(S.String),
+    interrupts: PositiveInt,
+    ms: NonNegativeFinite,
+  })
+{}
 
 export const PhaseLine = S.Union([CheckCall, GroupCall, DigestCall])
 export type PhaseLine = typeof PhaseLine.Type
@@ -205,7 +219,7 @@ const MutantCount = S.Int.check(S.isBetween({ minimum: 1, maximum: MAX_MUTANTS }
 export const RunId = S.Int.check(S.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }))
 export type RunId = typeof RunId.Type
 
-export class FileRate extends S.Class<FileRate>('FileRate')({
+export class FileRate extends S.Class<FileRate, { readonly brand: unique symbol }>('FileRate')({
   project: S.String,
   fileName: S.String,
   msPerMutant: BoundedMs,
@@ -213,13 +227,13 @@ export class FileRate extends S.Class<FileRate>('FileRate')({
   runId: RunId,
 }) {}
 
-export class ProjectOverhead extends S.Class<ProjectOverhead>('ProjectOverhead')({
+export class ProjectOverhead extends S.Class<ProjectOverhead, { readonly brand: unique symbol }>('ProjectOverhead')({
   project: S.String,
   ms: BoundedMs,
   runId: RunId,
 }) {}
 
-export class FileCosts extends S.Class<FileCosts>('FileCosts')({
+export class FileCosts extends S.Class<FileCosts, { readonly brand: unique symbol }>('FileCosts')({
   schemaVersion: S.Literal(3),
   runs: S.Array(RunId),
   files: S.Array(FileRate),
@@ -229,7 +243,7 @@ export class FileCosts extends S.Class<FileCosts>('FileCosts')({
 export const CostSource = S.Literals(['measured', 'project-p90', 'corpus-p90', 'no-measurements'])
 export type CostSource = typeof CostSource.Type
 
-export class PlannedUnit extends S.Class<PlannedUnit>('PlannedUnit')({
+export class PlannedUnit extends S.Class<PlannedUnit, { readonly brand: unique symbol }>('PlannedUnit')({
   project: S.String,
   fileName: S.String,
   fromBlock: NonNegativeInt,
@@ -240,13 +254,13 @@ export class PlannedUnit extends S.Class<PlannedUnit>('PlannedUnit')({
   source: CostSource,
 }) {}
 
-export class PlannedLeg extends S.Class<PlannedLeg>('PlannedLeg')({
+export class PlannedLeg extends S.Class<PlannedLeg, { readonly brand: unique symbol }>('PlannedLeg')({
   leg: PositiveInt,
   ms: NonNegativeFinite,
   units: S.NonEmptyArray(PlannedUnit),
 }) {}
 
-export class ParityPlan extends S.Class<ParityPlan>('ParityPlan')({
+export class ParityPlan extends S.Class<ParityPlan, { readonly brand: unique symbol }>('ParityPlan')({
   schemaVersion: S.Literal(1),
   deadlineSeconds: PositiveInt,
   fill: S.Finite.check(S.isBetween({ minimum: 0, maximum: 1, exclusiveMinimum: true })),
@@ -259,7 +273,7 @@ export class ParityPlan extends S.Class<ParityPlan>('ParityPlan')({
 export const RunScopeName = S.Literals(['pr', 'full'])
 export type RunScopeName = typeof RunScopeName.Type
 
-export class ScopeSettings extends S.Class<ScopeSettings>('ScopeSettings')({
+export class ScopeSettings extends S.Class<ScopeSettings, { readonly brand: unique symbol }>('ScopeSettings')({
   schemaVersion: SCHEMA_VERSION,
   seed: S.String,
   driftProjects: PositiveInt,
@@ -282,7 +296,7 @@ export const seededOrder: {
     ),
 )
 
-export class LegStarted extends S.TaggedClass<LegStarted>()('LegStarted', {
+export class LegStarted extends S.TaggedClass<LegStarted, { readonly brand: unique symbol }>()('LegStarted', {
   schemaVersion: SCHEMA_VERSION,
   shard: S.String,
   scope: RunScopeName,
@@ -291,7 +305,7 @@ export class LegStarted extends S.TaggedClass<LegStarted>()('LegStarted', {
   corpusDiscoveryMs: NonNegativeFinite,
 }) {}
 
-export class LegScope extends S.TaggedClass<LegScope>()('LegScope', {
+export class LegScope extends S.TaggedClass<LegScope, { readonly brand: unique symbol }>()('LegScope', {
   schemaVersion: SCHEMA_VERSION,
   shard: S.String,
   scope: RunScopeName,

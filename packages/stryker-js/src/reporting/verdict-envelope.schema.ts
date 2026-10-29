@@ -3,7 +3,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')({
+export class VerdictEnvelope extends S.Class<VerdictEnvelope, { readonly brand: unique symbol }>('VerdictEnvelope')({
   schemaVersion: RunEvent.StreamSchemaVersion,
   runId: RunEvent.RunId,
   mode: OutputMode.OutputMode,

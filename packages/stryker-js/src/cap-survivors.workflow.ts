@@ -47,26 +47,32 @@ const withDistinctIds = (survivors: ReadonlyArray<SurvivorRef>): ReadonlyArray<S
 const CapSurvivorsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CapSurvivorsDecision')
 type CapSurvivorsTypeId = typeof CapSurvivorsTypeId
 
-export class SurvivorsWithinCaps extends S.TaggedClass<SurvivorsWithinCaps>()('SurvivorsWithinCaps', {
-  surfaced: S.Array(SurvivorRef),
-}) {
+export class SurvivorsWithinCaps
+  extends S.TaggedClass<SurvivorsWithinCaps, { readonly brand: unique symbol }>()('SurvivorsWithinCaps', {
+    surfaced: S.Array(SurvivorRef),
+  })
+{
   readonly [CapSurvivorsTypeId] = CapSurvivorsTypeId
 }
 
-export class SurvivorsCapped extends S.TaggedClass<SurvivorsCapped>()('SurvivorsCapped', {
-  surfaced: S.Array(SurvivorRef),
-  capped: S.Array(SurvivorRef),
-}) {
+export class SurvivorsCapped
+  extends S.TaggedClass<SurvivorsCapped, { readonly brand: unique symbol }>()('SurvivorsCapped', {
+    surfaced: S.Array(SurvivorRef),
+    capped: S.Array(SurvivorRef),
+  })
+{
   readonly [CapSurvivorsTypeId] = CapSurvivorsTypeId
 }
 
 export const CapSurvivorsDecision = S.Union([SurvivorsWithinCaps, SurvivorsCapped])
 export type CapSurvivorsDecision = typeof CapSurvivorsDecision.Type
 
-export class CapSurvivorsCommand extends S.TaggedClass<CapSurvivorsCommand>()('CapSurvivorsCommand', {
-  survivors: S.Array(SurvivorRef),
-  caps: SurfacingCaps,
-}) {
+export class CapSurvivorsCommand
+  extends S.TaggedClass<CapSurvivorsCommand, { readonly brand: unique symbol }>()('CapSurvivorsCommand', {
+    survivors: S.Array(SurvivorRef),
+    caps: SurfacingCaps,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

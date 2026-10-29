@@ -11,11 +11,13 @@ const ContextFreenessTypeId: unique symbol = Symbol.for(
 )
 type ContextFreenessTypeId = typeof ContextFreenessTypeId
 
-export class ContextFree extends S.TaggedClass<ContextFree>()('ContextFree', {}) {
+export class ContextFree extends S.TaggedClass<ContextFree, { readonly brand: unique symbol }>()('ContextFree', {}) {
   readonly [ContextFreenessTypeId] = ContextFreenessTypeId
 }
 
-export class NotContextFree extends S.TaggedClass<NotContextFree>()('NotContextFree', {}) {
+export class NotContextFree
+  extends S.TaggedClass<NotContextFree, { readonly brand: unique symbol }>()('NotContextFree', {})
+{
   readonly [ContextFreenessTypeId] = ContextFreenessTypeId
 }
 

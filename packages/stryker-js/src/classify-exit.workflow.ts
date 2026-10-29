@@ -9,37 +9,49 @@ import * as S from 'effect/Schema'
 const ExitDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ExitDecision')
 type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
-export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
-  pending: S.Array(Plugin.ExitClass),
-}) {
+export class ClassifyExitCommand
+  extends S.TaggedClass<ClassifyExitCommand, { readonly brand: unique symbol }>()('ClassifyExitCommand', {
+    pending: S.Array(Plugin.ExitClass),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ExitPassed extends S.TaggedClass<ExitPassed>()('ExitPassed', { exitClass: S.Null }) {
+export class ExitPassed
+  extends S.TaggedClass<ExitPassed, { readonly brand: unique symbol }>()('ExitPassed', { exitClass: S.Null })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitVerdictFailed extends S.TaggedClass<ExitVerdictFailed>()('ExitVerdictFailed', {
-  exitClass: S.tag('VerdictFail'),
-}) {
+export class ExitVerdictFailed
+  extends S.TaggedClass<ExitVerdictFailed, { readonly brand: unique symbol }>()('ExitVerdictFailed', {
+    exitClass: S.tag('VerdictFail'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitConfigErrored extends S.TaggedClass<ExitConfigErrored>()('ExitConfigErrored', {
-  exitClass: S.tag('ConfigError'),
-}) {
+export class ExitConfigErrored
+  extends S.TaggedClass<ExitConfigErrored, { readonly brand: unique symbol }>()('ExitConfigErrored', {
+    exitClass: S.tag('ConfigError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitRuntimeErrored extends S.TaggedClass<ExitRuntimeErrored>()('ExitRuntimeErrored', {
-  exitClass: S.tag('RuntimeError'),
-}) {
+export class ExitRuntimeErrored
+  extends S.TaggedClass<ExitRuntimeErrored, { readonly brand: unique symbol }>()('ExitRuntimeErrored', {
+    exitClass: S.tag('RuntimeError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('ExitInternalErrored', {
-  exitClass: S.tag('InternalError'),
-}) {
+export class ExitInternalErrored
+  extends S.TaggedClass<ExitInternalErrored, { readonly brand: unique symbol }>()('ExitInternalErrored', {
+    exitClass: S.tag('InternalError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 

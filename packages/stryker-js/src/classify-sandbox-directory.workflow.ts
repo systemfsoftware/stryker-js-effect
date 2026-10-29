@@ -6,22 +6,30 @@ import * as S from 'effect/Schema'
 const ClassifySandboxDirectoryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ClassifySandboxDirectory')
 type ClassifySandboxDirectoryTypeId = typeof ClassifySandboxDirectoryTypeId
 
-export class SandboxDirectoryCommand extends S.TaggedClass<SandboxDirectoryCommand>()('SandboxDirectoryCommand', {
-  name: S.String,
-  tempDirName: S.UndefinedOr(S.String),
-}) {
+export class SandboxDirectoryCommand
+  extends S.TaggedClass<SandboxDirectoryCommand, { readonly brand: unique symbol }>()('SandboxDirectoryCommand', {
+    name: S.String,
+    tempDirName: S.UndefinedOr(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DirectorySkipped extends S.TaggedClass<DirectorySkipped>()('DirectorySkipped', {}) {
+export class DirectorySkipped
+  extends S.TaggedClass<DirectorySkipped, { readonly brand: unique symbol }>()('DirectorySkipped', {})
+{
   readonly [ClassifySandboxDirectoryTypeId] = ClassifySandboxDirectoryTypeId
 }
 
-export class NodeModulesDirectory extends S.TaggedClass<NodeModulesDirectory>()('NodeModulesDirectory', {}) {
+export class NodeModulesDirectory
+  extends S.TaggedClass<NodeModulesDirectory, { readonly brand: unique symbol }>()('NodeModulesDirectory', {})
+{
   readonly [ClassifySandboxDirectoryTypeId] = ClassifySandboxDirectoryTypeId
 }
 
-export class SearchableDirectory extends S.TaggedClass<SearchableDirectory>()('SearchableDirectory', {}) {
+export class SearchableDirectory
+  extends S.TaggedClass<SearchableDirectory, { readonly brand: unique symbol }>()('SearchableDirectory', {})
+{
   readonly [ClassifySandboxDirectoryTypeId] = ClassifySandboxDirectoryTypeId
 }
 

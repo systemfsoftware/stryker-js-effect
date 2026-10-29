@@ -6,24 +6,30 @@ import * as S from 'effect/Schema'
 const EmptyDirectoryRemovalTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/EmptyDirectoryRemoval')
 type EmptyDirectoryRemovalTypeId = typeof EmptyDirectoryRemovalTypeId
 
-export class ClassifyEmptyDirectoryRemovalCommand extends S.TaggedClass<ClassifyEmptyDirectoryRemovalCommand>()(
-  'ClassifyEmptyDirectoryRemovalCommand',
-  {
-    code: S.UndefinedOr(S.String),
-  },
-) {
+export class ClassifyEmptyDirectoryRemovalCommand
+  extends S.TaggedClass<ClassifyEmptyDirectoryRemovalCommand, { readonly brand: unique symbol }>()(
+    'ClassifyEmptyDirectoryRemovalCommand',
+    {
+      code: S.UndefinedOr(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DirectoryKept extends S.TaggedClass<DirectoryKept>()('DirectoryKept', {}) {
+export class DirectoryKept
+  extends S.TaggedClass<DirectoryKept, { readonly brand: unique symbol }>()('DirectoryKept', {})
+{
   readonly [EmptyDirectoryRemovalTypeId] = EmptyDirectoryRemovalTypeId
 }
 
-export class DirectoryAbsent extends S.TaggedClass<DirectoryAbsent>()('DirectoryAbsent', {}) {
+export class DirectoryAbsent
+  extends S.TaggedClass<DirectoryAbsent, { readonly brand: unique symbol }>()('DirectoryAbsent', {})
+{
   readonly [EmptyDirectoryRemovalTypeId] = EmptyDirectoryRemovalTypeId
 }
 
-export class RemovalFailed extends S.TaggedClass<RemovalFailed>()('RemovalFailed', {
+export class RemovalFailed extends S.TaggedClass<RemovalFailed, { readonly brand: unique symbol }>()('RemovalFailed', {
   code: S.UndefinedOr(S.String),
 }) {
   readonly [EmptyDirectoryRemovalTypeId] = EmptyDirectoryRemovalTypeId

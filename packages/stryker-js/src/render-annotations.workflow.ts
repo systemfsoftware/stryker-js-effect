@@ -24,9 +24,11 @@ const SURVIVOR_LEVELS: Record<string, 'warning' | 'notice'> = { Survived: 'warni
 
 const decodeMutantStatus = S.decodeOption(MUTANT_STATUSES)
 
-export class AnnotationsUnusable extends S.TaggedError<AnnotationsUnusable>()('AnnotationsUnusable', {
-  reason: S.String,
-}) {
+export class AnnotationsUnusable
+  extends S.TaggedError<AnnotationsUnusable, { readonly brand: unique symbol }>()('AnnotationsUnusable', {
+    reason: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
 
   override get message(): string {
@@ -37,26 +39,32 @@ export class AnnotationsUnusable extends S.TaggedError<AnnotationsUnusable>()('A
 const RenderAnnotationsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/RenderAnnotationsDecision')
 type RenderAnnotationsTypeId = typeof RenderAnnotationsTypeId
 
-export class AnnotationsRendered extends S.TaggedClass<AnnotationsRendered>()('AnnotationsRendered', {
-  lines: S.Array(S.String),
-}) {
+export class AnnotationsRendered
+  extends S.TaggedClass<AnnotationsRendered, { readonly brand: unique symbol }>()('AnnotationsRendered', {
+    lines: S.Array(S.String),
+  })
+{
   readonly [RenderAnnotationsTypeId] = RenderAnnotationsTypeId
 }
 
-export class NothingToAnnotate extends S.TaggedClass<NothingToAnnotate>()('NothingToAnnotate', {
-  survivorCount: S.Natural,
-}) {
+export class NothingToAnnotate
+  extends S.TaggedClass<NothingToAnnotate, { readonly brand: unique symbol }>()('NothingToAnnotate', {
+    survivorCount: S.Natural,
+  })
+{
   readonly [RenderAnnotationsTypeId] = RenderAnnotationsTypeId
 }
 
 export const RenderAnnotationsDecision = S.Union([AnnotationsRendered, NothingToAnnotate])
 export type RenderAnnotationsDecision = typeof RenderAnnotationsDecision.Type
 
-export class RenderAnnotationsCommand extends S.TaggedClass<RenderAnnotationsCommand>()('RenderAnnotationsCommand', {
-  report: Report.MutationTestResult,
-  survivors: S.Array(SurvivorRef),
-  baseline: S.Array(Mutant.MutantId),
-}) {
+export class RenderAnnotationsCommand
+  extends S.TaggedClass<RenderAnnotationsCommand, { readonly brand: unique symbol }>()('RenderAnnotationsCommand', {
+    report: Report.MutationTestResult,
+    survivors: S.Array(SurvivorRef),
+    baseline: S.Array(Mutant.MutantId),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

@@ -11,14 +11,16 @@ import { BenchRun, BenchRunInvalid, BenchRunKey, BenchRunMeasured, WorkloadDiges
 
 const DecodeWireLine = S.decodeResult(RunEvent.RunEventWireLine)
 
-export class ReadBenchRunCommand extends S.TaggedClass<ReadBenchRunCommand>()('ReadBenchRunCommand', {
-  key: BenchRunKey,
-  lines: S.Array(S.String),
-  exitCode: S.Int,
-  workloadDigest: WorkloadDigest,
-  stderrTail: S.String,
-  wallMs: Report.NonNegativeFinite,
-}) {
+export class ReadBenchRunCommand
+  extends S.TaggedClass<ReadBenchRunCommand, { readonly brand: unique symbol }>()('ReadBenchRunCommand', {
+    key: BenchRunKey,
+    lines: S.Array(S.String),
+    exitCode: S.Int,
+    workloadDigest: WorkloadDigest,
+    stderrTail: S.String,
+    wallMs: Report.NonNegativeFinite,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

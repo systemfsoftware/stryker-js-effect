@@ -6,11 +6,13 @@ import * as S from 'effect/Schema'
 
 const Count = Report.NonNegativeInt
 
-export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('InstrumentCommand', {
-  fileCount: Count,
-  inPlace: S.Boolean,
-  pluginCount: Count,
-}) {
+export class InstrumentCommand
+  extends S.TaggedClass<InstrumentCommand, { readonly brand: unique symbol }>()('InstrumentCommand', {
+    fileCount: Count,
+    inPlace: S.Boolean,
+    pluginCount: Count,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     fileCount: 'stryker.instrument.file_count',
     inPlace: 'stryker.instrument.in_place',
@@ -20,18 +22,22 @@ export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('Instr
 const InstrumentDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/InstrumentDecision')
 type InstrumentDecisionTypeId = typeof InstrumentDecisionTypeId
 
-export class InPlaceInstrument extends S.TaggedClass<InPlaceInstrument>()('InPlaceInstrument', {
-  workingDirectoryHint: S.String,
-  backupDirectoryHint: S.String,
-  fileCount: Count,
-}) {
+export class InPlaceInstrument
+  extends S.TaggedClass<InPlaceInstrument, { readonly brand: unique symbol }>()('InPlaceInstrument', {
+    workingDirectoryHint: S.String,
+    backupDirectoryHint: S.String,
+    fileCount: Count,
+  })
+{
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }
 
-export class EphemeralInstrument extends S.TaggedClass<EphemeralInstrument>()('EphemeralInstrument', {
-  workingDirectoryHint: S.String,
-  fileCount: Count,
-}) {
+export class EphemeralInstrument
+  extends S.TaggedClass<EphemeralInstrument, { readonly brand: unique symbol }>()('EphemeralInstrument', {
+    workingDirectoryHint: S.String,
+    fileCount: Count,
+  })
+{
   readonly [InstrumentDecisionTypeId] = InstrumentDecisionTypeId
 }
 

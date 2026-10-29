@@ -5,13 +5,13 @@ import * as S from 'effect/Schema'
 const RoundsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckRounds')
 type RoundsTypeId = typeof RoundsTypeId
 
-export class SoloRound extends S.TaggedClass<SoloRound>()('SoloRound', {
+export class SoloRound extends S.TaggedClass<SoloRound, { readonly brand: unique symbol }>()('SoloRound', {
   id: Mutant.MutantId,
 }) {
   readonly [RoundsTypeId] = RoundsTypeId
 }
 
-export class SharedRound extends S.TaggedClass<SharedRound>()('SharedRound', {
+export class SharedRound extends S.TaggedClass<SharedRound, { readonly brand: unique symbol }>()('SharedRound', {
   ids: S.Array(Mutant.MutantId).check(S.isMinLength(2)),
 }) {
   readonly [RoundsTypeId] = RoundsTypeId
@@ -34,11 +34,15 @@ const ConclusionTypeId: unique symbol = Symbol.for(
 )
 type ConclusionTypeId = typeof ConclusionTypeId
 
-export class SharedRoundKept extends S.TaggedClass<SharedRoundKept>()('SharedRoundKept', {}) {
+export class SharedRoundKept
+  extends S.TaggedClass<SharedRoundKept, { readonly brand: unique symbol }>()('SharedRoundKept', {})
+{
   readonly [ConclusionTypeId] = ConclusionTypeId
 }
 
-export class SharedRoundRedone extends S.TaggedClass<SharedRoundRedone>()('SharedRoundRedone', {}) {
+export class SharedRoundRedone
+  extends S.TaggedClass<SharedRoundRedone, { readonly brand: unique symbol }>()('SharedRoundRedone', {})
+{
   readonly [ConclusionTypeId] = ConclusionTypeId
 }
 

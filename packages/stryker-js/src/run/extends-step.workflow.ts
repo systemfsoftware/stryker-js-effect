@@ -23,40 +23,46 @@ type ExtendsStepDecisionTypeId = typeof ExtendsStepDecisionTypeId
 
 const configsMerge = mergeConfigs
 
-export class ExtendsStepDone extends S.TaggedClass<ExtendsStepDone>()('done', {
+export class ExtendsStepDone extends S.TaggedClass<ExtendsStepDone, { readonly brand: unique symbol }>()('done', {
   options: ConfigDocumentSchema,
 }) {
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
 
-export class ExtendsStepRead extends S.TaggedClass<ExtendsStepRead>()('read', {
+export class ExtendsStepRead extends S.TaggedClass<ExtendsStepRead, { readonly brand: unique symbol }>()('read', {
   specifier: S.String,
   state: ExtendsStepStateSchema,
 }) {
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
 
-export class ExtendsStepResolve extends S.TaggedClass<ExtendsStepResolve>()('resolve', {
-  specifier: S.String,
-  state: ExtendsStepStateSchema,
-}) {
+export class ExtendsStepResolve
+  extends S.TaggedClass<ExtendsStepResolve, { readonly brand: unique symbol }>()('resolve', {
+    specifier: S.String,
+    state: ExtendsStepStateSchema,
+  })
+{
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
 
-export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('refused', {
-  reason: S.Literals(['cycle', 'non-string-extends']),
-  file: S.String,
-}) {
+export class ExtendsStepRefused
+  extends S.TaggedClass<ExtendsStepRefused, { readonly brand: unique symbol }>()('refused', {
+    reason: S.Literals(['cycle', 'non-string-extends']),
+    file: S.String,
+  })
+{
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
 
 export type ExtendsStepDecision = ExtendsStepDone | ExtendsStepRead | ExtendsStepResolve | ExtendsStepRefused
 
-export class ExtendsStepCommand extends S.TaggedClass<ExtendsStepCommand>()('ExtendsStepCommand', {
-  state: ExtendsStepStateSchema,
-  document: ConfigDocumentSchema,
-  file: S.String,
-}) {
+export class ExtendsStepCommand
+  extends S.TaggedClass<ExtendsStepCommand, { readonly brand: unique symbol }>()('ExtendsStepCommand', {
+    state: ExtendsStepStateSchema,
+    document: ConfigDocumentSchema,
+    file: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

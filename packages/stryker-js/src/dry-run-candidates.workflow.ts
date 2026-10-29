@@ -12,35 +12,43 @@ const DryRunCandidatesDecisionTypeId: unique symbol = Symbol.for(
 )
 type DryRunCandidatesDecisionTypeId = typeof DryRunCandidatesDecisionTypeId
 
-export class CandidatesKept extends S.TaggedClass<CandidatesKept>()('CandidatesKept', {
-  indices: S.Array(S.Int),
-  droppedOtherRoot: S.Int,
-  droppedUnrecorded: S.Int,
-}) {
+export class CandidatesKept
+  extends S.TaggedClass<CandidatesKept, { readonly brand: unique symbol }>()('CandidatesKept', {
+    indices: S.Array(S.Int),
+    droppedOtherRoot: S.Int,
+    droppedUnrecorded: S.Int,
+  })
+{
   readonly [DryRunCandidatesDecisionTypeId] = DryRunCandidatesDecisionTypeId
 }
 
-export class CandidatesUnderOtherRoots extends S.TaggedClass<CandidatesUnderOtherRoots>()(
-  'CandidatesUnderOtherRoots',
-  { roots: S.Array(S.String) },
-) {
+export class CandidatesUnderOtherRoots
+  extends S.TaggedClass<CandidatesUnderOtherRoots, { readonly brand: unique symbol }>()(
+    'CandidatesUnderOtherRoots',
+    { roots: S.Array(S.String) },
+  )
+{
   readonly [DryRunCandidatesDecisionTypeId] = DryRunCandidatesDecisionTypeId
 }
 
-export class CandidatesUnrecorded extends S.TaggedClass<CandidatesUnrecorded>()('CandidatesUnrecorded', {}) {
+export class CandidatesUnrecorded
+  extends S.TaggedClass<CandidatesUnrecorded, { readonly brand: unique symbol }>()('CandidatesUnrecorded', {})
+{
   readonly [DryRunCandidatesDecisionTypeId] = DryRunCandidatesDecisionTypeId
 }
 
-export class NoCandidates extends S.TaggedClass<NoCandidates>()('NoCandidates', {}) {
+export class NoCandidates extends S.TaggedClass<NoCandidates, { readonly brand: unique symbol }>()('NoCandidates', {}) {
   readonly [DryRunCandidatesDecisionTypeId] = DryRunCandidatesDecisionTypeId
 }
 
 export type DryRunCandidatesDecision = CandidatesKept | CandidatesUnderOtherRoots | CandidatesUnrecorded | NoCandidates
 
-export class DryRunCandidatesCommand extends S.TaggedClass<DryRunCandidatesCommand>()('DryRunCandidatesCommand', {
-  currentRoot: S.String,
-  candidates: S.Array(CoverageRootSchema),
-}) {
+export class DryRunCandidatesCommand
+  extends S.TaggedClass<DryRunCandidatesCommand, { readonly brand: unique symbol }>()('DryRunCandidatesCommand', {
+    currentRoot: S.String,
+    candidates: S.Array(CoverageRootSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     currentRoot: 'stryker.dry_run_candidates.current_root',
   } as const

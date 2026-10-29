@@ -11,9 +11,11 @@ import {
   RunPathUnrestoredAbort,
 } from './run-path.schema.js'
 
-export class AbortRunPathCommand extends S.TaggedClass<AbortRunPathCommand>()('AbortRunPathCommand', {
-  failure: RunPathFailure,
-}) {
+export class AbortRunPathCommand
+  extends S.TaggedClass<AbortRunPathCommand, { readonly brand: unique symbol }>()('AbortRunPathCommand', {
+    failure: RunPathFailure,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

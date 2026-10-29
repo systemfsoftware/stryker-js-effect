@@ -10,7 +10,7 @@ export type BenchSide = typeof BenchSide.Type
 export const BenchCorpusName = S.Literals(['repo', 'enterprise'])
 export type BenchCorpusName = typeof BenchCorpusName.Type
 
-export class BenchRunKey extends S.Class<BenchRunKey>('BenchRunKey')({
+export class BenchRunKey extends S.Class<BenchRunKey, { readonly brand: unique symbol }>('BenchRunKey')({
   corpus: BenchCorpusName,
   entry: S.NonEmptyString,
   side: BenchSide,
@@ -33,7 +33,7 @@ export type WorkloadDigest = typeof WorkloadDigest.Type
 export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid'])
 export type BenchRunFailureCode = typeof BenchRunFailureCode.Type
 
-export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measured', {
+export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured, { readonly brand: unique symbol }>()('measured', {
   key: BenchRunKey,
   phaseDurations: RunEvent.PhaseDurations,
   mutants: Report.NonNegativeInt,
@@ -45,7 +45,7 @@ export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measure
   readonly [BenchRunTypeId] = BenchRunTypeId
 }
 
-export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid>()('invalid', {
+export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid, { readonly brand: unique symbol }>()('invalid', {
   key: BenchRunKey,
   code: BenchRunFailureCode,
   reason: S.String,

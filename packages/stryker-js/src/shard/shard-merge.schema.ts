@@ -1,9 +1,11 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as S from 'effect/Schema'
 
-export class ShardMergeFailed extends S.TaggedError<ShardMergeFailed>()('ShardMergeFailed', {
-  reason: S.String,
-}) {
+export class ShardMergeFailed
+  extends S.TaggedError<ShardMergeFailed, { readonly brand: unique symbol }>()('ShardMergeFailed', {
+    reason: S.String,
+  })
+{
   override get message(): string {
     return this.reason
   }

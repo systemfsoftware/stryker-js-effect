@@ -11,26 +11,30 @@ const ConfigModuleFailureDecisionTypeId: unique symbol = Symbol.for(
 )
 type ConfigModuleFailureDecisionTypeId = typeof ConfigModuleFailureDecisionTypeId
 
-export class DescribeConfigImportCommand extends S.TaggedClass<DescribeConfigImportCommand>()(
-  'DescribeConfigImportCommand',
-  {
-    file: S.String,
-    message: S.String,
-    cause: S.Unknown,
-  },
-) {
+export class DescribeConfigImportCommand
+  extends S.TaggedClass<DescribeConfigImportCommand, { readonly brand: unique symbol }>()(
+    'DescribeConfigImportCommand',
+    {
+      file: S.String,
+      message: S.String,
+      cause: S.Unknown,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ConfigImportDescribed extends S.TaggedClass<ConfigImportDescribed>()('ConfigImportDescribed', {
-  code: S.String,
-  message: S.String,
-}) {
+export class ConfigImportDescribed
+  extends S.TaggedClass<ConfigImportDescribed, { readonly brand: unique symbol }>()('ConfigImportDescribed', {
+    code: S.String,
+    message: S.String,
+  })
+{
   readonly [ConfigModuleFailureDecisionTypeId] = ConfigModuleFailureDecisionTypeId
 }
 
 export class ConfigImportUnclassified
-  extends S.TaggedClass<ConfigImportUnclassified>()('ConfigImportUnclassified', {})
+  extends S.TaggedClass<ConfigImportUnclassified, { readonly brand: unique symbol }>()('ConfigImportUnclassified', {})
 {
   readonly [ConfigModuleFailureDecisionTypeId] = ConfigModuleFailureDecisionTypeId
 }

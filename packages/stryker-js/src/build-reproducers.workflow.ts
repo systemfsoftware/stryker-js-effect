@@ -27,22 +27,28 @@ export type Reproducer = typeof ReproducerSchema.Type
 const BuildReproducersTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/BuildReproducersDecision')
 type BuildReproducersTypeId = typeof BuildReproducersTypeId
 
-export class ReproducersBuilt extends S.TaggedClass<ReproducersBuilt>()('ReproducersBuilt', {
-  reproducers: S.Array(ReproducerSchema),
-}) {
+export class ReproducersBuilt
+  extends S.TaggedClass<ReproducersBuilt, { readonly brand: unique symbol }>()('ReproducersBuilt', {
+    reproducers: S.Array(ReproducerSchema),
+  })
+{
   readonly [BuildReproducersTypeId] = BuildReproducersTypeId
 }
 
-export class NoMutantsToReproduce extends S.TaggedClass<NoMutantsToReproduce>()('NoMutantsToReproduce', {}) {
+export class NoMutantsToReproduce
+  extends S.TaggedClass<NoMutantsToReproduce, { readonly brand: unique symbol }>()('NoMutantsToReproduce', {})
+{
   readonly [BuildReproducersTypeId] = BuildReproducersTypeId
 }
 
 export const BuildReproducersDecision = S.Union([ReproducersBuilt, NoMutantsToReproduce])
 export type BuildReproducersDecision = typeof BuildReproducersDecision.Type
 
-export class BuildReproducersCommand extends S.TaggedClass<BuildReproducersCommand>()('BuildReproducersCommand', {
-  report: Report.MutationTestResult,
-}) {
+export class BuildReproducersCommand
+  extends S.TaggedClass<BuildReproducersCommand, { readonly brand: unique symbol }>()('BuildReproducersCommand', {
+    report: Report.MutationTestResult,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

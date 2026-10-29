@@ -7,23 +7,25 @@ import { type LocatedDirective, LocatedDirectiveSchema } from './directive.schem
 
 export type MutantRule = readonly LocatedDirective[]
 
-export class FoldRuleCommand extends S.TaggedClass<FoldRuleCommand>()('FoldRuleCommand', {
-  rule: S.Array(LocatedDirectiveSchema),
-  directive: LocatedDirectiveSchema,
-}) {
+export class FoldRuleCommand
+  extends S.TaggedClass<FoldRuleCommand, { readonly brand: unique symbol }>()('FoldRuleCommand', {
+    rule: S.Array(LocatedDirectiveSchema),
+    directive: LocatedDirectiveSchema,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const RuleFoldTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/RuleFold')
 type RuleFoldTypeId = typeof RuleFoldTypeId
 
-export class DisableFolded extends S.TaggedClass<DisableFolded>()('DisableFolded', {
+export class DisableFolded extends S.TaggedClass<DisableFolded, { readonly brand: unique symbol }>()('DisableFolded', {
   rule: S.Array(LocatedDirectiveSchema),
 }) {
   readonly [RuleFoldTypeId] = RuleFoldTypeId
 }
 
-export class RestoreFolded extends S.TaggedClass<RestoreFolded>()('RestoreFolded', {
+export class RestoreFolded extends S.TaggedClass<RestoreFolded, { readonly brand: unique symbol }>()('RestoreFolded', {
   rule: S.Array(LocatedDirectiveSchema),
 }) {
   readonly [RuleFoldTypeId] = RuleFoldTypeId

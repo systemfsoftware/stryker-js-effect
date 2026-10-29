@@ -23,30 +23,34 @@ const NonNegativeFinite = S.Finite.check(S.isGreaterThanOrEqualTo(0))
 const CapacityMs = S.Finite.check(S.isBetween({ minimum: 0, maximum: ONE_DAY_MS, exclusiveMinimum: true }))
 const BlockMutants = S.Int.check(S.isBetween({ minimum: 1, maximum: 4096 }))
 
-export class CorpusFile extends S.Class<CorpusFile>('CorpusFile')({
+export class CorpusFile extends S.Class<CorpusFile, { readonly brand: unique symbol }>('CorpusFile')({
   project: S.String,
   fileName: S.String,
   mutants: NonNegativeInt,
 }) {}
 
-export class PlanLegsCommand extends S.TaggedClass<PlanLegsCommand>()('PlanLegsCommand', {
-  files: S.Array(CorpusFile),
-  rates: S.Array(FileRate),
-  overheads: S.Array(ProjectOverhead),
-  capacityMs: CapacityMs,
-  blockMutants: BlockMutants,
-}) {
+export class PlanLegsCommand
+  extends S.TaggedClass<PlanLegsCommand, { readonly brand: unique symbol }>()('PlanLegsCommand', {
+    files: S.Array(CorpusFile),
+    rates: S.Array(FileRate),
+    overheads: S.Array(ProjectOverhead),
+    capacityMs: CapacityMs,
+    blockMutants: BlockMutants,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class LegsPlanned extends S.TaggedClass<LegsPlanned>()('LegsPlanned', {
+export class LegsPlanned extends S.TaggedClass<LegsPlanned, { readonly brand: unique symbol }>()('LegsPlanned', {
   legs: S.NonEmptyArray(PlannedLeg),
   totalMs: NonNegativeFinite,
 }) {
   readonly [PlanLegsTypeId] = PlanLegsTypeId
 }
 
-export class NoCorpusMutants extends S.TaggedClass<NoCorpusMutants>()('NoCorpusMutants', {}) {
+export class NoCorpusMutants
+  extends S.TaggedClass<NoCorpusMutants, { readonly brand: unique symbol }>()('NoCorpusMutants', {})
+{
   readonly [PlanLegsTypeId] = PlanLegsTypeId
 }
 

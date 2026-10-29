@@ -6,7 +6,7 @@ import * as S from 'effect/Schema'
 const PrepareDecisionTypeId = Symbol.for('@systemfsoftware/stryker-js/PrepareDecision')
 type PrepareDecisionTypeId = typeof PrepareDecisionTypeId
 
-export class PrepareDecoded extends S.Class<PrepareDecoded>('PrepareDecoded')({
+export class PrepareDecoded extends S.Class<PrepareDecoded, { readonly brand: unique symbol }>('PrepareDecoded')({
   mode: S.Literals(['human', 'machine']),
   reporters: S.Array(S.String),
   fileCount: S.Finite,
@@ -17,15 +17,19 @@ export class PrepareDecoded extends S.Class<PrepareDecoded>('PrepareDecoded')({
   } as const
 }
 
-export class HumanReporters extends S.TaggedClass<HumanReporters>()('HumanReporters', {
-  reporters: S.Array(S.String),
-}) {
+export class HumanReporters
+  extends S.TaggedClass<HumanReporters, { readonly brand: unique symbol }>()('HumanReporters', {
+    reporters: S.Array(S.String),
+  })
+{
   readonly [PrepareDecisionTypeId] = PrepareDecisionTypeId
 }
 
-export class MachineReporters extends S.TaggedClass<MachineReporters>()('MachineReporters', {
-  reporters: S.Array(S.String),
-}) {
+export class MachineReporters
+  extends S.TaggedClass<MachineReporters, { readonly brand: unique symbol }>()('MachineReporters', {
+    reporters: S.Array(S.String),
+  })
+{
   readonly [PrepareDecisionTypeId] = PrepareDecisionTypeId
 }
 

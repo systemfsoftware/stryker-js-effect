@@ -5,7 +5,7 @@ import * as S from 'effect/Schema'
 const LegSelectionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/LegSelection')
 type LegSelectionTypeId = typeof LegSelectionTypeId
 
-export class AffectedLegs extends S.TaggedClass<AffectedLegs>()('AffectedLegs', {
+export class AffectedLegs extends S.TaggedClass<AffectedLegs, { readonly brand: unique symbol }>()('AffectedLegs', {
   base: S.NonEmptyString,
   legs: S.Array(S.NonEmptyString),
   skipped: S.Array(S.NonEmptyString),
@@ -16,7 +16,7 @@ export class AffectedLegs extends S.TaggedClass<AffectedLegs>()('AffectedLegs', 
 export const FullCorpusReason = S.Literals(['dispatch', 'no-green-ancestor', 'lane-inputs-changed'])
 export type FullCorpusReason = typeof FullCorpusReason.Type
 
-export class FullCorpus extends S.TaggedClass<FullCorpus>()('FullCorpus', {
+export class FullCorpus extends S.TaggedClass<FullCorpus, { readonly brand: unique symbol }>()('FullCorpus', {
   base: S.NonEmptyString,
   reason: FullCorpusReason,
   legs: S.NonEmptyArray(S.NonEmptyString),
@@ -27,7 +27,7 @@ export class FullCorpus extends S.TaggedClass<FullCorpus>()('FullCorpus', {
 export const LegSelection = S.Union([AffectedLegs, FullCorpus])
 export type LegSelection = typeof LegSelection.Type
 
-export class NoBenchBase extends S.TaggedError<NoBenchBase>()('NoBenchBase', {
+export class NoBenchBase extends S.TaggedError<NoBenchBase, { readonly brand: unique symbol }>()('NoBenchBase', {
   head: S.NonEmptyString,
 }) {
   override get message(): string {
@@ -45,7 +45,7 @@ export type GreenRun = typeof GreenRun.Type
 const BaseChoiceTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/BaseChoice')
 type BaseChoiceTypeId = typeof BaseChoiceTypeId
 
-export class GreenBase extends S.TaggedClass<GreenBase>()('GreenBase', {
+export class GreenBase extends S.TaggedClass<GreenBase, { readonly brand: unique symbol }>()('GreenBase', {
   sha: S.NonEmptyString,
 }) {
   readonly [BaseChoiceTypeId] = BaseChoiceTypeId
@@ -54,10 +54,12 @@ export class GreenBase extends S.TaggedClass<GreenBase>()('GreenBase', {
 export const FirstParentReason = S.Literals(['dispatch', 'no-green-ancestor'])
 export type FirstParentReason = typeof FirstParentReason.Type
 
-export class FirstParentBase extends S.TaggedClass<FirstParentBase>()('FirstParentBase', {
-  sha: S.NonEmptyString,
-  reason: FirstParentReason,
-}) {
+export class FirstParentBase
+  extends S.TaggedClass<FirstParentBase, { readonly brand: unique symbol }>()('FirstParentBase', {
+    sha: S.NonEmptyString,
+    reason: FirstParentReason,
+  })
+{
   readonly [BaseChoiceTypeId] = BaseChoiceTypeId
 }
 

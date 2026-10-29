@@ -1,3 +1,4 @@
+import { layerDigest } from '@effect/platform-node/NodeCrypto'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import {
@@ -24,6 +25,7 @@ import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -309,4 +311,6 @@ const program = Effect.gen(function*() {
   })
 })
 
-NodeRuntime.runMain({ disableErrorReporting: true })(program.pipe(Effect.provide(nodeServicesLayer)))
+NodeRuntime.runMain({ disableErrorReporting: true })(
+  program.pipe(Effect.provide(Layer.mergeAll(nodeServicesLayer, layerDigest))),
+)

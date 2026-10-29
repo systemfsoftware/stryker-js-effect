@@ -3,25 +3,27 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>()('MutantTestPlanCommand', {
-  mutants: S.Array(Mutant.Mutant),
-  timeOverheadMS: Report.NonNegativeFinite,
-  timeSpentAllTests: Report.NonNegativeFinite,
-  globalTestFilter: S.String.pipe(S.Array, S.optional),
-  hitsByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeInt),
-  staticCoverage: S.optional(S.Record(Mutant.MutantId, Report.NonNegativeInt)),
-  testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
-  priorKilledByByMutantId: S.optional(S.Record(Mutant.MutantId, S.Array(TestRunner.TestId))),
-  testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
-  options: S.Struct({
-    coverageAnalysis: Options.CoverageAnalysisMode,
-    disableBail: S.Boolean,
-    timeoutMS: Report.NonNegativeFinite,
-    timeoutFactor: Report.NonNegativeFinite,
-    ignoreStatic: S.Boolean,
-  }),
-  sandboxFileByName: S.Record(S.String, S.String),
-}) {
+export class MutantTestPlanCommand
+  extends S.TaggedClass<MutantTestPlanCommand, { readonly brand: unique symbol }>()('MutantTestPlanCommand', {
+    mutants: S.Array(Mutant.Mutant),
+    timeOverheadMS: Report.NonNegativeFinite,
+    timeSpentAllTests: Report.NonNegativeFinite,
+    globalTestFilter: S.String.pipe(S.Array, S.optional),
+    hitsByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeInt),
+    staticCoverage: S.optional(S.Record(Mutant.MutantId, Report.NonNegativeInt)),
+    testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
+    priorKilledByByMutantId: S.optional(S.Record(Mutant.MutantId, S.Array(TestRunner.TestId))),
+    testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
+    options: S.Struct({
+      coverageAnalysis: Options.CoverageAnalysisMode,
+      disableBail: S.Boolean,
+      timeoutMS: Report.NonNegativeFinite,
+      timeoutFactor: Report.NonNegativeFinite,
+      ignoreStatic: S.Boolean,
+    }),
+    sandboxFileByName: S.Record(S.String, S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     timeOverheadMS: 'stryker.mutant_test_plan.time_overhead_ms',
     timeSpentAllTests: 'stryker.mutant_test_plan.time_spent_all_tests_ms',

@@ -224,14 +224,18 @@ const AuditFailures = S.Struct({ pairs: Count, unattestedRules: Count, orphanedT
 
 const AuditReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/AuditReport')
 
-export class DropAuditPassed extends S.TaggedClass<DropAuditPassed>()('DropAuditPassed', DropAuditFields) {
+export class DropAuditPassed
+  extends S.TaggedClass<DropAuditPassed, { readonly brand: unique symbol }>()('DropAuditPassed', DropAuditFields)
+{
   readonly [AuditReportTypeId] = AuditReportTypeId
 }
 
-export class DropAuditFailed extends S.TaggedClass<DropAuditFailed>()('DropAuditFailed', {
-  ...DropAuditFields,
-  failures: AuditFailures,
-}) {
+export class DropAuditFailed
+  extends S.TaggedClass<DropAuditFailed, { readonly brand: unique symbol }>()('DropAuditFailed', {
+    ...DropAuditFields,
+    failures: AuditFailures,
+  })
+{
   readonly [AuditReportTypeId] = AuditReportTypeId
 }
 
@@ -284,7 +288,7 @@ export const RunCounts = S.Struct({
 })
 export type RunCounts = typeof RunCounts.Type
 
-export class CountsReport extends S.TaggedClass<CountsReport>()('Counts', {
+export class CountsReport extends S.TaggedClass<CountsReport, { readonly brand: unique symbol }>()('Counts', {
   schemaVersion: AuditSchemaVersion,
   projects: S.Array(S.Struct({ project: S.String, counts: RunCounts })),
   total: RunCounts,
@@ -298,9 +302,11 @@ export const AuditReportJson = S.fromJsonString(AuditReport)
 
 export const CountedProject = S.Struct({ project: S.String, report: CountedReport })
 
-export class NothingCounted extends S.TaggedError<NothingCounted>()('NothingCounted', {
-  projects: S.Array(S.String),
-}) {
+export class NothingCounted
+  extends S.TaggedError<NothingCounted, { readonly brand: unique symbol }>()('NothingCounted', {
+    projects: S.Array(S.String),
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
   readonly code = 'no-mutant-recorded' as const
 
@@ -316,7 +322,7 @@ export class NothingCounted extends S.TaggedError<NothingCounted>()('NothingCoun
   }
 }
 
-export class AuditFailed extends S.TaggedError<AuditFailed>()('AuditFailed', {
+export class AuditFailed extends S.TaggedError<AuditFailed, { readonly brand: unique symbol }>()('AuditFailed', {
   failures: AuditFailures,
   report: S.String,
 }) {
@@ -339,11 +345,13 @@ const AuditInputCode = S.Literals([
   'files-with-counts-only',
 ])
 
-export class AuditInputUnusable extends S.TaggedError<AuditInputUnusable>()('AuditInputUnusable', {
-  code: AuditInputCode,
-  detail: S.String,
-  next: S.String,
-}) {
+export class AuditInputUnusable
+  extends S.TaggedError<AuditInputUnusable, { readonly brand: unique symbol }>()('AuditInputUnusable', {
+    code: AuditInputCode,
+    detail: S.String,
+    next: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
 
   get reason(): string {

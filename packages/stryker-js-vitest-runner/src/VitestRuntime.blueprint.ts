@@ -4,7 +4,7 @@ import { BaseSequencer, createVitest as createVitestOriginal, type TestSpecifica
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -222,7 +222,7 @@ export interface VitestRuntimeInput {
   readonly bail: number
   readonly setupFilePath: string | undefined
   readonly resolver: VitestResolver
-  readonly crypto: Crypto.Crypto
+  readonly crypto: SecureRandom.SecureRandom['Service']
   readonly fileSystem: FileSystem.FileSystem
   readonly path: Path.Path
   readonly lifetime: Scope.Scope
@@ -378,7 +378,7 @@ const acquire: (input: VitestRuntimeInput) => Effect.Effect<VitestRuntime, TestR
   SpanTaxonomy.Spans.vitestRuntimeAcquire.name,
 )(function*(input: VitestRuntimeInput) {
   const { crypto, fileSystem: fs, path } = input
-  const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
+  const suffix = yield* crypto.uuidV4()
   const localSetupFile = path.resolve(input.projectRoot, 'stryker-setup-' + suffix + '.js')
   const setupFilePath = yield* Option.match(Option.fromNullishOr(input.setupFilePath), {
     onNone: () => path.fromFileUrl(STRYKER_SETUP_URL).pipe(Effect.mapError(failRuntime('init'))),

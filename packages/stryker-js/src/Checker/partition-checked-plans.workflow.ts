@@ -18,39 +18,47 @@ const IgnoredCheckResultSchema = S.Struct({
   reason: Mutant.IgnoreStatusReasonText,
 })
 
-export class CheckedPlanPassed extends S.TaggedClass<CheckedPlanPassed>()('CheckedPlanPassed', {
-  mutantId: Mutant.MutantId,
-  entryIndex: S.Int,
-}) {
+export class CheckedPlanPassed
+  extends S.TaggedClass<CheckedPlanPassed, { readonly brand: unique symbol }>()('CheckedPlanPassed', {
+    mutantId: Mutant.MutantId,
+    entryIndex: S.Int,
+  })
+{
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
 
-export class CheckedPlanFailed extends S.TaggedClass<CheckedPlanFailed>()('CheckedPlanFailed', {
-  mutantId: Mutant.MutantId,
-  entryIndex: S.Int,
-  reason: S.String,
-  result: FailedCheckResultSchema,
-}) {
+export class CheckedPlanFailed
+  extends S.TaggedClass<CheckedPlanFailed, { readonly brand: unique symbol }>()('CheckedPlanFailed', {
+    mutantId: Mutant.MutantId,
+    entryIndex: S.Int,
+    reason: S.String,
+    result: FailedCheckResultSchema,
+  })
+{
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
 
-export class CheckedPlanIgnored extends S.TaggedClass<CheckedPlanIgnored>()('CheckedPlanIgnored', {
-  mutantId: Mutant.MutantId,
-  entryIndex: S.Int,
-  reason: Mutant.IgnoreStatusReasonText,
-  result: IgnoredCheckResultSchema,
-}) {
+export class CheckedPlanIgnored
+  extends S.TaggedClass<CheckedPlanIgnored, { readonly brand: unique symbol }>()('CheckedPlanIgnored', {
+    mutantId: Mutant.MutantId,
+    entryIndex: S.Int,
+    reason: Mutant.IgnoreStatusReasonText,
+    result: IgnoredCheckResultSchema,
+  })
+{
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
 
 export type CheckedPlanDecision = CheckedPlanPassed | CheckedPlanFailed | CheckedPlanIgnored
 
-export class PartitionCheckedPlansCommand extends S.TaggedClass<PartitionCheckedPlansCommand>()(
-  'PartitionCheckedPlansCommand',
-  {
-    checked: S.Array(S.Tuple([Mutant.MutantId, Checker.CheckResultSchema])),
-  },
-) {
+export class PartitionCheckedPlansCommand
+  extends S.TaggedClass<PartitionCheckedPlansCommand, { readonly brand: unique symbol }>()(
+    'PartitionCheckedPlansCommand',
+    {
+      checked: S.Array(S.Tuple([Mutant.MutantId, Checker.CheckResultSchema])),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

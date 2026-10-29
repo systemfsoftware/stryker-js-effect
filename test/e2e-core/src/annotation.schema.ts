@@ -20,19 +20,27 @@ export const ErrorClass = S.String.pipe(
 )
 export type ErrorClass = typeof ErrorClass.Type
 
-export class AnnotationStatusOutcome extends S.TaggedClass<AnnotationStatusOutcome>()('Status', {
-  status: Mutant.MutantStatusSchema,
-}) {}
+export class AnnotationStatusOutcome
+  extends S.TaggedClass<AnnotationStatusOutcome, { readonly brand: unique symbol }>()('Status', {
+    status: Mutant.MutantStatusSchema,
+  })
+{}
 
-export class KilledOrTimeoutOutcome extends S.TaggedClass<KilledOrTimeoutOutcome>()('KilledOrTimeout', {}) {}
+export class KilledOrTimeoutOutcome
+  extends S.TaggedClass<KilledOrTimeoutOutcome, { readonly brand: unique symbol }>()('KilledOrTimeout', {})
+{}
 
-export class CompileErrorOutcome extends S.TaggedClass<CompileErrorOutcome>()('CompileError', {
-  code: TsCode,
-}) {}
+export class CompileErrorOutcome
+  extends S.TaggedClass<CompileErrorOutcome, { readonly brand: unique symbol }>()('CompileError', {
+    code: TsCode,
+  })
+{}
 
-export class RuntimeErrorOutcome extends S.TaggedClass<RuntimeErrorOutcome>()('RuntimeError', {
-  errorClass: ErrorClass,
-}) {}
+export class RuntimeErrorOutcome
+  extends S.TaggedClass<RuntimeErrorOutcome, { readonly brand: unique symbol }>()('RuntimeError', {
+    errorClass: ErrorClass,
+  })
+{}
 
 export const Outcome = S.Union([
   AnnotationStatusOutcome,
@@ -48,9 +56,9 @@ export const MutatorItem = S.Struct({
 })
 export type MutatorItem = typeof MutatorItem.Type
 
-export class AllMutators extends S.TaggedClass<AllMutators>()('All', {}) {}
+export class AllMutators extends S.TaggedClass<AllMutators, { readonly brand: unique symbol }>()('All', {}) {}
 
-export class NamedMutators extends S.TaggedClass<NamedMutators>()('Named', {
+export class NamedMutators extends S.TaggedClass<NamedMutators, { readonly brand: unique symbol }>()('Named', {
   items: S.Array(MutatorItem),
 }) {}
 
@@ -63,7 +71,7 @@ export type SourceLine = typeof SourceLine.Type
 const AnnotationTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/Annotation')
 type AnnotationTypeId = typeof AnnotationTypeId
 
-export class Annotation extends S.TaggedClass<Annotation>()('Annotation', {
+export class Annotation extends S.TaggedClass<Annotation, { readonly brand: unique symbol }>()('Annotation', {
   line: S.Int,
   scope: Scope,
   range: Mutant.Location,
@@ -77,22 +85,26 @@ export class Annotation extends S.TaggedClass<Annotation>()('Annotation', {
 export const SourcedAnnotation = S.Struct({ file: S.String, annotation: Annotation })
 export type SourcedAnnotation = typeof SourcedAnnotation.Type
 
-export class AnnotationUnreadable extends S.TaggedError<AnnotationUnreadable>()('AnnotationUnreadable', {
-  file: S.String,
-  line: S.Int,
-  text: S.String,
-  reason: S.String,
-}) {
+export class AnnotationUnreadable
+  extends S.TaggedError<AnnotationUnreadable, { readonly brand: unique symbol }>()('AnnotationUnreadable', {
+    file: S.String,
+    line: S.Int,
+    text: S.String,
+    reason: S.String,
+  })
+{
   override get message(): string {
     return `${this.file}:${this.line}: ${this.reason}: ${this.text}`
   }
 }
 
-export class AnnotationRangeUnresolved extends S.TaggedError<AnnotationRangeUnresolved>()('AnnotationRangeUnresolved', {
-  file: S.String,
-  line: S.Int,
-  reason: S.String,
-}) {
+export class AnnotationRangeUnresolved
+  extends S.TaggedError<AnnotationRangeUnresolved, { readonly brand: unique symbol }>()('AnnotationRangeUnresolved', {
+    file: S.String,
+    line: S.Int,
+    reason: S.String,
+  })
+{
   override get message(): string {
     return `${this.file}:${this.line}: the annotated scope has no source range: ${this.reason}`
   }

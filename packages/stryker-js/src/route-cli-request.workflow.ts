@@ -10,11 +10,13 @@ import { CliRouteCommand, FeedbackJudgmentSchema, ServeChannelSchema } from './C
 const CliRouteDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CliRouteDecision')
 type CliRouteDecisionTypeId = typeof CliRouteDecisionTypeId
 
-export class CliHelpRequested extends S.TaggedClass<CliHelpRequested>()('CliHelpRequested', {}) {
+export class CliHelpRequested
+  extends S.TaggedClass<CliHelpRequested, { readonly brand: unique symbol }>()('CliHelpRequested', {})
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliMergeRequested extends S.TaggedClass<CliMergeRequested>()(
+export class CliMergeRequested extends S.TaggedClass<CliMergeRequested, { readonly brand: unique symbol }>()(
   'CliMergeRequested',
   {
     plan: S.String,
@@ -25,97 +27,123 @@ export class CliMergeRequested extends S.TaggedClass<CliMergeRequested>()(
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliShardRunRequested extends S.TaggedClass<CliShardRunRequested>()('CliShardRunRequested', {
-  plan: S.String,
-  shard: S.String,
-  out: S.optional(S.String),
-}) {
+export class CliShardRunRequested
+  extends S.TaggedClass<CliShardRunRequested, { readonly brand: unique symbol }>()('CliShardRunRequested', {
+    plan: S.String,
+    shard: S.String,
+    out: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliShardLeafRequested extends S.TaggedClass<CliShardLeafRequested>()('CliShardLeafRequested', {
-  plan: S.String,
-  shard: S.String,
-  project: S.String,
-}) {
+export class CliShardLeafRequested
+  extends S.TaggedClass<CliShardLeafRequested, { readonly brand: unique symbol }>()('CliShardLeafRequested', {
+    plan: S.String,
+    shard: S.String,
+    project: S.String,
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliRunRequested extends S.TaggedClass<CliRunRequested>()('CliRunRequested', {}) {
+export class CliRunRequested
+  extends S.TaggedClass<CliRunRequested, { readonly brand: unique symbol }>()('CliRunRequested', {})
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliSurvivorsRequested extends S.TaggedClass<CliSurvivorsRequested>()('CliSurvivorsRequested', {}) {
+export class CliSurvivorsRequested
+  extends S.TaggedClass<CliSurvivorsRequested, { readonly brand: unique symbol }>()('CliSurvivorsRequested', {})
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliRerunRequested extends S.TaggedClass<CliRerunRequested>()('CliRerunRequested', {
-  ids: S.Array(S.String),
-}) {
+export class CliRerunRequested
+  extends S.TaggedClass<CliRerunRequested, { readonly brand: unique symbol }>()('CliRerunRequested', {
+    ids: S.Array(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliCompareRequested extends S.TaggedClass<CliCompareRequested>()('CliCompareRequested', {
-  baseline: S.String,
-  fresh: S.String,
-  noise: S.optional(S.String),
-}) {
+export class CliCompareRequested
+  extends S.TaggedClass<CliCompareRequested, { readonly brand: unique symbol }>()('CliCompareRequested', {
+    baseline: S.String,
+    fresh: S.String,
+    noise: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliGateRequested extends S.TaggedClass<CliGateRequested>()('CliGateRequested', {
-  baseline: S.optional(S.String),
-  updateBaseline: S.Boolean,
-  budgetBaseline: S.optional(S.String),
-  budgetTolerance: S.Finite,
-  updateBudgetBaseline: S.Boolean,
-}) {
+export class CliGateRequested
+  extends S.TaggedClass<CliGateRequested, { readonly brand: unique symbol }>()('CliGateRequested', {
+    baseline: S.optional(S.String),
+    updateBaseline: S.Boolean,
+    budgetBaseline: S.optional(S.String),
+    budgetTolerance: S.Finite,
+    updateBudgetBaseline: S.Boolean,
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliAnnotateRequested extends S.TaggedClass<CliAnnotateRequested>()('CliAnnotateRequested', {
-  baseline: S.optional(S.String),
-}) {
+export class CliAnnotateRequested
+  extends S.TaggedClass<CliAnnotateRequested, { readonly brand: unique symbol }>()('CliAnnotateRequested', {
+    baseline: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliPlanRequested extends S.TaggedClass<CliPlanRequested>()('CliPlanRequested', {
-  targetSeconds: S.Finite,
-  maxShards: S.optional(S.Int),
-  projects: S.Array(S.String).pipe(S.optional),
-  out: S.optional(S.String),
-  full: S.Boolean,
-}) {
+export class CliPlanRequested
+  extends S.TaggedClass<CliPlanRequested, { readonly brand: unique symbol }>()('CliPlanRequested', {
+    targetSeconds: S.Finite,
+    maxShards: S.optional(S.Int),
+    projects: S.Array(S.String).pipe(S.optional),
+    out: S.optional(S.String),
+    full: S.Boolean,
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliAuditRequested extends S.TaggedClass<CliAuditRequested>()('CliAuditRequested', {
-  matrix: S.String,
-  out: S.String,
-  countsOnly: S.Boolean,
-  projects: S.Array(S.String).pipe(S.optional),
-  files: S.Array(S.String).pipe(S.optional),
-}) {
+export class CliAuditRequested
+  extends S.TaggedClass<CliAuditRequested, { readonly brand: unique symbol }>()('CliAuditRequested', {
+    matrix: S.String,
+    out: S.String,
+    countsOnly: S.Boolean,
+    projects: S.Array(S.String).pipe(S.optional),
+    files: S.Array(S.String).pipe(S.optional),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliServeRequested extends S.TaggedClass<CliServeRequested>()('CliServeRequested', {
-  channel: ServeChannelSchema,
-  port: S.optional(S.Int),
-  address: S.optional(S.String),
-}) {
+export class CliServeRequested
+  extends S.TaggedClass<CliServeRequested, { readonly brand: unique symbol }>()('CliServeRequested', {
+    channel: ServeChannelSchema,
+    port: S.optional(S.Int),
+    address: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliFeedbackRequested extends S.TaggedClass<CliFeedbackRequested>()('CliFeedbackRequested', {
-  id: S.String,
-  judgment: FeedbackJudgmentSchema,
-  reason: S.optional(S.String),
-}) {
+export class CliFeedbackRequested
+  extends S.TaggedClass<CliFeedbackRequested, { readonly brand: unique symbol }>()('CliFeedbackRequested', {
+    id: S.String,
+    judgment: FeedbackJudgmentSchema,
+    reason: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliMcpRequested extends S.TaggedClass<CliMcpRequested>()('CliMcpRequested', {}) {
+export class CliMcpRequested
+  extends S.TaggedClass<CliMcpRequested, { readonly brand: unique symbol }>()('CliMcpRequested', {})
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 

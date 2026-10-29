@@ -9,21 +9,27 @@ type MutantRunOutcomeTypeId = typeof MutantRunOutcomeTypeId
 
 export const NoCoveringTestExecutedReason = S.Literal('no covering test executed')
 
-export class MutantRunSettled extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', {}) {
-  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
-}
-
-export class MutantRunPoolInvalidated
-  extends S.TaggedClass<MutantRunPoolInvalidated>()('MutantRunPoolInvalidated', {})
+export class MutantRunSettled
+  extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {})
 {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetry extends S.TaggedClass<MutantRunRetry>()('MutantRunRetry', {}) {
+export class MutantRunPoolInvalidated
+  extends S.TaggedClass<MutantRunPoolInvalidated, { readonly brand: unique symbol }>()('MutantRunPoolInvalidated', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetryExhausted extends S.TaggedClass<MutantRunRetryExhausted>()('MutantRunRetryExhausted', {}) {
+export class MutantRunRetry
+  extends S.TaggedClass<MutantRunRetry, { readonly brand: unique symbol }>()('MutantRunRetry', {})
+{
+  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
+}
+
+export class MutantRunRetryExhausted
+  extends S.TaggedClass<MutantRunRetryExhausted, { readonly brand: unique symbol }>()('MutantRunRetryExhausted', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
@@ -33,12 +39,14 @@ export type MutantRunOutcome =
   | MutantRunRetry
   | MutantRunRetryExhausted
 
-export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
-  wallClockTimeout: S.Boolean,
-  coveringTests: S.String.pipe(S.Array),
-  executedTests: S.String.pipe(S.Array, S.optionalKey),
-  attempt: S.Natural,
-}) {
+export class MutantRunObservation
+  extends S.Class<MutantRunObservation, { readonly brand: unique symbol }>('MutantRunObservation')({
+    wallClockTimeout: S.Boolean,
+    coveringTests: S.String.pipe(S.Array),
+    executedTests: S.String.pipe(S.Array, S.optionalKey),
+    attempt: S.Natural,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

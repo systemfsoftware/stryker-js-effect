@@ -16,24 +16,28 @@ export type PriorStatus = typeof PriorStatus.Type
 export const DryRunCandidate = S.Struct({ id: Mutant.MutantId, static: S.Boolean })
 export type DryRunCandidate = typeof DryRunCandidate.Type
 
-export class RequireDryRunCommand extends S.TaggedClass<RequireDryRunCommand>()('RequireDryRunCommand', {
-  dryRunOnly: S.Boolean,
-  ignoreStatic: S.Boolean,
-  hasCheckers: S.Boolean,
-  mutants: S.Array(DryRunCandidate),
-  priorStatuses: S.Array(PriorStatus),
-  priorFlakyMutantIds: S.Array(S.String),
-}) {
+export class RequireDryRunCommand
+  extends S.TaggedClass<RequireDryRunCommand, { readonly brand: unique symbol }>()('RequireDryRunCommand', {
+    dryRunOnly: S.Boolean,
+    ignoreStatic: S.Boolean,
+    hasCheckers: S.Boolean,
+    mutants: S.Array(DryRunCandidate),
+    priorStatuses: S.Array(PriorStatus),
+    priorFlakyMutantIds: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DryRunNeeded extends S.TaggedClass<DryRunNeeded>()('DryRunNeeded', {
+export class DryRunNeeded extends S.TaggedClass<DryRunNeeded, { readonly brand: unique symbol }>()('DryRunNeeded', {
   dependentMutantIds: S.Array(Mutant.MutantId),
 }) {
   readonly [RequireDryRunTypeId] = RequireDryRunTypeId
 }
 
-export class DryRunSkippable extends S.TaggedClass<DryRunSkippable>()('DryRunSkippable', {}) {
+export class DryRunSkippable
+  extends S.TaggedClass<DryRunSkippable, { readonly brand: unique symbol }>()('DryRunSkippable', {})
+{
   readonly [RequireDryRunTypeId] = RequireDryRunTypeId
 }
 

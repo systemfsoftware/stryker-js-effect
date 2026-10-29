@@ -9,11 +9,13 @@ import { Match, Schema as S } from 'effect'
  * Method threw — the worker stayed up. Distinct from a crash: the pool
  * retires a crashed worker but not one whose method rejected.
  */
-export class WorkerMethodError extends S.TaggedError<WorkerMethodError>()('WorkerMethodError', {
-  message: S.String,
-  name: S.optional(S.String),
-  stack: S.optional(S.String),
-}) {}
+export class WorkerMethodError
+  extends S.TaggedError<WorkerMethodError, { readonly brand: unique symbol }>()('WorkerMethodError', {
+    message: S.String,
+    errorName: S.optional(S.String),
+    stack: S.optional(S.String),
+  })
+{}
 
 // ---------------------------------------------------------------------------
 // Process exit — crash discriminants
@@ -41,14 +43,16 @@ export type ChildExit = typeof ChildExit.Type
 const WorkerExitTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WorkerExit')
 type WorkerExitTypeId = typeof WorkerExitTypeId
 
-export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedError>()(
-  'ChildProcessCrashedError',
-  {
-    pid: ProcessId,
-    exit: ChildExit,
-    cause: S.optional(S.String),
-  },
-) {
+export class ChildProcessCrashedError
+  extends S.TaggedError<ChildProcessCrashedError, { readonly brand: unique symbol }>()(
+    'ChildProcessCrashedError',
+    {
+      pid: ProcessId,
+      exit: ChildExit,
+      cause: S.optional(S.String),
+    },
+  )
+{
   readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'InternalError' as const
 
@@ -61,10 +65,12 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
   }
 }
 
-export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
-  pid: ProcessId,
-  exitCode: ChildExitCode,
-}) {
+export class OutOfMemoryError
+  extends S.TaggedError<OutOfMemoryError, { readonly brand: unique symbol }>()('OutOfMemoryError', {
+    pid: ProcessId,
+    exitCode: ChildExitCode,
+  })
+{
   readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'RuntimeError' as const
 
@@ -77,7 +83,7 @@ export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError
 
 export type WorkerBootError = WorkerExit | WorkerBootTimeoutError
 
-export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError>()(
+export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError, { readonly brand: unique symbol }>()(
   'WorkerBootTimeoutError',
   {
     pid: ProcessId,

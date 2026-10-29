@@ -54,9 +54,13 @@ export type PnpmWorkspaceSettings = typeof PnpmWorkspaceSettingsSchema.Type
 export const PackageManagerManifestSchema = S.Struct({ packageManager: S.optionalKey(S.String) })
 export type PackageManagerManifest = typeof PackageManagerManifestSchema.Type
 
-export class LinkRef extends S.TaggedClass<LinkRef>()('LinkRef', { target: S.String }) {}
+export class LinkRef
+  extends S.TaggedClass<LinkRef, { readonly brand: unique symbol }>()('LinkRef', { target: S.String })
+{}
 
-export class SnapshotRef extends S.TaggedClass<SnapshotRef>()('SnapshotRef', { key: S.String }) {}
+export class SnapshotRef
+  extends S.TaggedClass<SnapshotRef, { readonly brand: unique symbol }>()('SnapshotRef', { key: S.String })
+{}
 
 export const LockRefSchema = S.Union([LinkRef, SnapshotRef])
 export type LockRef = typeof LockRefSchema.Type
