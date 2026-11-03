@@ -1,9 +1,12 @@
 import { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { StockDefaultName, StockMutatorName, StockOptInName } from './StockCatalog.schema.js'
+import { StockDefaultName } from './StockCatalog.schema.js'
 
-type StockCatalogEntry = Omit<typeof MutatorCatalog.Entry.Encoded, 'name'> & { readonly name: StockMutatorName }
+type StockCatalogEntry = Omit<typeof MutatorCatalog.Entry.Encoded, 'name' | 'tier'> & {
+  readonly name: StockDefaultName
+  readonly tier: 'default'
+}
 
 const ATOMIC_UPDATE_DATA_FIRST = `import { Effect, Ref } from 'effect'
 
@@ -278,7 +281,7 @@ const entries = [
   {
     id: 'atomic-update-split',
     name: 'AtomicUpdateSplit',
-    tier: 'optIn',
+    tier: 'default',
     definition:
       'A `Ref` or `SynchronizedRef` atomic update — `modify`, `modifySome`, `update`, `updateSome`, `updateAndGet`, `getAndUpdate` — is split into a read, a snapshot update and a write, so a lost update survives. The `Effect` module has to be in scope, and the reference and the handler have to be movable.',
     examples: [
@@ -290,7 +293,7 @@ const entries = [
   {
     id: 'synchronization-removal',
     name: 'SynchronizationRemoval',
-    tier: 'optIn',
+    tier: 'default',
     definition:
       'The lock a call takes is dropped: `Semaphore.withPermits(sem, n, effect)` and `Semaphore.withPermit(sem, effect)` become the guarded effect, their piped forms become `self => self`, `Effect.uninterruptible(effect)` becomes `effect`, and `Effect.uninterruptibleMask(f)` becomes `Effect.suspend(() => f(Effect.interruptible))`. A guard that is not droppable, and a method-form call whose guard is built on the spot, are refused.',
     examples: [
@@ -306,7 +309,7 @@ const entries = [
   {
     id: 'finalizer-escape',
     name: 'FinalizerEscape',
-    tier: 'optIn',
+    tier: 'default',
     definition:
       'A finalizer is kept only for the path that did not interrupt: `Effect.ensuring(effect, fin)` re-runs `fin` when the exit was not an interruption, `Effect.onError(effect, h)` re-runs `h` when the cause carries none, a release bracket wraps its release the same way, and `Effect.onInterrupt(effect, h)` drops the handler. A handler built by a call, and a cleanup that yields while it is moved, are refused.',
     examples: [
@@ -333,7 +336,7 @@ if (import.meta.vitest !== void 0) {
     })
 
   const vocabularyOf = (tier: MutatorCatalog.TierValue): ReadonlyArray<string> =>
-    tier === 'default' ? StockDefaultName.literals : StockOptInName.literals
+    tier === 'default' ? StockDefaultName.literals : []
 
   const sameNames = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
     left.length === right.length && Arr.every(left, (name) => right.includes(name))

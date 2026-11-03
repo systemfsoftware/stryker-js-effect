@@ -67,7 +67,7 @@ export namespace SpanTaxonomy {
 
 // @public (undocumented)
 export namespace StockCatalog {
-    export { StockCatalog, StockDefaultName, StockMutatorName, StockOptInName };
+    export { StockCatalog, StockDefaultName };
 }
 
 // (No @packageDocumentation comment for this package)
