@@ -14,6 +14,9 @@ export const CHECKER_PLUGIN = '@systemfsoftware/stryker-js-typescript-checker'
 
 const E2E_CHECKER_CONFIG = /^test\/e2e\/testResources\/[^/]+\/stryker[^/]*\.config\.ts$/u
 const WORKSPACE_TSCONFIG_APP = /(?:^|\/)tsconfig\.app\.json$/u
+// `repos/` holds the git-subtree vendors listed in subtrees.toml: upstream code the workspace does not own, whose
+// tsconfigs belong to upstream's own toolchain, so they are not part of the checker-parity corpus.
+const VENDORED_SUBTREE = /^repos\//u
 const TSCONFIG_FILE = /tsconfigFile\s*:\s*['"`]([^'"`]+)['"`]/gu
 const DECLARATION_FILE = /\.d\.(?:ts|mts|cts)$/u
 
@@ -25,7 +28,9 @@ export interface CorpusEntries {
 const distinctSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> => Arr.sort(Arr.dedupe(values), Str.Order)
 
 export const corpusEntries = (tracked: ReadonlyArray<string>): CorpusEntries => ({
-  workspaceTsconfigs: distinctSorted(tracked.filter((file) => WORKSPACE_TSCONFIG_APP.test(file))),
+  workspaceTsconfigs: distinctSorted(
+    tracked.filter((file) => WORKSPACE_TSCONFIG_APP.test(file) && !VENDORED_SUBTREE.test(file)),
+  ),
   e2eConfigs: distinctSorted(tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
 })
 
