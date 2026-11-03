@@ -66,6 +66,7 @@ const priorMutantsOf = (text: string, basePath: string): ReadonlyArray<typeof Pr
           replacement: mutant.replacement ?? mutant.mutatorName,
           location: mutant.location,
           relativeFileName,
+          probeEligibility: Mutant.Unprobed.make({ reason: 'not-decided' }),
         }))
       }),
   })

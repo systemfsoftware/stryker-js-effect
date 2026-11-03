@@ -1,4 +1,5 @@
 /// <reference types="vitest/importMeta" />
+import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
@@ -108,6 +109,41 @@ export type Readmitted = typeof Readmitted.Type
 export const Subsumption = S.Union([Subsumed, Readmitted])
 export type Subsumption = typeof Subsumption.Type
 
+export const ProbeKind = S.Literals(['arithmetic', 'relational', 'unary', 'constant'])
+export type ProbeKind = typeof ProbeKind.Type
+
+export const Probed = S.TaggedStruct('Probed', { kind: ProbeKind })
+export type Probed = typeof Probed.Type
+
+/**
+ * Why a mutant carries no probe and runs exactly as it would without one:
+ * - `mutator-not-probed`: its mutator is outside the probed set.
+ * - `operator-not-probed`: its mutator is probed, but not for this original operator.
+ * - `every-reach-infects`: an `==`/`!=`/`===`/`!==` swap changes the value on every evaluation.
+ * - `not-a-comparison`: a constant replacement of an expression that is not a comparison.
+ * - `operand-not-proven-local`: a constant replacement of a comparison whose operand may run user code.
+ * - `shape-not-recognized`: the original and replacement nodes do not have the probed form.
+ * - `not-decided`: the mutant was built or decoded without an eligibility decision.
+ */
+export const UnprobedReason = S.Literals([
+  'mutator-not-probed',
+  'operator-not-probed',
+  'every-reach-infects',
+  'not-a-comparison',
+  'operand-not-proven-local',
+  'shape-not-recognized',
+  'not-decided',
+])
+export type UnprobedReason = typeof UnprobedReason.Type
+
+export const Unprobed = S.TaggedStruct('Unprobed', { reason: UnprobedReason })
+export type Unprobed = typeof Unprobed.Type
+
+export const ProbeEligibility = S.Union([Probed, Unprobed])
+export type ProbeEligibility = typeof ProbeEligibility.Type
+
+const NOT_DECIDED = { _tag: 'Unprobed', reason: 'not-decided' } as const satisfies Unprobed
+
 export const subsumptionMatchesStatus: {
   (status: MutantStatus | undefined): (subsumption: Subsumption) => boolean
   (subsumption: Subsumption, status: MutantStatus | undefined): boolean
@@ -136,6 +172,10 @@ export const Mutant = S.TaggedStruct('Mutant', {
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   subsumption: S.optional(Subsumption),
+  probeEligibility: ProbeEligibility.pipe(
+    S.withConstructorDefault(Effect.succeed(NOT_DECIDED)),
+    S.withDecodingDefaultKey(Effect.succeed(NOT_DECIDED)),
+  ),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
@@ -391,5 +431,28 @@ if (import.meta.vitest !== void 0) {
     { of: [Subsumption, S.NullOr(MutantStatusSchema)], subject: decodesWith },
     (subject, [subsumption, status]) =>
       subject(subsumption, status) === ACCEPTED_BY_TAG[subsumption._tag].includes(status),
+  )
+
+  const Struct = await import('effect/Struct')
+  const eligibilityWhenAbsent = (mutant: Mutant) => ({
+    decoded: Option.map(
+      Option.flatMap(
+        S.encodeOption(Mutant)(mutant),
+        (encoded) => S.decodeOption(Mutant)(Struct.omit(encoded, ['probeEligibility'])),
+      ),
+      (decoded) => decoded.probeEligibility,
+    ),
+    constructed: Mutant.make(Struct.omit(mutant, ['probeEligibility'])).probeEligibility,
+  })
+  const isNotDecided = (eligibility: ProbeEligibility): boolean =>
+    S.is(Unprobed)(eligibility) && eligibility.reason === 'not-decided'
+
+  it.prop(
+    '∀m_MutantWithoutEligibility_≡UnprobedNotDecided',
+    { of: [Mutant], subject: eligibilityWhenAbsent },
+    (subject, [mutant]) => {
+      const { decoded, constructed } = subject(mutant)
+      return Option.exists(decoded, isNotDecided) && isNotDecided(constructed)
+    },
   )
 }
