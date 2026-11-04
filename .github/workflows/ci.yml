@@ -517,7 +517,7 @@ jobs:
           echo "Verdict cache: miss (code \`cache-miss\`), leg $SHARD starts cold." >> "$GITHUB_STEP_SUMMARY"
       - name: Download the plan
         if: env.MODE == 'full'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: checker-parity-plan-${{ github.run_id }}
           path: checker-parity-plan
@@ -626,7 +626,7 @@ jobs:
         run: pnpm turbo build --filter @systemfsoftware/stryker-checker-parity
       - name: Download every leg
         if: needs.checker-parity-changes.outputs.run == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: checker-parity-${{ github.run_id }}-*
           path: checker-parity-shards
@@ -659,7 +659,7 @@ jobs:
           key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Collect the verdict caches
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: checker-parity-verdicts-${{ github.run_id }}-*
           path: .checker-parity-cache
