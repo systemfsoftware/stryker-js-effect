@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-ignorer-kit
 
+## 0.1.3
+
+Build and lint with effect 4.1.0 and @effect/tsgo 0.63.0; the published code is unchanged.
+
 ## 0.1.2
 
 Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.
