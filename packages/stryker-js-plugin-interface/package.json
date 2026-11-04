@@ -35,6 +35,9 @@
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "effect": "catalog:"
   },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/platform-node-shared": "catalog:",
     "@effect/tsgo": "catalog:",

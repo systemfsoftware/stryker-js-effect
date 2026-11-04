@@ -54,6 +54,9 @@
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
   },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",

@@ -74,6 +74,7 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
+    "effect": "catalog:",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {

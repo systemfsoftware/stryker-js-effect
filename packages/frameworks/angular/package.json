@@ -58,6 +58,9 @@
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
     "angular-html-parser": "catalog:"
   },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",

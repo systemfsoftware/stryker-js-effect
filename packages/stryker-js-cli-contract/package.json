@@ -35,6 +35,9 @@
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:"
   },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/platform-node-shared": "catalog:",
     "@effect/tsgo": "catalog:",
