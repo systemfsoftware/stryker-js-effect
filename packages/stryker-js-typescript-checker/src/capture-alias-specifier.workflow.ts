@@ -9,13 +9,17 @@ import { CaptureAliasSpecifierCommand } from './CheckerCommands.schema.js'
 const CaptureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/AliasCapture')
 type CaptureTypeId = typeof CaptureTypeId
 
-export class AliasSpecifierCaptured extends S.TaggedClass<AliasSpecifierCaptured>()('AliasSpecifierCaptured', {
-  capture: S.String,
-}) {
+export class AliasSpecifierCaptured
+  extends S.TaggedClass<AliasSpecifierCaptured, { readonly brand: unique symbol }>()('AliasSpecifierCaptured', {
+    capture: S.String,
+  })
+{
   readonly [CaptureTypeId] = CaptureTypeId
 }
 
-export class AliasSpecifierUnmatched extends S.TaggedClass<AliasSpecifierUnmatched>()('AliasSpecifierUnmatched', {}) {
+export class AliasSpecifierUnmatched
+  extends S.TaggedClass<AliasSpecifierUnmatched, { readonly brand: unique symbol }>()('AliasSpecifierUnmatched', {})
+{
   readonly [CaptureTypeId] = CaptureTypeId
 }
 

@@ -20,9 +20,9 @@ const Feature = makeFeature({ it })
 const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4, shardPlan: null })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '8.0', code: 0, help: 'usage' })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '9.0', code: 0, help: 'usage' })
 const RUN_FAILED = CliContract.RunFailed.make({
-  schemaVersion: '8.0',
+  schemaVersion: '9.0',
   code: 3,
   error: 'x',
   remediation: 'y',
@@ -264,7 +264,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '8.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '9.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -390,7 +390,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '8.0' },
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '9.0' },
             open: false,
           })
         }),

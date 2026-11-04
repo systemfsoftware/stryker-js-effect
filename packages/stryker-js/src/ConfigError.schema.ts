@@ -22,12 +22,14 @@ const causeMessagesOf = <A>(value: A, depth: number): ReadonlyArray<string> =>
 const causeTextOf = <A>(cause: A): Option.Option<string> =>
   Option.liftPredicate(causeMessagesOf(cause, CAUSE_DEPTH).join(': '), S.is(S.NonEmptyString))
 
-export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundError>()(
-  'ConfigFileNotFoundError',
-  {
-    file: S.String,
-  },
-) {
+export class ConfigFileNotFoundError
+  extends S.TaggedError<ConfigFileNotFoundError, { readonly brand: unique symbol }>()(
+    'ConfigFileNotFoundError',
+    {
+      file: S.String,
+    },
+  )
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
@@ -35,13 +37,15 @@ export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundErr
   }
 }
 
-export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsupportedError>()(
-  'ConfigFileUnsupportedError',
-  {
-    file: S.String,
-    hint: S.String,
-  },
-) {
+export class ConfigFileUnsupportedError
+  extends S.TaggedError<ConfigFileUnsupportedError, { readonly brand: unique symbol }>()(
+    'ConfigFileUnsupportedError',
+    {
+      file: S.String,
+      hint: S.String,
+    },
+  )
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
@@ -49,13 +53,15 @@ export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsuppor
   }
 }
 
-export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadableError>()(
-  'ConfigFileUnreadableError',
-  {
-    file: S.String,
-    cause: S.Unknown,
-  },
-) {
+export class ConfigFileUnreadableError
+  extends S.TaggedError<ConfigFileUnreadableError, { readonly brand: unique symbol }>()(
+    'ConfigFileUnreadableError',
+    {
+      file: S.String,
+      cause: S.Unknown,
+    },
+  )
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
@@ -66,7 +72,7 @@ export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadabl
   }
 }
 
-export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError>()(
+export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError, { readonly brand: unique symbol }>()(
   'ConfigFileInvalidError',
   {
     file: S.String,
@@ -80,23 +86,27 @@ export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError
   }
 }
 
-export class ConfigFactoryFailed extends S.TaggedError<ConfigFactoryFailed>()('ConfigFactoryFailed', {
-  message: S.String,
-  cause: S.Defect(),
-}) {
+export class ConfigFactoryFailed
+  extends S.TaggedError<ConfigFactoryFailed, { readonly brand: unique symbol }>()('ConfigFactoryFailed', {
+    message: S.String,
+    cause: S.Defect(),
+  })
+{
   readonly exitClass = 'ConfigError' as const
 }
 
-export class ConfigModuleUnloadable extends S.TaggedError<ConfigModuleUnloadable>()('ConfigModuleUnloadable', {
-  message: S.String,
-  code: S.String,
-  file: S.String,
-  cause: S.Defect(),
-}) {
+export class ConfigModuleUnloadable
+  extends S.TaggedError<ConfigModuleUnloadable, { readonly brand: unique symbol }>()('ConfigModuleUnloadable', {
+    message: S.String,
+    code: S.String,
+    file: S.String,
+    cause: S.Defect(),
+  })
+{
   readonly exitClass = 'ConfigError' as const
 }
 
-export class ConfigError extends S.TaggedError<ConfigError>()('ConfigError', {
+export class ConfigError extends S.TaggedError<ConfigError, { readonly brand: unique symbol }>()('ConfigError', {
   message: S.String,
 }) {
   readonly exitClass = 'ConfigError' as const

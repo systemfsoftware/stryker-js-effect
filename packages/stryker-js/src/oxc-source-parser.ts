@@ -40,7 +40,7 @@ const jsonOf: (value: OxcValue) => Result.Result<S.Json, void> = Match.type<OxcV
 )
 
 const parseSource = Effect.fnUntraced(function*(absolute: string, content: string, language: ScriptLanguage) {
-  const oxc = yield* Effect.flatMap(oxcModule, (load) => load)
+  const oxc = yield* Effect.flatten(oxcModule)
   const parsed = oxc.parseSync(absolute, content, { lang: language })
   return { program: itemOf(parsed.program), parseFailed: parsed.errors.length > 0 } satisfies ParsedSource
 })
@@ -95,7 +95,7 @@ if (import.meta.vitest !== void 0) {
       subject: itemOf,
     },
     (subject, [callee, digits, body, flags]) =>
-      Effect.map(Effect.flatMap(oxcModule, (load) => load), (oxc) => {
+      Effect.map(Effect.flatten(oxcModule), (oxc) => {
         const source = `${callee}(${digits}n)\n${callee}(/${body}/${flags})\n`
         const objects = objectsOf(subject(oxc.parseSync('drawn.ts', source, { lang: 'ts' }).program))
         return lawHolds(objects, `${digits}n`, `/${body}/${flags}`)

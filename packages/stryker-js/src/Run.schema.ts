@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 
 const TypeId = '~stryker/mutation-run/StageError' as const
 
-export class StageError extends S.TaggedError<StageError>(TypeId)('StageError', {
+export class StageError extends S.TaggedError<StageError, { readonly brand: unique symbol }>(TypeId)('StageError', {
   stage: S.Literals(['prepare', 'instrument', 'dryRun', 'dryRunNoTests', 'mutationTest']),
   reason: S.String,
   cause: S.optional(S.Defect()),
@@ -36,7 +36,7 @@ const STAGE_PRESENTATION: Record<
   mutationTest: { label: 'Mutation testing', exitClass: 'RuntimeError' },
 }
 
-export class PrepareError extends S.TaggedError<PrepareError>()('PrepareError', {
+export class PrepareError extends S.TaggedError<PrepareError, { readonly brand: unique symbol }>()('PrepareError', {
   stage: S.Literal('prepare'),
   reason: S.String,
 }) {

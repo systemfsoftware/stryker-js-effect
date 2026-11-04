@@ -9,29 +9,35 @@ import * as S from 'effect/Schema'
 const RecordFeedbackTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/RecordFeedbackDecision')
 type RecordFeedbackTypeId = typeof RecordFeedbackTypeId
 
-export class FeedbackRecorded extends S.TaggedClass<FeedbackRecorded>()('FeedbackRecorded', {
-  id: Mutant.MutantId,
-  judgment: RunEvent.FeedbackJudgment,
-  reason: S.NullOr(S.String),
-}) {
+export class FeedbackRecorded
+  extends S.TaggedClass<FeedbackRecorded, { readonly brand: unique symbol }>()('FeedbackRecorded', {
+    id: Mutant.MutantId,
+    judgment: RunEvent.FeedbackJudgment,
+    reason: S.NullOr(S.String),
+  })
+{
   readonly [RecordFeedbackTypeId] = RecordFeedbackTypeId
 }
 
-export class FeedbackRefused extends S.TaggedClass<FeedbackRefused>()('FeedbackRefused', {
-  id: Mutant.MutantId,
-}) {
+export class FeedbackRefused
+  extends S.TaggedClass<FeedbackRefused, { readonly brand: unique symbol }>()('FeedbackRefused', {
+    id: Mutant.MutantId,
+  })
+{
   readonly [RecordFeedbackTypeId] = RecordFeedbackTypeId
 }
 
 export const RecordFeedbackDecision = S.Union([FeedbackRecorded, FeedbackRefused])
 export type RecordFeedbackDecision = typeof RecordFeedbackDecision.Type
 
-export class RecordFeedbackCommand extends S.Class<RecordFeedbackCommand>('RecordFeedbackCommand')({
-  id: Mutant.MutantId,
-  judgment: RunEvent.FeedbackJudgment,
-  reason: S.NullOr(S.String),
-  knownIds: S.Array(Mutant.MutantId),
-}) {
+export class RecordFeedbackCommand
+  extends S.Class<RecordFeedbackCommand, { readonly brand: unique symbol }>('RecordFeedbackCommand')({
+    id: Mutant.MutantId,
+    judgment: RunEvent.FeedbackJudgment,
+    reason: S.NullOr(S.String),
+    knownIds: S.Array(Mutant.MutantId),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

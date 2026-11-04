@@ -3,7 +3,7 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class DryRunError extends S.TaggedError<DryRunError>()('DryRunError', {
+export class DryRunError extends S.TaggedError<DryRunError, { readonly brand: unique symbol }>()('DryRunError', {
   stage: S.Literals(['dryRun', 'dryRunNoTests']),
   reason: S.String,
 }) {
@@ -12,12 +12,14 @@ export class DryRunError extends S.TaggedError<DryRunError>()('DryRunError', {
   }
 }
 
-export class FailedTestSummary extends S.Class<FailedTestSummary>('FailedTestSummary')({
-  name: S.String,
-  failureMessage: S.String,
-}) {}
+export class FailedTestSummary
+  extends S.Class<FailedTestSummary, { readonly brand: unique symbol }>('FailedTestSummary')({
+    name: S.String,
+    failureMessage: S.String,
+  })
+{}
 
-export class DryRunCommand extends S.TaggedClass<DryRunCommand>()('DryRunCommand', {
+export class DryRunCommand extends S.TaggedClass<DryRunCommand, { readonly brand: unique symbol }>()('DryRunCommand', {
   status: S.Literals(['Complete', 'Error', 'Timeout']),
   testCount: S.Finite,
   failedTestCount: S.Finite,
@@ -37,13 +39,13 @@ export class DryRunCommand extends S.TaggedClass<DryRunCommand>()('DryRunCommand
 const DryRunDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/DryRunDecision')
 type DryRunDecisionTypeId = typeof DryRunDecisionTypeId
 
-export class DryRunPassed extends S.TaggedClass<DryRunPassed>()('DryRunPassed', {
+export class DryRunPassed extends S.TaggedClass<DryRunPassed, { readonly brand: unique symbol }>()('DryRunPassed', {
   testCount: S.Finite,
 }) {
   readonly [DryRunDecisionTypeId] = DryRunDecisionTypeId
 }
 
-export class DryRunFailed extends S.TaggedClass<DryRunFailed>()('DryRunFailed', {
+export class DryRunFailed extends S.TaggedClass<DryRunFailed, { readonly brand: unique symbol }>()('DryRunFailed', {
   testCount: S.Finite,
   failedTestCount: S.Finite,
   failedTests: S.Array(FailedTestSummary),

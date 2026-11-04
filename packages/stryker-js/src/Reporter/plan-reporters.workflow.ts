@@ -29,25 +29,31 @@ const machineReportersFrom = (configured: readonly string[], stdout: readonly st
   })
 }
 
-export class ReporterPlanCommand extends S.TaggedClass<ReporterPlanCommand>()('ReporterPlanCommand', {
-  configured: S.Array(S.String),
-  stdout: S.Array(S.String),
-  mode: OutputMode.OutputMode,
-}) {
+export class ReporterPlanCommand
+  extends S.TaggedClass<ReporterPlanCommand, { readonly brand: unique symbol }>()('ReporterPlanCommand', {
+    configured: S.Array(S.String),
+    stdout: S.Array(S.String),
+    mode: OutputMode.OutputMode,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     mode: 'stryker.reporter_plan.mode',
   } as const
 }
 
-export class HumanReporters extends S.TaggedClass<HumanReporters>()('HumanReporters', {
-  reporters: S.Array(S.String),
-}) {
+export class HumanReporters
+  extends S.TaggedClass<HumanReporters, { readonly brand: unique symbol }>()('HumanReporters', {
+    reporters: S.Array(S.String),
+  })
+{
   readonly [ReporterPlanTypeId] = ReporterPlanTypeId
 }
 
-export class MachineReporters extends S.TaggedClass<MachineReporters>()('MachineReporters', {
-  reporters: S.Array(S.String),
-}) {
+export class MachineReporters
+  extends S.TaggedClass<MachineReporters, { readonly brand: unique symbol }>()('MachineReporters', {
+    reporters: S.Array(S.String),
+  })
+{
   readonly [ReporterPlanTypeId] = ReporterPlanTypeId
 }
 

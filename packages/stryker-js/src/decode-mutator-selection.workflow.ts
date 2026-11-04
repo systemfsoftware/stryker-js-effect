@@ -7,41 +7,47 @@ import * as S from 'effect/Schema'
 
 import { type MergedCatalog, MergedCatalogSchema } from './plan-mutator-catalogs.workflow.js'
 
-export class DecodeMutatorSelectionCommand extends S.TaggedClass<DecodeMutatorSelectionCommand>()(
-  'DecodeMutatorSelectionCommand',
-  {
-    catalogs: S.Array(MergedCatalogSchema),
-    excludedMutations: S.Array(S.String),
-    optInMutations: S.Array(S.String),
-  },
-) {
+export class DecodeMutatorSelectionCommand
+  extends S.TaggedClass<DecodeMutatorSelectionCommand, { readonly brand: unique symbol }>()(
+    'DecodeMutatorSelectionCommand',
+    {
+      catalogs: S.Array(MergedCatalogSchema),
+      excludedMutations: S.Array(S.String),
+      optInMutations: S.Array(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const MutatorSelectionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutatorSelection')
 type MutatorSelectionTypeId = typeof MutatorSelectionTypeId
 
-export class MutatorSelectionDecoded extends S.TaggedClass<MutatorSelectionDecoded>()('MutatorSelectionDecoded', {
-  excludedMutations: S.Array(S.String),
-  optInMutations: S.Array(S.String),
-}) {
+export class MutatorSelectionDecoded
+  extends S.TaggedClass<MutatorSelectionDecoded, { readonly brand: unique symbol }>()('MutatorSelectionDecoded', {
+    excludedMutations: S.Array(S.String),
+    optInMutations: S.Array(S.String),
+  })
+{
   readonly [MutatorSelectionTypeId] = MutatorSelectionTypeId
 }
 
-export class MutatorSelectionRefused extends S.TaggedError<MutatorSelectionRefused>()('MutatorSelectionRefused', {
-  reason: S.Literals(['UnknownName', 'NotOptInTier']),
-  name: S.String,
-}) {
+export class MutatorSelectionRefused
+  extends S.TaggedError<MutatorSelectionRefused, { readonly brand: unique symbol }>()('MutatorSelectionRefused', {
+    reason: S.Literals(['UnknownName', 'NotOptInTier']),
+    mutatorName: S.String,
+  })
+{
   override get message(): string {
     return Match.value(this.reason).pipe(
       Match.when(
         'UnknownName',
-        () => `Refused the mutator selection: no loaded catalog declares a mutator named "${this.name}".`,
+        () => `Refused the mutator selection: no loaded catalog declares a mutator named "${this.mutatorName}".`,
       ),
       Match.when(
         'NotOptInTier',
         () =>
-          `Refused the mutator selection: "${this.name}" is a default-tier mutator, and only an opt-in entry may be named by optInMutations.`,
+          `Refused the mutator selection: "${this.mutatorName}" is a default-tier mutator, and only an opt-in entry may be named by optInMutations.`,
       ),
       Match.exhaustive,
     )
@@ -77,7 +83,7 @@ const excludedRefusalOf = (
 ): Result.Result<void, MutatorSelectionRefused> =>
   Option.match(refusedNameIn(index.declared, command.excludedMutations), {
     onNone: () => Result.succeed(undefined),
-    onSome: (name) => Result.fail(MutatorSelectionRefused.make({ reason: 'UnknownName', name })),
+    onSome: (name) => Result.fail(MutatorSelectionRefused.make({ reason: 'UnknownName', mutatorName: name })),
   })
 
 const optInRefusalOf = (
@@ -86,7 +92,7 @@ const optInRefusalOf = (
 ): Result.Result<void, MutatorSelectionRefused> =>
   Option.match(refusedNameIn(index.optIn, command.optInMutations), {
     onNone: () => Result.succeed(undefined),
-    onSome: (name) => Result.fail(MutatorSelectionRefused.make({ reason: reasonFor(index, name), name })),
+    onSome: (name) => Result.fail(MutatorSelectionRefused.make({ reason: reasonFor(index, name), mutatorName: name })),
   })
 
 const decide = (

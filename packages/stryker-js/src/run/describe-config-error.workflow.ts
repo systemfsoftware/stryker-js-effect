@@ -8,27 +8,33 @@ import * as S from 'effect/Schema'
 const ConfigErrorDescriptionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ConfigErrorDescription')
 type ConfigErrorDescriptionTypeId = typeof ConfigErrorDescriptionTypeId
 
-export class DescribeConfigErrorCommand extends S.TaggedClass<DescribeConfigErrorCommand>()(
-  'DescribeConfigErrorCommand',
-  {
-    message: S.String.pipe(S.optional),
-    errors: S.Array(S.String).pipe(S.optional),
-  },
-) {
+export class DescribeConfigErrorCommand
+  extends S.TaggedClass<DescribeConfigErrorCommand, { readonly brand: unique symbol }>()(
+    'DescribeConfigErrorCommand',
+    {
+      message: S.String.pipe(S.optional),
+      errors: S.Array(S.String).pipe(S.optional),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ConfigErrorDescribed extends S.TaggedClass<ConfigErrorDescribed>()('ConfigErrorDescribed', {
-  errors: S.Array(S.String),
-  text: S.String,
-}) {
+export class ConfigErrorDescribed
+  extends S.TaggedClass<ConfigErrorDescribed, { readonly brand: unique symbol }>()('ConfigErrorDescribed', {
+    errors: S.Array(S.String),
+    text: S.String,
+  })
+{
   readonly [ConfigErrorDescriptionTypeId] = ConfigErrorDescriptionTypeId
 }
 
-export class ConfigErrorUnparsed extends S.TaggedClass<ConfigErrorUnparsed>()('ConfigErrorUnparsed', {
-  errors: S.Array(S.String),
-  text: S.String,
-}) {
+export class ConfigErrorUnparsed
+  extends S.TaggedClass<ConfigErrorUnparsed, { readonly brand: unique symbol }>()('ConfigErrorUnparsed', {
+    errors: S.Array(S.String),
+    text: S.String,
+  })
+{
   readonly [ConfigErrorDescriptionTypeId] = ConfigErrorDescriptionTypeId
 }
 

@@ -35,7 +35,7 @@ const idOrder: Order.Order<GateEntry> = Order.mapInput(Order.String, (entry) => 
 const GateNewSurvivorsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/GateNewSurvivorsDecision')
 type GateNewSurvivorsTypeId = typeof GateNewSurvivorsTypeId
 
-export class GateCleared extends S.TaggedClass<GateCleared>()('GateCleared', {
+export class GateCleared extends S.TaggedClass<GateCleared, { readonly brand: unique symbol }>()('GateCleared', {
   baseline: S.NullOr(Baseline),
   unchecked: Mutant.MutantId.pipe(S.Array),
 }) {
@@ -45,16 +45,18 @@ export class GateCleared extends S.TaggedClass<GateCleared>()('GateCleared', {
 export const GateNewSurvivorsDecision = S.Union([GateCleared])
 export type GateNewSurvivorsDecision = typeof GateNewSurvivorsDecision.Type
 
-export class GateNewSurvivorsCommand extends S.TaggedClass<GateNewSurvivorsCommand>()('GateNewSurvivorsCommand', {
-  entries: S.Array(GateEntry),
-  committed: Mutant.MutantId.pipe(S.Array, S.NullOr),
-  baselineFile: S.String,
-  updateBaseline: S.Boolean,
-}) {
+export class GateNewSurvivorsCommand
+  extends S.TaggedClass<GateNewSurvivorsCommand, { readonly brand: unique symbol }>()('GateNewSurvivorsCommand', {
+    entries: S.Array(GateEntry),
+    committed: Mutant.MutantId.pipe(S.Array, S.NullOr),
+    baselineFile: S.String,
+    updateBaseline: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class GateRejected extends S.TaggedError<GateRejected>()('GateRejected', {
+export class GateRejected extends S.TaggedError<GateRejected, { readonly brand: unique symbol }>()('GateRejected', {
   newSurvivors: S.Array(GateEntry),
   unchecked: Mutant.MutantId.pipe(S.Array),
 }) {
@@ -73,9 +75,11 @@ export class GateRejected extends S.TaggedError<GateRejected>()('GateRejected', 
   }
 }
 
-export class GateInputUnusable extends S.TaggedError<GateInputUnusable>()('GateInputUnusable', {
-  reason: S.String,
-}) {
+export class GateInputUnusable
+  extends S.TaggedError<GateInputUnusable, { readonly brand: unique symbol }>()('GateInputUnusable', {
+    reason: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
 
   override get message(): string {

@@ -7,13 +7,15 @@ import * as S from 'effect/Schema'
 
 import { AffectedLegs, BaseChoice, FirstParentBase, FullCorpus, GreenBase, LegSelection } from './bench-plan.schema.js'
 
-export class SelectLegsCommand extends S.TaggedClass<SelectLegsCommand>()('SelectLegsCommand', {
-  base: BaseChoice,
-  entries: S.NonEmptyArray(S.NonEmptyString),
-  engineDirs: S.NonEmptyArray(S.NonEmptyString),
-  changedFiles: S.Array(S.String),
-  affectedPaths: S.Array(S.String),
-}) {
+export class SelectLegsCommand
+  extends S.TaggedClass<SelectLegsCommand, { readonly brand: unique symbol }>()('SelectLegsCommand', {
+    base: BaseChoice,
+    entries: S.NonEmptyArray(S.NonEmptyString),
+    engineDirs: S.NonEmptyArray(S.NonEmptyString),
+    changedFiles: S.Array(S.String),
+    affectedPaths: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

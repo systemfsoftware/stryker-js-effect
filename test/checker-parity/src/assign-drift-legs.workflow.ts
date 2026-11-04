@@ -11,26 +11,32 @@ type AssignDriftLegsTypeId = typeof AssignDriftLegsTypeId
 
 const PositiveInt = S.Int.check(S.isGreaterThanOrEqualTo(1))
 
-export class AssignDriftLegsCommand extends S.TaggedClass<AssignDriftLegsCommand>()('AssignDriftLegsCommand', {
-  settings: ScopeSettings,
-  projects: S.Array(S.String),
-  shards: PositiveInt,
-}) {
+export class AssignDriftLegsCommand
+  extends S.TaggedClass<AssignDriftLegsCommand, { readonly brand: unique symbol }>()('AssignDriftLegsCommand', {
+    settings: ScopeSettings,
+    projects: S.Array(S.String),
+    shards: PositiveInt,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DriftProject extends S.Class<DriftProject>('DriftProject')({
+export class DriftProject extends S.Class<DriftProject, { readonly brand: unique symbol }>('DriftProject')({
   project: S.String,
   leg: PositiveInt,
 }) {}
 
-export class DriftLegsAssigned extends S.TaggedClass<DriftLegsAssigned>()('DriftLegsAssigned', {
-  projects: S.Array(DriftProject),
-}) {
+export class DriftLegsAssigned
+  extends S.TaggedClass<DriftLegsAssigned, { readonly brand: unique symbol }>()('DriftLegsAssigned', {
+    projects: S.Array(DriftProject),
+  })
+{
   readonly [AssignDriftLegsTypeId] = AssignDriftLegsTypeId
 }
 
-export class NoDriftProjects extends S.TaggedClass<NoDriftProjects>()('NoDriftProjects', {}) {
+export class NoDriftProjects
+  extends S.TaggedClass<NoDriftProjects, { readonly brand: unique symbol }>()('NoDriftProjects', {})
+{
   readonly [AssignDriftLegsTypeId] = AssignDriftLegsTypeId
 }
 

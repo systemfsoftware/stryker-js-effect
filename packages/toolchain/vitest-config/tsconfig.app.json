@@ -1,6 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": ["@systemfsoftware/tsconfig/tsc/dom/library-monorepo"],
+  "extends": [
+    "@systemfsoftware/tsconfig/tsc/dom/library-monorepo"
+  ],
   "compilerOptions": {
     "composite": true,
     "noEmit": false,
@@ -11,9 +13,17 @@
     "checkJs": true,
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "effect/http/FetchHttpClient",
+          "effect/observability/OtlpExporter",
+          "effect/observability/OtlpSerialization",
+          "effect/observability/OtlpTracer"
+        ]
       }
     ]
   },
-  "include": ["lib"]
+  "include": [
+    "lib"
+  ]
 }

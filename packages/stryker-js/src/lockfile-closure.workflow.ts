@@ -33,53 +33,71 @@ export const InstallSettingsSchema = S.Struct({
 })
 export type InstallSettings = typeof InstallSettingsSchema.Type
 
-export class LockfileDecoded extends S.TaggedClass<LockfileDecoded>()('LockfileDecoded', {
-  lockfile: PnpmLockfileSchema,
-}) {}
+export class LockfileDecoded
+  extends S.TaggedClass<LockfileDecoded, { readonly brand: unique symbol }>()('LockfileDecoded', {
+    lockfile: PnpmLockfileSchema,
+  })
+{}
 
-export class LockfileUndecodable extends S.TaggedClass<LockfileUndecodable>()('LockfileUndecodable', {
-  message: S.String,
-}) {}
+export class LockfileUndecodable
+  extends S.TaggedClass<LockfileUndecodable, { readonly brand: unique symbol }>()('LockfileUndecodable', {
+    message: S.String,
+  })
+{}
 
-export class InstallSettingsRead extends S.TaggedClass<InstallSettingsRead>()('InstallSettingsRead', {
-  settings: InstallSettingsSchema,
-}) {}
+export class InstallSettingsRead
+  extends S.TaggedClass<InstallSettingsRead, { readonly brand: unique symbol }>()('InstallSettingsRead', {
+    settings: InstallSettingsSchema,
+  })
+{}
 
-export class InstallSettingsUnreadable extends S.TaggedClass<InstallSettingsUnreadable>()(
-  'InstallSettingsUnreadable',
-  { message: S.String },
-) {}
+export class InstallSettingsUnreadable
+  extends S.TaggedClass<InstallSettingsUnreadable, { readonly brand: unique symbol }>()(
+    'InstallSettingsUnreadable',
+    { message: S.String },
+  )
+{}
 
-export class PnpmLockfileRead extends S.TaggedClass<PnpmLockfileRead>()('PnpmLockfileRead', {
-  text: S.String,
-  lockfile: S.Union([LockfileDecoded, LockfileUndecodable]),
-  importerKey: S.NullOr(S.String),
-  installSettings: S.Union([InstallSettingsRead, InstallSettingsUnreadable]),
-}) {}
+export class PnpmLockfileRead
+  extends S.TaggedClass<PnpmLockfileRead, { readonly brand: unique symbol }>()('PnpmLockfileRead', {
+    text: S.String,
+    lockfile: S.Union([LockfileDecoded, LockfileUndecodable]),
+    importerKey: S.NullOr(S.String),
+    installSettings: S.Union([InstallSettingsRead, InstallSettingsUnreadable]),
+  })
+{}
 
-export class OtherLockfileRead extends S.TaggedClass<OtherLockfileRead>()('OtherLockfileRead', {
-  text: S.String,
-}) {}
+export class OtherLockfileRead
+  extends S.TaggedClass<OtherLockfileRead, { readonly brand: unique symbol }>()('OtherLockfileRead', {
+    text: S.String,
+  })
+{}
 
-export class NoLockfileRead extends S.TaggedClass<NoLockfileRead>()('NoLockfileRead', {}) {}
+export class NoLockfileRead
+  extends S.TaggedClass<NoLockfileRead, { readonly brand: unique symbol }>()('NoLockfileRead', {})
+{}
 
-export class LockfileClosureCommand extends S.TaggedClass<LockfileClosureCommand>()('LockfileClosureCommand', {
-  source: S.Union([PnpmLockfileRead, OtherLockfileRead, NoLockfileRead]),
-}) {
+export class LockfileClosureCommand
+  extends S.TaggedClass<LockfileClosureCommand, { readonly brand: unique symbol }>()('LockfileClosureCommand', {
+    source: S.Union([PnpmLockfileRead, OtherLockfileRead, NoLockfileRead]),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const LockfileClosureDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/LockfileClosureDecision')
 type LockfileClosureDecisionTypeId = typeof LockfileClosureDecisionTypeId
 
-export class LockfileClosure extends S.TaggedClass<LockfileClosure>()('LockfileClosure', {
-  lockfileVersion: S.String,
-  settings: S.NullOr(S.Record(S.String, S.Json)),
-  installSettings: InstallSettingsSchema,
-  importers: S.Record(S.String, PnpmImporterSchema),
-  snapshots: S.Record(S.String, PnpmSnapshotSchema),
-  packages: S.Record(S.String, S.Json),
-}) {
+export class LockfileClosure
+  extends S.TaggedClass<LockfileClosure, { readonly brand: unique symbol }>()('LockfileClosure', {
+    lockfileVersion: S.String,
+    settings: S.NullOr(S.Record(S.String, S.Json)),
+    installSettings: InstallSettingsSchema,
+    importers: S.Record(S.String, PnpmImporterSchema),
+    snapshots: S.Record(S.String, PnpmSnapshotSchema),
+    packages: S.Record(S.String, S.Json),
+  })
+{
   readonly [LockfileClosureDecisionTypeId] = LockfileClosureDecisionTypeId
 }
 
@@ -96,7 +114,7 @@ export type LockfileFallbackReason = typeof LockfileFallbackReasonSchema.Type
 export const LockfileFallbackSchema = S.Struct({ reason: LockfileFallbackReasonSchema, detail: S.String })
 export type LockfileFallback = typeof LockfileFallbackSchema.Type
 
-export class WholeLockfile extends S.TaggedClass<WholeLockfile>()('WholeLockfile', {
+export class WholeLockfile extends S.TaggedClass<WholeLockfile, { readonly brand: unique symbol }>()('WholeLockfile', {
   text: S.String,
   fallback: S.NullOr(LockfileFallbackSchema),
 }) {

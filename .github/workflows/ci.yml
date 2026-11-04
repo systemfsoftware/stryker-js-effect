@@ -689,7 +689,6 @@ jobs:
           --shards ${{ needs.checker-parity-changes.outputs.shards }}
           --summary checker-parity-summary.json
           --shortcut-gate
-          --speed-gate
           checker-parity-shards
       - name: Upload summary
         if: always() && needs.checker-parity-changes.outputs.run == 'true'

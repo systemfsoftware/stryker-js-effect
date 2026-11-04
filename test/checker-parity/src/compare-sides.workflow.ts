@@ -47,19 +47,21 @@ export const ObservedVerdict = S.Struct({
 })
 export type ObservedVerdict = typeof ObservedVerdict.Type
 
-export class VerdictMismatch extends S.TaggedClass<VerdictMismatch>()('VerdictMismatch', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('verdict-mismatch'),
-  nextAction: S.String,
-  project: S.String,
-  mutantId: S.String,
-  fileName: S.String,
-  line: S.Int,
-  main: S.NullOr(ObservedVerdict),
-  branch: S.NullOr(ObservedVerdict),
-}) {}
+export class VerdictMismatch
+  extends S.TaggedClass<VerdictMismatch, { readonly brand: unique symbol }>()('VerdictMismatch', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('verdict-mismatch'),
+    nextAction: S.String,
+    project: S.String,
+    mutantId: S.String,
+    fileName: S.String,
+    line: S.Int,
+    main: S.NullOr(ObservedVerdict),
+    branch: S.NullOr(ObservedVerdict),
+  })
+{}
 
-export class BootAsymmetry extends S.TaggedClass<BootAsymmetry>()('BootAsymmetry', {
+export class BootAsymmetry extends S.TaggedClass<BootAsymmetry, { readonly brand: unique symbol }>()('BootAsymmetry', {
   schemaVersion: SCHEMA_VERSION,
   code: S.Literal('boot-asymmetry'),
   nextAction: S.String,
@@ -67,71 +69,83 @@ export class BootAsymmetry extends S.TaggedClass<BootAsymmetry>()('BootAsymmetry
   failedSide: Side,
 }) {}
 
-export class ZeroSnapshotUpdates extends S.TaggedClass<ZeroSnapshotUpdates>()('ZeroSnapshotUpdates', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('zero-snapshot-updates'),
-  nextAction: S.String,
-  project: S.String,
-}) {}
-
-export class TelemetryMissingViolation extends S.TaggedClass<TelemetryMissingViolation>()(
-  'TelemetryMissingViolation',
-  {
+export class ZeroSnapshotUpdates
+  extends S.TaggedClass<ZeroSnapshotUpdates, { readonly brand: unique symbol }>()('ZeroSnapshotUpdates', {
     schemaVersion: SCHEMA_VERSION,
-    code: S.Literal('telemetry-missing'),
+    code: S.Literal('zero-snapshot-updates'),
     nextAction: S.String,
-    side: Side,
     project: S.String,
-    expectedSpans: S.Int,
-    receivedSpans: S.Int,
-  },
-) {}
+  })
+{}
 
-export class ZeroShortcuts extends S.TaggedClass<ZeroShortcuts>()('ZeroShortcuts', {
+export class TelemetryMissingViolation
+  extends S.TaggedClass<TelemetryMissingViolation, { readonly brand: unique symbol }>()(
+    'TelemetryMissingViolation',
+    {
+      schemaVersion: SCHEMA_VERSION,
+      code: S.Literal('telemetry-missing'),
+      nextAction: S.String,
+      side: Side,
+      project: S.String,
+      expectedSpans: S.Int,
+      receivedSpans: S.Int,
+    },
+  )
+{}
+
+export class ZeroShortcuts extends S.TaggedClass<ZeroShortcuts, { readonly brand: unique symbol }>()('ZeroShortcuts', {
   schemaVersion: SCHEMA_VERSION,
   code: S.Literal('zero-shortcuts'),
   nextAction: S.String,
   scope: S.Literals(['overall', 'isolatedDeclarations']),
 }) {}
 
-export class NothingCompared extends S.TaggedClass<NothingCompared>()('NothingCompared', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('nothing-compared'),
-  nextAction: S.String,
-  projectCount: S.Int,
-  skippedCount: S.Int,
-}) {}
+export class NothingCompared
+  extends S.TaggedClass<NothingCompared, { readonly brand: unique symbol }>()('NothingCompared', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('nothing-compared'),
+    nextAction: S.String,
+    projectCount: S.Int,
+    skippedCount: S.Int,
+  })
+{}
 
-export class WrongNotAssignable extends S.TaggedClass<WrongNotAssignable>()('WrongNotAssignable', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('wrong-not-assignable'),
-  nextAction: S.String,
-  project: S.String,
-  mutantId: S.String,
-  fileName: S.String,
-  line: S.Int,
-  column: S.Int,
-  candidate: S.String,
-  candidateType: S.String,
-  contextualType: S.String,
-  verdict: VerdictStatus,
-}) {}
+export class WrongNotAssignable
+  extends S.TaggedClass<WrongNotAssignable, { readonly brand: unique symbol }>()('WrongNotAssignable', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('wrong-not-assignable'),
+    nextAction: S.String,
+    project: S.String,
+    mutantId: S.String,
+    fileName: S.String,
+    line: S.Int,
+    column: S.Int,
+    candidate: S.String,
+    candidateType: S.String,
+    contextualType: S.String,
+    verdict: VerdictStatus,
+  })
+{}
 
-export class ZeroNotAssignable extends S.TaggedClass<ZeroNotAssignable>()('ZeroNotAssignable', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('zero-not-assignable'),
-  nextAction: S.String,
-}) {}
+export class ZeroNotAssignable
+  extends S.TaggedClass<ZeroNotAssignable, { readonly brand: unique symbol }>()('ZeroNotAssignable', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('zero-not-assignable'),
+    nextAction: S.String,
+  })
+{}
 
-export class UnitOverBudgetViolation extends S.TaggedClass<UnitOverBudgetViolation>()('UnitOverBudgetViolation', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('unit-over-budget'),
-  nextAction: S.String,
-  side: Side,
-  project: S.String,
-  fileName: S.String,
-  mutantIds: S.Array(S.String),
-}) {}
+export class UnitOverBudgetViolation
+  extends S.TaggedClass<UnitOverBudgetViolation, { readonly brand: unique symbol }>()('UnitOverBudgetViolation', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('unit-over-budget'),
+    nextAction: S.String,
+    side: Side,
+    project: S.String,
+    fileName: S.String,
+    mutantIds: S.Array(S.String),
+  })
+{}
 
 export const Violation = S.Union([
   VerdictMismatch,
@@ -223,7 +237,7 @@ export type ComparisonSummary = typeof ComparisonSummary.Type
 const ComparisonTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/CompareSides')
 type ComparisonTypeId = typeof ComparisonTypeId
 
-export class ParityHolds extends S.TaggedClass<ParityHolds>()('ParityHolds', {
+export class ParityHolds extends S.TaggedClass<ParityHolds, { readonly brand: unique symbol }>()('ParityHolds', {
   schemaVersion: SCHEMA_VERSION,
   summary: ComparisonSummary,
   warnings: S.Array(SpeedGateUnmeasured),
@@ -231,7 +245,7 @@ export class ParityHolds extends S.TaggedClass<ParityHolds>()('ParityHolds', {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
 
-export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', {
+export class ParityBroken extends S.TaggedClass<ParityBroken, { readonly brand: unique symbol }>()('ParityBroken', {
   schemaVersion: SCHEMA_VERSION,
   violations: S.Array(Violation),
   displayed: S.Array(Violation),
@@ -245,11 +259,13 @@ export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', 
 export const ComparisonDecision = S.Union([ParityHolds, ParityBroken])
 export type ComparisonDecision = typeof ComparisonDecision.Type
 
-export class CompareSidesCommand extends S.TaggedClass<CompareSidesCommand>()('CompareSidesCommand', {
-  lines: S.Array(ParityLine),
-  gates: Gates,
-  isolatedDeclarationsProject: S.String,
-}) {
+export class CompareSidesCommand
+  extends S.TaggedClass<CompareSidesCommand, { readonly brand: unique symbol }>()('CompareSidesCommand', {
+    lines: S.Array(ParityLine),
+    gates: Gates,
+    isolatedDeclarationsProject: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

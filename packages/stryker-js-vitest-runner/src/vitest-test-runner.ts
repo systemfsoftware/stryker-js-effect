@@ -4,7 +4,7 @@ import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -185,8 +185,11 @@ const mergeCoverage = (to: Mutant.CoverageData, from: Mutant.CoverageData): Muta
 
 export const layer = (
   input: VitestSessionInput,
-): Layer.Layer<TestRunner.TestRunner, never, VitestSession | Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(TestRunner.TestRunner, make(input))
+): Layer.Layer<
+  TestRunner.TestRunner,
+  never,
+  VitestSession | SecureRandom.SecureRandom | FileSystem.FileSystem | Path.Path
+> => Layer.effect(TestRunner.TestRunner, make(input))
 
 export const make = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*(input: VitestSessionInput) {
   const session = yield* VitestSession
@@ -230,7 +233,7 @@ export const make = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function
     const normalized = normalizeCoverage(coverage, projectRoot, pathService)
     return S.decodeEffect(Mutant.MutantCoverageSchema)(normalized).pipe(
       Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
-      Effect.map(() => normalized),
+      Effect.as(normalized),
     )
   }
 

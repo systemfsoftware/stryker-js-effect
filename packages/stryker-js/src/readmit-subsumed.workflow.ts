@@ -10,23 +10,29 @@ import * as S from 'effect/Schema'
 const ReadmitSubsumedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReadmitSubsumed')
 type ReadmitSubsumedTypeId = typeof ReadmitSubsumedTypeId
 
-export class Settled extends S.TaggedClass<Settled>()('Settled', {
+export class Settled extends S.TaggedClass<Settled, { readonly brand: unique symbol }>()('Settled', {
   status: S.Literals(['Killed', 'Survived', 'Timeout', 'NoCoverage', 'RuntimeError']),
 }) {}
 
-export class IgnoredAtCheck extends S.TaggedClass<IgnoredAtCheck>()('IgnoredAtCheck', {
-  reason: S.String,
-}) {}
+export class IgnoredAtCheck
+  extends S.TaggedClass<IgnoredAtCheck, { readonly brand: unique symbol }>()('IgnoredAtCheck', {
+    reason: S.String,
+  })
+{}
 
-export class CompiledWithError extends S.TaggedClass<CompiledWithError>()('CompiledWithError', {}) {}
+export class CompiledWithError
+  extends S.TaggedClass<CompiledWithError, { readonly brand: unique symbol }>()('CompiledWithError', {})
+{}
 
-export class IgnoredAtPlan extends S.TaggedClass<IgnoredAtPlan>()('IgnoredAtPlan', {}) {}
+export class IgnoredAtPlan
+  extends S.TaggedClass<IgnoredAtPlan, { readonly brand: unique symbol }>()('IgnoredAtPlan', {})
+{}
 
-export class Remembered extends S.TaggedClass<Remembered>()('Remembered', {
+export class Remembered extends S.TaggedClass<Remembered, { readonly brand: unique symbol }>()('Remembered', {
   status: Mutant.MutantStatusSchema,
 }) {}
 
-export class Unsettled extends S.TaggedClass<Unsettled>()('Unsettled', {}) {}
+export class Unsettled extends S.TaggedClass<Unsettled, { readonly brand: unique symbol }>()('Unsettled', {}) {}
 
 export const DominatorOutcome = S.Union([Settled, IgnoredAtCheck, CompiledWithError, IgnoredAtPlan, Remembered])
 export type DominatorOutcome = typeof DominatorOutcome.Type
@@ -52,21 +58,23 @@ export const DominatorSettlement = S.Struct({
 })
 export type DominatorSettlement = typeof DominatorSettlement.Type
 
-export class ReadmitSubsumedCommand extends S.TaggedClass<ReadmitSubsumedCommand>()('ReadmitSubsumedCommand', {
-  held: S.Array(HeldMutant),
-  settlements: S.Array(DominatorSettlement),
-}) {
+export class ReadmitSubsumedCommand
+  extends S.TaggedClass<ReadmitSubsumedCommand, { readonly brand: unique symbol }>()('ReadmitSubsumedCommand', {
+    held: S.Array(HeldMutant),
+    settlements: S.Array(DominatorSettlement),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class StillSubsumed extends S.TaggedClass<StillSubsumed>()('StillSubsumed', {
+export class StillSubsumed extends S.TaggedClass<StillSubsumed, { readonly brand: unique symbol }>()('StillSubsumed', {
   id: Mutant.MutantId,
   dominator: Mutant.MutantId,
 }) {
   readonly [ReadmitSubsumedTypeId] = ReadmitSubsumedTypeId
 }
 
-export class Readmitted extends S.TaggedClass<Readmitted>()('Readmitted', {
+export class Readmitted extends S.TaggedClass<Readmitted, { readonly brand: unique symbol }>()('Readmitted', {
   id: Mutant.MutantId,
   causes: S.NonEmptyArray(ReadmitCause),
 }) {

@@ -6,19 +6,23 @@ import * as S from 'effect/Schema'
 const NonEmptyProjectTypeId = Symbol.for('@systemfsoftware/stryker-js/NonEmptyProjectDecision')
 type NonEmptyProjectTypeId = typeof NonEmptyProjectTypeId
 
-export class NonEmptyProjectCommand extends S.TaggedClass<NonEmptyProjectCommand>()('NonEmptyProjectCommand', {
-  fileCount: S.Int,
-}) {
+export class NonEmptyProjectCommand
+  extends S.TaggedClass<NonEmptyProjectCommand, { readonly brand: unique symbol }>()('NonEmptyProjectCommand', {
+    fileCount: S.Int,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     fileCount: 'stryker.non_empty_project.file_count',
   } as const
 }
 
-export class ProjectAdmitted extends S.TaggedClass<ProjectAdmitted>()('ProjectAdmitted', {}) {
+export class ProjectAdmitted
+  extends S.TaggedClass<ProjectAdmitted, { readonly brand: unique symbol }>()('ProjectAdmitted', {})
+{
   readonly [NonEmptyProjectTypeId] = NonEmptyProjectTypeId
 }
 
-export class ProjectEmpty extends S.TaggedClass<ProjectEmpty>()('ProjectEmpty', {}) {
+export class ProjectEmpty extends S.TaggedClass<ProjectEmpty, { readonly brand: unique symbol }>()('ProjectEmpty', {}) {
   readonly [NonEmptyProjectTypeId] = NonEmptyProjectTypeId
 }
 
