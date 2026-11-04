@@ -352,7 +352,9 @@ const countReports = (
         detail: '--files scopes the drop audit, which --counts-only does not run',
         next: FILES_WITH_COUNTS_NEXT,
       })),
-      Effect.succeed(Option.isSome(Option.filter(Option.fromUndefinedOr(request.files), Arr.isReadonlyArrayNonEmpty))),
+      Effect.succeed(
+        Option.fromUndefinedOr(request.files).pipe(Option.filter(Arr.isReadonlyArrayNonEmpty), Option.isSome),
+      ),
     )
     const reports = yield* Effect.forEach(projectsOf(request.projects), (project) =>
       Effect.map(

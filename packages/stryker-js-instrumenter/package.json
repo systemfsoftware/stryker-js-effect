@@ -47,6 +47,9 @@
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
   },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/tsgo": "catalog:",
