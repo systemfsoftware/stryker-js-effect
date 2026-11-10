@@ -42,6 +42,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+            fallback = true
       - name: Workspace tarballs rebuild bit-for-bit
         run: |
           nix build .#packages.${{ matrix.system }}.workspace-tarballs

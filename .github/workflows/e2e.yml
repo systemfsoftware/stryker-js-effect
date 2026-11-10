@@ -49,6 +49,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+            fallback = true
       - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
       - id: base
