@@ -81,10 +81,10 @@ jobs:
           SHA_INPUT: ${{ inputs.sha }}
           # Every in-repo file the lane's jobs load from the commit they test, besides each
           # PROJECTS entry's stryker.config.ts: the local actions, the drop audit's verdict
-          # script, the flake that builds the released tarballs, and the install and build
+          # script, the flake whose producer tarballs the install reads, and the install and build
           # inputs. Extend it when a job loads another file from the tested commit.
           LANE_FILES: |
-            .github/actions/released-tarballs/action.yml
+            flake.nix
             .github/actions/mutation-build-key/action.yml
             .github/actions/job-report/action.yml
             scripts/drop-audit-verdict.ts
@@ -185,7 +185,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       - name: Restore the incremental report of the last run
@@ -237,7 +245,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       - id: restore
@@ -286,7 +302,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
@@ -388,7 +412,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
@@ -537,8 +569,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - id: tarballs
-        uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - id: install
         run: pnpm install --frozen-lockfile
 

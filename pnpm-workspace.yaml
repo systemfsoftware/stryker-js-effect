@@ -85,24 +85,24 @@ overrides:
   # pinned by the `stryker-published` flake input, wherever it appears outside
   # the workspace; workspace links are untouched. The runner is also reached
   # through the CLI's `npm:` alias, which an override matches by its full spec.
-  "@systemfsoftware/oxlint-ignorer-config@*": file:.sfs-deps/oxlint-ignorer-config.tgz
-  "@systemfsoftware/stryker-framework-interface@*": file:.sfs-deps/stryker-framework-interface.tgz
-  "@systemfsoftware/stryker-ignorer-angular@*": file:.sfs-deps/stryker-ignorer-angular.tgz
-  "@systemfsoftware/stryker-ignorer-effect-schema-declarations@*": file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-  "@systemfsoftware/stryker-ignorer-in-source-vitest-block@*": file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-  "@systemfsoftware/stryker-ignorer-interface@*": file:.sfs-deps/stryker-ignorer-interface.tgz
-  "@systemfsoftware/stryker-ignorer-kit@*": file:.sfs-deps/stryker-ignorer-kit.tgz
-  "@systemfsoftware/stryker-js@*": file:.sfs-deps/stryker-js.tgz
-  "@systemfsoftware/stryker-js-angular@*": file:.sfs-deps/stryker-js-angular.tgz
-  "@systemfsoftware/stryker-js-cli-contract@*": file:.sfs-deps/stryker-js-cli-contract.tgz
-  "@systemfsoftware/stryker-js-html-reporter@*": file:.sfs-deps/stryker-js-html-reporter.tgz
-  "@systemfsoftware/stryker-js-instrumenter@*": file:.sfs-deps/stryker-js-instrumenter.tgz
-  "@systemfsoftware/stryker-js-plugin-interface@*": file:.sfs-deps/stryker-js-plugin-interface.tgz
-  "@systemfsoftware/stryker-js-plugin-runtime@*": file:.sfs-deps/stryker-js-plugin-runtime.tgz
-  "@systemfsoftware/stryker-js-svelte@*": file:.sfs-deps/stryker-js-svelte.tgz
-  "@systemfsoftware/stryker-js-typescript-checker@*": file:.sfs-deps/stryker-js-typescript-checker.tgz
-  "@systemfsoftware/stryker-js-vitest-runner@*": file:.sfs-deps/stryker-js-vitest-runner.tgz
-  "@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^10.0.0": file:.sfs-deps/stryker-js-vitest-runner.tgz
+  "@systemfsoftware/oxlint-ignorer-config@*": file:.deps/oxlint-ignorer-config.tgz
+  "@systemfsoftware/stryker-framework-interface@*": file:.deps/stryker-framework-interface.tgz
+  "@systemfsoftware/stryker-ignorer-angular@*": file:.deps/stryker-ignorer-angular.tgz
+  "@systemfsoftware/stryker-ignorer-effect-schema-declarations@*": file:.deps/stryker-ignorer-effect-schema-declarations.tgz
+  "@systemfsoftware/stryker-ignorer-in-source-vitest-block@*": file:.deps/stryker-ignorer-in-source-vitest-block.tgz
+  "@systemfsoftware/stryker-ignorer-interface@*": file:.deps/stryker-ignorer-interface.tgz
+  "@systemfsoftware/stryker-ignorer-kit@*": file:.deps/stryker-ignorer-kit.tgz
+  "@systemfsoftware/stryker-js@*": file:.deps/stryker-js.tgz
+  "@systemfsoftware/stryker-js-angular@*": file:.deps/stryker-js-angular.tgz
+  "@systemfsoftware/stryker-js-cli-contract@*": file:.deps/stryker-js-cli-contract.tgz
+  "@systemfsoftware/stryker-js-html-reporter@*": file:.deps/stryker-js-html-reporter.tgz
+  "@systemfsoftware/stryker-js-instrumenter@*": file:.deps/stryker-js-instrumenter.tgz
+  "@systemfsoftware/stryker-js-plugin-interface@*": file:.deps/stryker-js-plugin-interface.tgz
+  "@systemfsoftware/stryker-js-plugin-runtime@*": file:.deps/stryker-js-plugin-runtime.tgz
+  "@systemfsoftware/stryker-js-svelte@*": file:.deps/stryker-js-svelte.tgz
+  "@systemfsoftware/stryker-js-typescript-checker@*": file:.deps/stryker-js-typescript-checker.tgz
+  "@systemfsoftware/stryker-js-vitest-runner@*": file:.deps/stryker-js-vitest-runner.tgz
+  "@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^10.0.0": file:.deps/stryker-js-vitest-runner.tgz
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
   - effect
