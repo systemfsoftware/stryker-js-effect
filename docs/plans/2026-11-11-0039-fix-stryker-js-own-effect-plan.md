@@ -14,7 +14,7 @@ execution: code
 - **Objective:** A project pinned to any `effect` version runs `stryker` and completes a mutation run. No package on the run path has any `effect` relationship with that project.
 - **Means:** The run path bundles its own `effect` and declares it nowhere. The Effect-native library surface ships as separate packages that declare `effect` as a required peer. One e2e journey proves the separation on the packed tarballs (KTD1, KTD2, KTD5).
 - **Authority:** SYS-1276 "Done when" and its "Dependency model, settled" section (2026-11-10), which replaces the "direct exact dependency" bullets; `AGENTS.md` (BREAK-1, START-6, PLUG-1); `packages/AGENTS.md`; `repos/constitution/CONSTITUTION.md` (CONST-B1, CONST-B2). Where they conflict, the constitution governs.
-- **Stop conditions:** U1-U8 are one pull request. It is published when the local Verification Contract rows pass, with the off-host rows named as pending. It merges only after the dispatched separation journey is green and main is green (U9a). U9 is human-gated (release, bootstrap publish, pin) and is never executed by an agent. No agent approves or merges.
+- **Stop conditions:** U1-U8 are one pull request. It is published when the local Verification Contract rows pass, with the off-host rows named as pending. It merges only after the dispatched separation journey is green and main is green (U9a). U9 is human-gated (release, pin) and is never executed by an agent. No agent approves or merges.
 - **Execution profile:** Inline editing in one worktree. The separation journey runs off-host only: it needs KVM and the collector (`test/e2e/README.md`, OP28).
 
 ## Product Contract
@@ -70,7 +70,7 @@ The defect is narrower than the peer declaration suggests. The shipped CLI (`dis
 - KTD5. **The separation proof is one e2e journey, run postsubmit and by dispatch.** It lives in `test/e2e`, which already packs the workspace closure, installs it with `npm ci` in the fixture bake and runs the packed CLI in a microVM. The lane is main-only by rule (pack: ci-wall-clock, heavy-suites-judge-every-main-commit.md) and `.github/workflows/e2e.yml` is read-only; the new file joins the `rest-1` and `rest-2` shards without a workflow edit. The bake installs every packed closure member into every fixture, and the library packages in that closure now peer on `effect ^4.1.0`. The fixture pins `effect@4.0.0` and sets npm `overrides: { effect: "$effect" }`, which resolves those library peers to the consumer's copy. Measured on npm 11.19.0: without the override the install fails with ERESOLVE; with it, it installs `effect@4.0.0` once. The override does not touch the run path, which declares nothing to override.
 - KTD6. **Consumer pinned to `effect@4.0.0`.** 4.0.0 ships `dist/Crypto.js`; 4.1.0 does not (both read from the registry tarballs). The fixture's source imports `effect/Crypto`, which resolves only against the consumer's copy, while stryker-js runs on its own 4.1.x. Assertions read installed bytes (`node_modules/.package-lock.json`, installed manifests), never the check's own metadata (CHK1).
 - KTD7. **Return main to green first, then ship the separation.** Release PR #310 merged as `b118280` and carries the Effect 4.1 migration. A repin PR (human) moves the flake input, the lock and the vm-runner override key; main goes green on it. The fix pull request rebases onto green main and merges on a green `check`; its release and a second repin follow.
-- KTD8. **Versioning.** `major`: stryker-js (the `.` surface leaves, dependencies change), plugin-interface (peer, Evaluator removed), plugin-runtime, instrumenter, html-reporter, typescript-checker. `minor` (0.x): cli-contract. `patch`: vitest-runner (declared-but-unimported dependencies removed). `minor`: stryker-js-engine, a new package that publishes as 0.1.0 after a maintainer bootstrap publish (`.changeset/README.md`).
+- KTD8. **Versioning.** `major`: stryker-js (the `.` surface leaves, dependencies change), plugin-interface (peer, Evaluator removed), plugin-runtime, instrumenter, html-reporter, typescript-checker, and stryker-js-engine. `minor` (0.x): cli-contract. `patch`: vitest-runner (declared-but-unimported dependencies removed). The engine name is not new: its line ended at tag `@systemfsoftware/stryker-js-engine@v5.0.0` when the engine moved into stryker-js, so the package returns at 5.0.0 and the `major` intent makes it 6.0.0. This repository publishes to no registry (`release.jsonc`; the reusable Release workflow has no publish step), so there is no bootstrap publish. A package at an untagged version is owed a tag ahead of any pending intent and then fails its GitHub Release on the missing changelog; the 0.0.0 first draft did exactly that in a dry run of the release tools.
 
 ### Surface Disposition
 
@@ -117,7 +117,7 @@ flowchart TB
   C -->|check runs the type-query tests| D[Main green]
   D --> E[Fix PR U1-U8 rebased on green main]
   E -->|dispatch e2e.yml on the PR branch| F[Separation journey green]
-  F -->|owner merges| G[Release PR; bootstrap publish of the engine package; owner merges]
+  F -->|owner merges| G[Release PR; owner merges]
   G --> H[Repin PR 2: pin moves, host API import moves to the engine]
   H --> I[Check green on the new tarballs]
 ```
@@ -217,7 +217,7 @@ flowchart TB
 ### U9b. Release the separation and repin (human-gated)
 
 - **Goal:** The pin carries the own-effect release (R9, second half).
-- **Dependencies:** U1-U8 merged; U9a done; the engine package bootstrap-published.
+- **Dependencies:** U1-U8 merged; U9a done; the engine released at 6.0.0.
 - **Approach:** As U9a, plus the host API import: after this release the dogfood tarball of stryker-js has no `.`, so the three type-query/vitest-runner test files and `test/checker-parity` that import `Engine` and `Worker` from the tarball resolve them from the engine's tarball (Open Questions).
 - **Verification:** the START-6 command; `CI / check` green.
 
