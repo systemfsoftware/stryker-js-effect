@@ -41,6 +41,9 @@
     "@opentelemetry/api": "catalog:",
     "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"
   },
+  "peerDependencies": {
+    "effect": "^4.0.0"
+  },
   "devDependencies": {
     "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
