@@ -22,7 +22,7 @@
     "@effect/platform-node": "catalog:",
     "@noble/hashes": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-engine": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",

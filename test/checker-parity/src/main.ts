@@ -1,6 +1,6 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeServices from '@effect/platform-node/NodeServices'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Argument from 'effect/cli/Argument'

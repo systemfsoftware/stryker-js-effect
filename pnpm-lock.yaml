@@ -1725,9 +1725,9 @@ importers:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 12.0.0(effect@4.1.0)
-      '@systemfsoftware/stryker-js':
+      '@systemfsoftware/stryker-js-engine':
         specifier: workspace:^
-        version: link:../../packages/stryker-js
+        version: link:../../packages/stryker-js-engine
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../../packages/stryker-js-instrumenter
