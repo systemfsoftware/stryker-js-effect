@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-checker-parity",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "The checker-parity lane's driver: runs one checker side over a corpus shard and compares sides. Private to this repository.",
   "license": "Apache-2.0",
   "type": "module",
