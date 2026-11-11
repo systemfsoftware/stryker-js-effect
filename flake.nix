@@ -35,7 +35,7 @@
     # checker and ignorers) come from its tarballs, never from a registry.
     # Nothing follows: its own lock reproduces the released tarballs byte for
     # byte, the integrity each release tag records.
-    stryker-published.url = "github:systemfsoftware/stryker-js-effect/9e81669b84711a9635eaa97b17dd13efea9f0c8c";
+    stryker-published.url = "github:systemfsoftware/stryker-js-effect/b11828050b15d23bdbfb78c11bfe294956914272";
   };
 
   outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
