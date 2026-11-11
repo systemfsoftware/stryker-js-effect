@@ -30,7 +30,8 @@
       url = "github:systemfsoftware/pnpm-release-management";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v19.0.0`.
+    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v20.0.0`
+    # (b11828050b15d23bdbfb78c11bfe294956914272).
     # The packages the workspace dogfoods (the mutation CLI, its runner,
     # checker and ignorers) come from its tarballs, never from a registry.
     # Nothing follows: its own lock reproduces the released tarballs byte for

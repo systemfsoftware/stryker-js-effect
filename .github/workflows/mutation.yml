@@ -445,10 +445,11 @@ jobs:
           path: ${{ env.INCREMENTAL_REPORTS }}
           key: ${{ needs.plan.outputs.incrementalKey }}
 
-      # Pinned CLI (stryker-published 9e81669b8) exit codes: VerdictFail 1, ConfigError 2
-      # (packages/stryker-js-plugin-interface/src/ExitClass.schema.ts:11-16). With no --baseline,
-      # BudgetExceeded is the only exit 1 (run-request.cell.ts:472,492) and the only message matching
-      # $budget (packages/stryker-js/src/budget-gate.workflow.ts:45).
+      # What the published CLI's gate command exits with: 0 when the run holds, 1 for a failed
+      # verdict, 2 for unusable input. Two verdicts exit 1. A budget breach prints "run took Ns,
+      # over the Ns budget" and a thresholds.break breach prints "scored below thresholds.break".
+      # The step below downgrades only the budget breach to a warning. Any other non-zero
+      # status, the score-break exit 1 included, fails the job.
       - id: gate
         name: Gate the merged report
         run: |
