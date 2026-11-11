@@ -103,6 +103,8 @@ overrides:
   "@systemfsoftware/stryker-js-typescript-checker@*": file:.deps/stryker-js-typescript-checker.tgz
   "@systemfsoftware/stryker-js-vitest-runner@*": file:.deps/stryker-js-vitest-runner.tgz
   "@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^10.0.0": file:.deps/stryker-js-vitest-runner.tgz
+# Three days (minutes); the same in every systemfsoftware repo, so producer and consumer gates agree.
+minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
   - effect
