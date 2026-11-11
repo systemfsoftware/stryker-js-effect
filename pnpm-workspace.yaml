@@ -29,7 +29,7 @@ catalog:
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
   "@systemfsoftware/differential-spec": ^1.0.1
   "@systemfsoftware/effect-cell-types": ^12.0.0
-  "@systemfsoftware/effect-microsandbox": ^5.0.0
+  "@systemfsoftware/effect-microsandbox": ^6.0.0
   "@systemfsoftware/effect-readiness": ^1.0.0
   "@systemfsoftware/effect-gherkin-spec": ^7.0.0
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
@@ -85,6 +85,10 @@ overrides:
   # pinned by the `stryker-published` flake input, wherever it appears outside
   # the workspace; workspace links are untouched. The runner is also reached
   # through the CLI's `npm:` alias, which an override matches by its full spec.
+  "@systemfsoftware/effect-microsandbox": file:.sfs-deps/effect-microsandbox.tgz
+  "@systemfsoftware/effect-microsandbox>@systemfsoftware/effect-cell-types": file:.sfs-deps/effect-cell-types.tgz
+  "@systemfsoftware/effect-readiness": file:.sfs-deps/effect-readiness.tgz
+  "@systemfsoftware/effect-readiness>@systemfsoftware/effect-cell-types": file:.sfs-deps/effect-cell-types.tgz
   "@systemfsoftware/oxlint-ignorer-config@*": file:.sfs-deps/oxlint-ignorer-config.tgz
   "@systemfsoftware/stryker-framework-interface@*": file:.sfs-deps/stryker-framework-interface.tgz
   "@systemfsoftware/stryker-ignorer-angular@*": file:.sfs-deps/stryker-ignorer-angular.tgz
