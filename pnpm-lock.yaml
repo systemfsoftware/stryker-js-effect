@@ -63,12 +63,6 @@ catalogs:
     '@systemfsoftware/effect-gherkin-spec':
       specifier: ^7.0.0
       version: 7.0.0
-    '@systemfsoftware/effect-microsandbox':
-      specifier: ^5.0.0
-      version: 5.0.0
-    '@systemfsoftware/effect-readiness':
-      specifier: ^1.0.0
-      version: 1.0.0
     '@systemfsoftware/effect-schema-discovery':
       specifier: ^2.0.0
       version: 2.0.0
@@ -184,6 +178,10 @@ overrides:
   '@effect/platform-node': ^4.1.0
   '@effect/platform-node-shared': ^4.1.0
   '@effect/tsgo': ^0.63.0
+  '@systemfsoftware/effect-microsandbox': file:.sfs-deps/effect-microsandbox.tgz
+  '@systemfsoftware/effect-microsandbox>@systemfsoftware/effect-cell-types': file:.sfs-deps/effect-cell-types.tgz
+  '@systemfsoftware/effect-readiness': file:.sfs-deps/effect-readiness.tgz
+  '@systemfsoftware/effect-readiness>@systemfsoftware/effect-cell-types': file:.sfs-deps/effect-cell-types.tgz
   '@systemfsoftware/oxlint-ignorer-config@*': file:.sfs-deps/oxlint-ignorer-config.tgz
   '@systemfsoftware/stryker-framework-interface@*': file:.sfs-deps/stryker-framework-interface.tgz
   '@systemfsoftware/stryker-ignorer-angular@*': file:.sfs-deps/stryker-ignorer-angular.tgz
@@ -1742,11 +1740,11 @@ importers:
         specifier: 'catalog:'
         version: 7.0.0(@systemfsoftware/vitest@2.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1))(effect@4.1.0)(vitest@5.0.1)
       '@systemfsoftware/effect-microsandbox':
-        specifier: 'catalog:'
-        version: 5.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
+        specifier: file:../../.sfs-deps/effect-microsandbox.tgz
+        version: file:.sfs-deps/effect-microsandbox.tgz(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
       '@systemfsoftware/effect-readiness':
-        specifier: 'catalog:'
-        version: 1.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
+        specifier: file:../../.sfs-deps/effect-readiness.tgz
+        version: file:.sfs-deps/effect-readiness.tgz(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
       '@systemfsoftware/stryker-e2e-core':
         specifier: workspace:^
         version: link:../e2e-core
@@ -2363,6 +2361,9 @@ packages:
 
   '@microsandbox/types@0.7.2':
     resolution: {integrity: sha512-K02/NyT4VaC14fXUlC6cC3qBYHMzfkhTEibOzJMh7P99wlbA+SxungRpZqPAm4tOzmClZEoBlC8es52Y7ipUtQ==}
+
+  '@microsandbox/types@0.7.8':
+    resolution: {integrity: sha512-GCLuiSbTXU/5s8/VhyQzRc8AtDyz4uaIk3fP0GbWAPvj2xJfR7rpUr51UYZIFd9ONwAqa7XEfpyr8jnlFInkhA==}
 
   '@microsoft/api-extractor-model@7.33.12':
     resolution: {integrity: sha512-TdKOYgwf98xLjNW+y3iXIiCf4ZLQbilGAlqkMTTAqqAWfgRXAn9YCSGMsaiB1U7OPRvslUWg6n08EqQPbP93tA==}
@@ -3192,8 +3193,21 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
+  '@superradcompany/microsandbox-darwin-arm64@0.7.8':
+    resolution: {integrity: sha512-WoTlB2b06o32AXW3D3Xp6GLiSoAXGNqNikbakA/RP2Uqj2Z8mfoDZ7mYKONLG7PXUAWu/vTTqJkOtVt8JFEWvA==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [darwin]
+
   '@superradcompany/microsandbox-linux-arm64-gnu@0.7.2':
     resolution: {integrity: sha512-gU15ar5FtNXfQGiKktdgJdkba5dW5+yDv7gx38sD6QrgqhSOgVsC17yvrPOD+AAdBbj6GTntlbL3ENn/rx7MKQ==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.7.8':
+    resolution: {integrity: sha512-NRm8GVXlgoPsLYX8BovMTwg4oNWiT0EZp34+6zM7s7slhCbv3TItebbg6urKj8yqKoLP1T+OHH/7Y/RnD9omZw==}
     engines: {node: '>= 22'}
     cpu: [arm64]
     os: [linux]
@@ -3206,14 +3220,33 @@ packages:
     os: [linux]
     libc: [glibc]
 
+  '@superradcompany/microsandbox-linux-x64-gnu@0.7.8':
+    resolution: {integrity: sha512-4AnLhlDSvgzQPTrKcd6kCpCpgPWq275sGWTy7tg1deo42lU0PXKtwnaUlBx7uBdQO4YFIGfIx0T8lgsGO9h5EA==}
+    engines: {node: '>= 22'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
   '@superradcompany/microsandbox-win32-arm64-msvc@0.7.2':
     resolution: {integrity: sha512-Vhn6POQS6MKuSnthhOHppt8FAS9Lb2TqPr59q/NtBk2AXC4uK5tiUwKQCA/H7E1irzE8YHhT/rvMHufHkYXo7A==}
     engines: {node: '>= 22'}
     cpu: [arm64]
     os: [win32]
 
+  '@superradcompany/microsandbox-win32-arm64-msvc@0.7.8':
+    resolution: {integrity: sha512-wwXD/B9JwmyDAhrkX2V4L4VHVumDK1JbMnUFTOuNCoozyeNV4fogL+BziINp3HeInBTbKOJrAI7+A8kTawKfPA==}
+    engines: {node: '>= 22'}
+    cpu: [arm64]
+    os: [win32]
+
   '@superradcompany/microsandbox-win32-x64-msvc@0.7.2':
     resolution: {integrity: sha512-B33UPd8Tfk+Q7r1w+QmDmwO3e16x7n0wr2c+ynssJRxjoD4llLF+LBN2WeseTtEb32IuOM+nVgeFAFuyL7q4Mg==}
+    engines: {node: '>= 22'}
+    cpu: [x64]
+    os: [win32]
+
+  '@superradcompany/microsandbox-win32-x64-msvc@0.7.8':
+    resolution: {integrity: sha512-m11kPzyaid/DMXK5kJRvDZEGkdlvndmOzfjNjfhqpL+LFQssnJgQ2WSyYfBQMrHj17pRfDkDxqwZPr9iXZoSMw==}
     engines: {node: '>= 22'}
     cpu: [x64]
     os: [win32]
@@ -3236,6 +3269,12 @@ packages:
     peerDependencies:
       effect: ^4
 
+  '@systemfsoftware/effect-cell-types@file:.sfs-deps/effect-cell-types.tgz':
+    resolution: {integrity: sha512-En6GJCHdYpxvrSBhd8I6/KI3M4wLWKUWc2HhdlVw6n0YPPlWWxjzN5GugqHjuHsNAY34XzgeRHfk+R2PAHL/Uw==, tarball: file:.sfs-deps/effect-cell-types.tgz}
+    version: 12.0.2
+    peerDependencies:
+      effect: ^4
+
   '@systemfsoftware/effect-gherkin-spec@7.0.0':
     resolution: {integrity: sha512-4sgzO0af3ljV1/97ESgQ9z+OzJWQ0RTM4XNRD9NIpe/jRJifsRqHy09IvpsR1t9M+fJIuffn55KdByKHXWsiHQ==}
     peerDependencies:
@@ -3243,14 +3282,16 @@ packages:
       effect: ^4
       vitest: ^5
 
-  '@systemfsoftware/effect-microsandbox@5.0.0':
-    resolution: {integrity: sha512-V0nSJLZ1aUCp6AXgmHf/wu78LBRMzCu5eRgURCJ18dWCdQkLFUlD7veWvrwM0Chp73X5ONeZEaYoiyag4oSUQA==}
+  '@systemfsoftware/effect-microsandbox@file:.sfs-deps/effect-microsandbox.tgz':
+    resolution: {integrity: sha512-bKZMn+Nra0KZSBC+clrByl6Lm3/dizH7fmapcqDyJAvNOxBCGb0oVdgL38mXtYioDP5T78gfHVUyRj3liTfKfw==, tarball: file:.sfs-deps/effect-microsandbox.tgz}
+    version: 6.0.0
     peerDependencies:
-      effect: ^4
+      effect: ^4.1.2
       typescript: '>=7.0.0'
 
-  '@systemfsoftware/effect-readiness@1.0.0':
-    resolution: {integrity: sha512-prxHfRS0K7EQxiL//1JB7oTSmsNz8xN8BFArmHtOkszWOZj+8uyK701/mHSrIc7s5wOi0h5tE0xfFdbVs9bqcA==}
+  '@systemfsoftware/effect-readiness@file:.sfs-deps/effect-readiness.tgz':
+    resolution: {integrity: sha512-0Em5IwOeCWK+yvJtEFDEBSAi5QrZKR+pEtY3qk8CKum72Ea91XJYa8P8Zyk55QraHcfT6jfC54vNHSlGUU5KoQ==, tarball: file:.sfs-deps/effect-readiness.tgz}
+    version: 1.1.1
     peerDependencies:
       effect: ^4
       typescript: '>=7.0.0'
@@ -4361,6 +4402,11 @@ packages:
     engines: {node: '>= 22'}
     hasBin: true
 
+  microsandbox@0.7.8:
+    resolution: {integrity: sha512-bUll2JNeVhAdvtlemsD5rNkVpLU0KQSXVpuSjXFmkG6Z52Z2ZL9sP8hAdFT8pIGoEPLj+OB9ohgFEPsJgBVkFg==}
+    engines: {node: '>= 22'}
+    hasBin: true
+
   minimatch@10.2.3:
     resolution: {integrity: sha512-Rwi3pnapEqirPSbWbrZaa6N3nmqq4Xer/2XooiOKyV3q12ML06f7MOuc5DVH8ONZIFhwIYQ3yzPH4nt7iWHaTg==}
     engines: {node: 18 || 20 || >=22}
@@ -5355,6 +5401,8 @@ snapshots:
 
   '@microsandbox/types@0.7.2': {}
 
+  '@microsandbox/types@0.7.8': {}
+
   '@microsoft/api-extractor-model@7.33.12(@types/node@24.13.3)':
     dependencies:
       '@microsoft/tsdoc': 0.16.0
@@ -5966,16 +6014,31 @@ snapshots:
   '@superradcompany/microsandbox-darwin-arm64@0.7.2':
     optional: true
 
+  '@superradcompany/microsandbox-darwin-arm64@0.7.8':
+    optional: true
+
   '@superradcompany/microsandbox-linux-arm64-gnu@0.7.2':
+    optional: true
+
+  '@superradcompany/microsandbox-linux-arm64-gnu@0.7.8':
     optional: true
 
   '@superradcompany/microsandbox-linux-x64-gnu@0.7.2':
     optional: true
 
+  '@superradcompany/microsandbox-linux-x64-gnu@0.7.8':
+    optional: true
+
   '@superradcompany/microsandbox-win32-arm64-msvc@0.7.2':
     optional: true
 
+  '@superradcompany/microsandbox-win32-arm64-msvc@0.7.8':
+    optional: true
+
   '@superradcompany/microsandbox-win32-x64-msvc@0.7.2':
+    optional: true
+
+  '@superradcompany/microsandbox-win32-x64-msvc@0.7.8':
     optional: true
 
   '@sveltejs/acorn-typescript@1.0.13(acorn@8.18.0)':
@@ -6001,6 +6064,10 @@ snapshots:
     dependencies:
       effect: 4.1.0
 
+  '@systemfsoftware/effect-cell-types@file:.sfs-deps/effect-cell-types.tgz(effect@4.1.0)':
+    dependencies:
+      effect: 4.1.0
+
   '@systemfsoftware/effect-gherkin-spec@7.0.0(@systemfsoftware/vitest@2.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1))(effect@4.1.0)(vitest@5.0.1)':
     dependencies:
       '@systemfsoftware/effect-spec-runtime': 1.0.0(@systemfsoftware/vitest@2.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1))(effect@4.1.0)(vitest@5.0.1)
@@ -6008,23 +6075,23 @@ snapshots:
       effect: 4.1.0
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
 
-  '@systemfsoftware/effect-microsandbox@5.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)':
+  '@systemfsoftware/effect-microsandbox@file:.sfs-deps/effect-microsandbox.tgz(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)':
     dependencies:
       '@effect/platform-node': 4.1.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.0)
-      '@systemfsoftware/effect-readiness': 1.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
+      '@systemfsoftware/effect-cell-types': file:.sfs-deps/effect-cell-types.tgz(effect@4.1.0)
+      '@systemfsoftware/effect-readiness': file:.sfs-deps/effect-readiness.tgz(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
       effect: 4.1.0
-      microsandbox: 0.7.2
+      microsandbox: 0.7.8
       typescript: 7.0.2
     transitivePeerDependencies:
       - bufferutil
       - redis
       - utf-8-validate
 
-  '@systemfsoftware/effect-readiness@1.0.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)':
+  '@systemfsoftware/effect-readiness@file:.sfs-deps/effect-readiness.tgz(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)':
     dependencies:
       '@effect/platform-node': 4.1.0(effect@4.1.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.0)
+      '@systemfsoftware/effect-cell-types': file:.sfs-deps/effect-cell-types.tgz(effect@4.1.0)
       effect: 4.1.0
       typescript: 7.0.2
     transitivePeerDependencies:
@@ -7064,6 +7131,16 @@ snapshots:
       '@superradcompany/microsandbox-linux-x64-gnu': 0.7.2
       '@superradcompany/microsandbox-win32-arm64-msvc': 0.7.2
       '@superradcompany/microsandbox-win32-x64-msvc': 0.7.2
+
+  microsandbox@0.7.8:
+    dependencies:
+      '@microsandbox/types': 0.7.8
+    optionalDependencies:
+      '@superradcompany/microsandbox-darwin-arm64': 0.7.8
+      '@superradcompany/microsandbox-linux-arm64-gnu': 0.7.8
+      '@superradcompany/microsandbox-linux-x64-gnu': 0.7.8
+      '@superradcompany/microsandbox-win32-arm64-msvc': 0.7.8
+      '@superradcompany/microsandbox-win32-x64-msvc': 0.7.8
 
   minimatch@10.2.3:
     dependencies:

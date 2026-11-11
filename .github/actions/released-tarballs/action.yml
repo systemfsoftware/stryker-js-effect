@@ -1,7 +1,7 @@
 name: Released tarballs
 description: >-
   Puts the released tarballs the lockfile installs from into `.sfs-deps/`, as plain `.tgz`
-  files. They are cached under the `stryker-published` pin in flake.lock, so Nix builds them
+  files. They are cached under the release pins in flake.lock, so Nix builds them
   only when the pin moves. `pnpm install --frozen-lockfile` still checks each tarball against
   the integrity the lockfile records.
 
@@ -17,7 +17,7 @@ runs:
       name: Key of the pinned release
       shell: bash
       run: |
-        pin=$(jq -er '.nodes["stryker-published"].locked | "\(.rev)-\(.narHash)"' flake.lock)
+        pin=$(jq -er '[.nodes["stryker-published", "effect-microvm-published", "core-published"].locked | "\(.rev)-\(.narHash)"] | join(" ")' flake.lock)
         echo "key=sfs-deps-$RUNNER_OS-$(sha256sum <<< "$pin" | cut -c1-64)" >> "$GITHUB_OUTPUT"
 
     - id: restore

@@ -36,24 +36,40 @@
     # Nothing follows: its own lock reproduces the released tarballs byte for
     # byte, the integrity each release tag records.
     stryker-published.url = "github:systemfsoftware/stryker-js-effect/9e81669b84711a9635eaa97b17dd13efea9f0c8c";
+    # effect-microvm at the commit of its release of `@systemfsoftware/effect-microsandbox@v6.0.0`.
+    # Nothing follows, so its own lock reproduces the tarball.
+    effect-microvm-published.url = "github:systemfsoftware/effect-microvm/a468dc3ea63c61fab996f36c0f0e8293cecb69df";
+    # The core commit effect-microvm builds its dependencies from: the tarballs of
+    # `effect-readiness` 1.1.1 and `effect-cell-types` 12.0.2, which effect-microsandbox
+    # requires and no registry carries.
+    core-published.url = "github:systemfsoftware/systemfsoftware/31963d5a6452b488b73f8d559c85e7104dd3b443";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published, effect-microvm-published, core-published }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
       # Every tarball the release produced, renamed to `<name without scope>.tgz`
       # so the `file:` paths in the manifests and the lockfile keep their
-      # spelling across releases; only their integrity moves.
+      # spelling across releases; only their integrity moves. The e2e harness's
+      # microVM binding and its two core dependencies come from their own
+      # releases the same way, because effect-microsandbox 5.0.0, the last
+      # release on a registry, imports the `effect/Crypto` module effect 4.1.0 removed.
       publishedOf = pkgs:
         let
-          released = stryker-published.packages.${pkgs.stdenv.hostPlatform.system}.workspace-tarballs;
+          system = pkgs.stdenv.hostPlatform.system;
+          released = stryker-published.packages.${system}.workspace-tarballs;
+          microvm = effect-microvm-published.packages.${system};
+          core = core-published.packages.${system};
         in
         pkgs.runCommand "stryker-published" { nativeBuildInputs = [ pkgs.jq ]; } ''
           mkdir -p "$out"
           jq -r '.[] | "\(.name | split("/") | last) \(.file)"' ${released}/index.json |
             while read -r name file; do cp ${released}/"$file" "$out/$name.tgz"; done
+          cp ${microvm.effect-microsandbox} "$out/effect-microsandbox.tgz"
+          cp ${core.effect-readiness} "$out/effect-readiness.tgz"
+          cp ${core.effect-cell-types} "$out/effect-cell-types.tgz"
         '';
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
