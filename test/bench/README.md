@@ -10,7 +10,7 @@ pushed commit, and a leg runs only when Turbo
 entry or an engine directory every leg builds (`src/engine-dirs.ts`). The full
 corpus runs on a dispatch, when no green ancestor exists (side A is then the
 first parent), and when the lane's own inputs changed: the `test/bench`
-package, `bench.yml`, `.github/actions/released-tarballs/` or the flake pin.
+package, `bench.yml` or the flake pin.
 When no leg is affected, the bench job is skipped and the run is green. The
 plan job writes its choice to the step summary, and it fails when the checkout
 has uncommitted changes, since Turbo would count them.

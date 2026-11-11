@@ -23,10 +23,7 @@ const HARNESS_DIR = 'test/bench'
 
 const LANE_INPUT_FILES = ['.github/workflows/bench.yml', 'flake.lock', 'flake.nix']
 
-const LANE_INPUT_DIRS = ['.github/actions/released-tarballs/']
-
-const isLaneInput = (file: string): boolean =>
-  Boolean.or(LANE_INPUT_FILES.includes(file), LANE_INPUT_DIRS.some((dir) => file.startsWith(dir)))
+const isLaneInput = (file: string): boolean => LANE_INPUT_FILES.includes(file)
 
 const holds = (packagePath: string, entry: string): boolean =>
   Boolean.and(packagePath.length > 0, Boolean.or(entry === packagePath, entry.startsWith(`${packagePath}/`)))
