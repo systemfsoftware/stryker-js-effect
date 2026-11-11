@@ -1,4 +1,4 @@
-import { sourceExports } from '@systemfsoftware/tsdown-config'
+import { SOURCE_CONDITION, withSourceFirst } from '@systemfsoftware/tsdown-config'
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'tsdown'
 
@@ -23,29 +23,52 @@ const shared = {
   define: { 'import.meta.vitest': 'undefined' },
 }
 
+const DTS_EXT = '.d.mts'
+
+const injectTypes = (exports: Record<string, any>, { isPublish }: { readonly isPublish: boolean }) => {
+  for (const [key, value] of Object.entries(exports)) {
+    if (key === './package.json') continue
+    exports[key] = withSourceFirst(value, DTS_EXT)
+  }
+  return isPublish ? exports : { '.': { [SOURCE_CONDITION]: './src/mod.ts' }, ...exports }
+}
+
+const bundledLibraries = [
+  '@std/jsonc',
+  '@systemfsoftware/effect-cell-types',
+  '@systemfsoftware/stryker-framework-interface',
+  '@systemfsoftware/stryker-ignorer-interface',
+  '@systemfsoftware/stryker-js-cli-contract',
+  '@systemfsoftware/stryker-js-html-reporter',
+  '@systemfsoftware/stryker-js-instrumenter',
+  '@systemfsoftware/stryker-js-plugin-interface',
+  '@systemfsoftware/stryker-js-plugin-runtime',
+]
+
 export default defineConfig([
   {
     ...shared,
     entry: {
-      index: './src/mod.ts',
       config: './src/config/mod.ts',
       promises: './src/promises/mod.ts',
       events: './src/events/mod.ts',
     },
     dts: true,
-    exports: sourceExports({ dtsExt: '.d.mts' }),
+    exports: { devExports: '@systemfsoftware/source', customExports: injectTypes },
 
     deps: {
-      alwaysBundle: [
-        '@std/jsonc',
-        '@systemfsoftware/stryker-framework-interface',
-        '@systemfsoftware/stryker-ignorer-interface',
-        '@systemfsoftware/stryker-js-cli-contract',
-        '@systemfsoftware/stryker-js-html-reporter',
-        '@systemfsoftware/stryker-js-instrumenter',
-        '@systemfsoftware/stryker-js-plugin-interface',
-        '@systemfsoftware/stryker-js-plugin-runtime',
-      ],
+      alwaysBundle: [/^effect(\/|$)/, /^@effect\//, ...bundledLibraries],
+      onlyImport: [/^node:/, '@noble/hashes', '@opentelemetry/api'],
+    },
+  },
+  {
+    ...shared,
+    entry: { published: './src/published.ts' },
+    outDir: './temp/api',
+    dts: { emitDtsOnly: true },
+    deps: {
+      alwaysBundle: bundledLibraries,
+      neverBundle: [/^effect(\/|$)/],
     },
   },
   {

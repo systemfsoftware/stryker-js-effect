@@ -32,7 +32,9 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
+  },
+  "peerDependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
@@ -48,6 +50,7 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "effect": "catalog:",
     "mutation-testing-report-schema": "catalog:stryker",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",

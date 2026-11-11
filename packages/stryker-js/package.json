@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/systemfsoftware/stryker-js-effect/issues"
   },
-  "description": "The Stryker mutation testing tool — the stryker executable, the run engine, and the configuration surface.",
+  "description": "The Stryker mutation testing tool — the stryker executable and the configuration surface.",
   "type": "module",
   "files": [
     "dist",
@@ -37,29 +37,25 @@
     "node": ">=24.13.1"
   },
   "dependencies": {
+    "@noble/hashes": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"
+  },
+  "devDependencies": {
     "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
-    "@noble/hashes": "catalog:",
-    "@opentelemetry/api": "catalog:",
+    "@effect/tsgo": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@opentelemetry/exporter-metrics-otlp-http": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^",
-    "yaml": "catalog:"
-  },
-  "peerDependencies": {
-    "effect": "catalog:"
-  },
-  "devDependencies": {
-    "@effect/tsgo": "catalog:",
-    "@microsoft/api-extractor": "catalog:",
     "@oxc-parser/binding-wasm32-wasi": "catalog:",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/differential-spec": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
@@ -84,6 +80,7 @@
     "@vitest/browser-playwright": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "concurrently": "catalog:",
+    "effect": "catalog:",
     "fast-check": "catalog:",
     "happy-dom": "catalog:",
     "jsdom": "catalog:",
@@ -94,16 +91,13 @@
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "yaml": "catalog:"
   },
   "publishConfig": {
     "access": "public",
     "provenance": true,
     "exports": {
-      ".": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
       "./config": {
         "types": "./dist/config.d.mts",
         "default": "./dist/config.mjs"
@@ -121,9 +115,7 @@
   },
   "exports": {
     ".": {
-      "@systemfsoftware/source": "./src/mod.ts",
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
+      "@systemfsoftware/source": "./src/mod.ts"
     },
     "./config": {
       "@systemfsoftware/source": "./src/config/mod.ts",
@@ -143,8 +135,13 @@
     "./package.json": "./package.json"
   },
   "inlinedDependencies": {
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@eslint-community/regexpp": "4.12.2",
     "@jsr/std__jsonc": "1.0.2",
-    "oxc-parser": "0.150.0"
+    "@systemfsoftware/effect-cell-types": "12.0.0",
+    "effect": "4.1.0",
+    "oxc-parser": "0.150.0",
+    "yaml": "2.9.1"
   }
 }

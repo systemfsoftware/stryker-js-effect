@@ -45,20 +45,17 @@
   "initStrykerConfig": {
     "coverageAnalysis": "perTest"
   },
-  "dependencies": {
-    "@effect/opentelemetry": "catalog:",
-    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/sdk-node": "catalog:",
-    "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:"
-  },
   "peerDependencies": {
     "vitest": "catalog:"
   },
   "devDependencies": {
+    "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
     "@microsoft/api-extractor": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",

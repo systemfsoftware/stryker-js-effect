@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
-import { Worker } from '@systemfsoftware/stryker-js'
+import { Worker } from '@systemfsoftware/stryker-js-engine'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Mutant, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'

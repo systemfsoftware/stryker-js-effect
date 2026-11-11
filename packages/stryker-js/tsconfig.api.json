@@ -5,6 +5,6 @@
   },
   "exclude": [],
   "include": [
-    "dist/index.d.mts"
+    "temp/api/published.d.mts"
   ]
 }

@@ -28,8 +28,8 @@ tarball. Nothing is parked under `.changeset/changelogs/`.
 
 1. **Version PR.** `pnpm version -r` consumes pending intents, writes the
    `## <version>` sections, and records the consumed stems in `ledger.yaml`.
-2. **Publish.** The version PR merges; CI publishes, pushes git tags, and
-   creates each GitHub Release from that version's `CHANGELOG.md` section.
+2. **Release.** The version PR merges; CI pushes the git tags and creates each
+   GitHub Release from that version's `CHANGELOG.md` section.
 
 pnpm-release-management's release engine holds this: it reads
 `versioning.changelog.storage` with `pnpm config get` and refuses any value
@@ -43,25 +43,27 @@ with `cancel-in-progress: false`. Pushes to `main` queue; they never
 cancel an in-flight release run.
 
 Every non-idle release run first passes a **gate** job that runs the same
-`pnpm check:ci` as CI. `version` and `publish` both depend on it, so a red
-suite blocks the release PR and the npm publish alike — a release can never
+`pnpm check:ci` as CI. `version` and `release` both depend on it, so a red
+suite blocks the release PR and the tags alike — a release can never
 outrun the tests that guard it.
 
 - An interrupted **version** job is safe: it only commits on the
   isolated `changeset-release/main` branch and opens or updates a PR;
   `main` is untouched.
-- An interrupted **publish** job is safe: `unpublishedOf()` treats a
-  registry 404 as still owed, so a killed publish remains in `owed` on
-  the next run.
+- An interrupted **release** job is safe: a tag exists only once it is pushed,
+  and a version without its tag stays owed on the next run.
 
-Publishing uses npm OIDC trusted publishing from `.github/workflows/release.yml`.
-For a package npm has never seen, register it (and this repository plus that
-workflow filename) as a trusted publisher on npmjs.com before its first version
-ships — OIDC cannot debut a package npm has never seen. The `@systemfsoftware/stryker-js*`
-family is already published; only a new package name needs this step.
+## New packages
 
-If the GitHub repository changes (e.g. transfer, rename, or fork) or new packages are introduced:
+Nothing is published to an npm registry: `release.jsonc` states that packages
+are versioned independently, tagged `<pkg>@vX.Y.Z` and distributed as the
+repository's Nix flake outputs from a git ref, and the Release workflow has no
+publish step. A new package needs no registration or bootstrap.
 
-1. Run `pnpm publish:unpublished --dry-run` to preview the bootstrap and trust setup.
-2. Run `pnpm publish:unpublished --fix` from a maintainer machine with npm auth to update `package.json` repository URLs to the new repository slug, debut any unpublished packages, and configure `npm trust github` for all workspace packages.
-3. Run `./scripts/check-npm-publish.ts` to inspect the published/attested state of all packages across the registry.
+A member that is not `private` is owed a `<pkg>@v<version>` tag at the version
+its manifest declares, ahead of any pending intent, and its GitHub Release reads
+a `CHANGELOG.md` section for that version, which only `pnpm version -r` writes.
+A new package therefore has to land at a version that is already tagged, or the
+next release run tags that version and fails on the missing changelog. Before
+merging, build `.#workspace-tarballs` and run the release tools' `plan` (it must
+report `phase=version`), `tag --dry-run` and `release --dry-run` against it.

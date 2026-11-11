@@ -1,7 +1,7 @@
 # `@systemfsoftware/stryker-js`
 
 The modern mutation testing framework for JavaScript and TypeScript.
-A ground-up, breaking-change fork of `@stryker-mutator/core` built with Effect 4:
+A ground-up, breaking-change fork of `@stryker-mutator/core`: it
 provides the `stryker` executable, the `vm` and `vitest` test runners, and the
 typed `./config` authoring surface.
 
@@ -213,24 +213,7 @@ Incremental reuse is on by default: an unchanged mutant whose covering tests are
 
 ## Programmatic API
 
-### Effect 4 Native Interface
-
-```ts
-import { NodeRuntime } from '@effect/platform-node'
-import { Engine } from '@systemfsoftware/stryker-js'
-import * as Effect from 'effect/Effect'
-
-NodeRuntime.runMain(
-  Engine.strykerCell({
-    mutate: ['src/**/*.ts'],
-    testRunner: 'command',
-  }).pipe(Effect.provide(Engine.nodePlatformLayer)),
-)
-```
-
-### Vanilla Promise Interface (`./promises`)
-
-For non-Effect environments:
+### Promise interface (`./promises`)
 
 ```ts
 import { run } from '@systemfsoftware/stryker-js/promises'
@@ -243,13 +226,25 @@ const verdict = await run({
 console.log(`Mutation score: ${verdict.score}%`)
 ```
 
+### Effect library
+
+The Effect-native host API (`Engine`, `Worker`, `Plugin` and the rest) is the
+separate package [`@systemfsoftware/stryker-js-engine`](../stryker-js-engine). It declares
+`effect` as a required peer, so a project that embeds it shares its own `effect` instance.
+
+## Your `effect` version
+
+This package, the `stryker` executable, `./config`, `./promises` and `./events` need no
+`effect` of your own and declare none. They run on a copy that ships inside the package, so
+a project pinned to any `effect` version runs mutation testing unchanged.
+
 ## Published Subpaths
 
 | Subpath      | Description                                                               |
 | ------------ | ------------------------------------------------------------------------- |
-| `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas        |
 | `./config`   | Config authoring surface (`defineConfig`, `mergeConfig`, `StrykerConfig`) |
 | `./promises` | `run()` wrapper returning standard JavaScript promises                    |
+| `./events`   | The `PrepareError` and `StageError` classes a run can fail with           |
 
 ## Known issues
 

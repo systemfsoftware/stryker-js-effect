@@ -64,6 +64,10 @@ export default defineConfig({
 })
 ```
 
+## Your `effect` version
+
+This package declares no `effect` dependency or peer. The worker plugin, `./runtime` and `./type-query` all run on a copy that ships inside the package, so a project pinned to any `effect` version loads them unchanged. The two Effect-typed subpaths below therefore speak to your own Effect code through string-keyed services (`CheckerRuntime`, `TypeQuery`), not through a shared `effect` instance or shared class identities.
+
 ## In-process runtime (`./runtime`)
 
 The default entry is the worker plugin Stryker loads from `plugins`, and that is all a normal setup needs. Tooling that drives the compiler itself — for example an oracle that instruments a project and hands the mutants to the real checker — can import the in-process runtime from the `./runtime` subpath instead:
