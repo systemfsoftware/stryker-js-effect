@@ -10,13 +10,8 @@ export namespace Checker {
 }
 
 // @public (undocumented)
-export namespace Evaluator {
-    export { Evaluator, EvaluatorFailed, EvaluatorService };
-}
-
-// @public (undocumented)
 export namespace Mutant {
-    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, Ends, EphemeralStatus, EphemeralStatusSchema, HitCount, IgnoreRuleId, IgnoreRuleId as IgnoreRuleIdValue, IgnoreStatusReason, IgnoreStatusReasonText, IgnoreStatusReason as IgnoreStatusReasonValue, Line, Location, Mutant, MutantActivation, MutantActivationSchema, MutantCost, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, Position, ReadmitCauseCode, Readmitted, RememberedStatus, RememberedStatusSchema, RunFailureCode, RunFailureCode as RunFailureCodeValue, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, SettledReasonCode, SettledReasonCode as SettledReasonCodeValue, SettledStatus, SettledStatusSchema, StatusReason, StatusReason as StatusReasonValue, Subsumed, Subsumption, SurvivorStatus, SurvivorStatusSchema, TestPlan, ToolRefusalCode, ToolRefusalCode as ToolRefusalCodeValue, duplicatedValue, inOrder, notReversed, subsumedStatusReason, subsumptionMatchesStatus };
+    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, Ends, EphemeralStatus, EphemeralStatusSchema, HitCount, IgnoreRuleId, IgnoreRuleId as IgnoreRuleIdValue, IgnoreStatusReason, IgnoreStatusReasonText, IgnoreStatusReason as IgnoreStatusReasonValue, Line, Location$1 as Location, Mutant, MutantActivation, MutantActivationSchema, MutantCost, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation$1 as OpenEndLocation, Position$1 as Position, ReadmitCauseCode, Readmitted, RememberedStatus, RememberedStatusSchema, RunFailureCode, RunFailureCode as RunFailureCodeValue, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, SettledReasonCode, SettledReasonCode as SettledReasonCodeValue, SettledStatus, SettledStatusSchema, StatusReason, StatusReason as StatusReasonValue, Subsumed, Subsumption, SurvivorStatus, SurvivorStatusSchema, TestPlan, ToolRefusalCode, ToolRefusalCode as ToolRefusalCodeValue, duplicatedValue, inOrder, notReversed, subsumedStatusReason, subsumptionMatchesStatus };
 }
 
 // @public (undocumented)
@@ -41,7 +36,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace Report {
-    export { BrandingInformation, CpuInformation, Dependencies, DetectedStatus, FileResult, FileResultDictionary, FrameworkInformation, InvalidStatus, Location$1 as Location, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutationScore, MutationTestResult, NonNegativeFinite, NonNegativeInt, OSInformation, OpenEndLocation$1 as OpenEndLocation, Percentage, PerformanceStatistics, Position$1 as Position, RamInformation, StaticClassSummary, StaticClassSummarySchema, SystemInformation, TestDefinition, TestFile, TestFileDefinitionDictionary, Thresholds, UndetectedStatus, UntestedStatus, WrittenSchemaVersion, metricsFromMutants };
+    export { BrandingInformation, CpuInformation, Dependencies, DetectedStatus, FileResult, FileResultDictionary, FrameworkInformation, InvalidStatus, Location, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutationScore, MutationTestResult, NonNegativeFinite, NonNegativeInt, OSInformation, OpenEndLocation, Percentage, PerformanceStatistics, Position, RamInformation, StaticClassSummary, StaticClassSummarySchema, SystemInformation, TestDefinition, TestFile, TestFileDefinitionDictionary, Thresholds, UndetectedStatus, UntestedStatus, WrittenSchemaVersion, metricsFromMutants };
 }
 
 // @public (undocumented)

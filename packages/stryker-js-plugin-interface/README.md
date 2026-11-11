@@ -41,7 +41,7 @@ The interface package groups its exports into namespaces. `Plugin` holds the per
 the trace-context contract the groups carry (`TraceContextMiddleware`,
 `PropagatedTrace`, `TracedRpc`, `TraceContextReference`, `TraceContextParts`,
 `Traceparent`, `TraceparentHeader`, `TracestateHeader`). `Checker`,
-`TestRunner`, `Evaluator`, `Reporter`, `Report` and `Options` hold each plugin
+`TestRunner`, `Reporter`, `Report` and `Options` hold each plugin
 kind's contract, the mutation report and the Stryker options. `Mutant` holds
 mutant identity, status and location (`Mutant`, `MutantId`, `MutatorName` with
 its `<namespace>/<Name>` grammar, `CanonicalFileName`, `MutantStatusSchema`

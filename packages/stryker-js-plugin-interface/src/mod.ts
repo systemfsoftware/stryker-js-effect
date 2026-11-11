@@ -1,5 +1,4 @@
 export * as Checker from './Checker/mod.js'
-export * as Evaluator from './Evaluator/mod.js'
 export * as Mutant from './Mutant/mod.js'
 export * as MutatorCatalog from './MutatorCatalog/mod.js'
 export * as MutatorProvider from './MutatorProvider/mod.js'

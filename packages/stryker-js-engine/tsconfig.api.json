@@ -1,0 +1,10 @@
+{
+  "extends": "../stryker-js/tsconfig.build.json",
+  "compilerOptions": {
+    "customConditions": []
+  },
+  "exclude": [],
+  "include": [
+    "dist/index.d.mts"
+  ]
+}

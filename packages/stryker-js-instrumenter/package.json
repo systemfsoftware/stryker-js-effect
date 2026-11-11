@@ -43,9 +43,11 @@
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "effect": "catalog:",
     "oxc-parser": "catalog:",
     "oxc-walker": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
@@ -67,6 +69,7 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "effect": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

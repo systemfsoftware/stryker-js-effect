@@ -16,7 +16,8 @@
         "$TURBO_ROOT$/packages/toolchain/tsdown-config/package.json"
       ],
       "outputs": [
-        "dist/**"
+        "dist/**",
+        "temp/api/**"
       ],
       "dependsOn": [
         "^build"

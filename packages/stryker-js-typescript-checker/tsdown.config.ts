@@ -17,7 +17,12 @@ export default defineConfig([
     ...shared,
     entry: { index: './src/mod.ts', runtime: './src/runtime/mod.ts', 'type-query': './src/type-query/mod.ts' },
     clean: true,
-    deps: { alwaysBundle: ['@std/jsonc'] },
+    deps: {
+      neverBundle: [/^typescript$/, /^typescript\//],
+      alwaysBundle: [/./],
+      onlyBundle: false,
+      onlyImport: [/^node:/, 'typescript'],
+    },
   },
   {
     ...shared,

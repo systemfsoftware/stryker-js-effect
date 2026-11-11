@@ -4,7 +4,10 @@
   "type": "module",
   "devDependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "effect": "catalog:",
+    "effect": "4.0.0",
     "vitest": "catalog:"
+  },
+  "overrides": {
+    "effect": "$effect"
   }
 }
