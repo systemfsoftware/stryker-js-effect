@@ -6,6 +6,7 @@
     "jsr:@std/fs@1": "1.0.24",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@1": "1.1.6",
+    "npm:effect@4.0.0": "4.0.0",
     "npm:fast-check@4.9.0": "4.9.0"
   },
   "jsr": {
@@ -29,6 +30,9 @@
     }
   },
   "npm": {
+    "effect@4.0.0": {
+      "integrity": "sha512-ooc1TG5t+FfzgYnFz2ff6BBKyZ7EwBRVXC7c4RhQUAD6/TZ2gTXXMeb4WX7a19ozQo4J73/QW+S00YAIresoMQ=="
+    },
     "fast-check@4.9.0": {
       "integrity": "sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==",
       "dependencies": [
@@ -45,6 +49,7 @@
       "jsr:@std/encoding@1",
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
+      "npm:effect@4.0.0",
       "npm:fast-check@4.9.0"
     ]
   }

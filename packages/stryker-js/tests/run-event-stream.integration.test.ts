@@ -1,8 +1,9 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
 import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
@@ -19,9 +20,9 @@ const Feature = makeFeature({ it })
 const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4, shardPlan: null })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '8.0', code: 0, help: 'usage' })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '9.0', code: 0, help: 'usage' })
 const RUN_FAILED = CliContract.RunFailed.make({
-  schemaVersion: '8.0',
+  schemaVersion: '9.0',
   code: 3,
   error: 'x',
   remediation: 'y',
@@ -263,7 +264,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '8.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '9.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -389,7 +390,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '8.0' },
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '9.0' },
             open: false,
           })
         }),
@@ -431,6 +432,57 @@ Feature('Streaming a run to machine readers')
             drainFailureLogged: s.result.messages.join('\n').includes('stryker.output.drain_failed'),
             stdout: s.result.stdout,
           }).toEqual({ drainFailureLogged: true, stdout: [] })
+        ),
+      ),
+    )
+
+    scenario(
+      'A broken report sink beside a writable stream file is logged as a drain failure, never as a file failure',
+      Gherkin.Do.pipe(
+        Given('a machine run streaming to a writable file whose report sink always breaks')(
+          'fixture',
+          () =>
+            Effect.sync(() => {
+              const messages: Array<string> = []
+              const capturing = Logger.make((options) => {
+                messages.push(String(options.message))
+              })
+              const failingStdio = Stdio.layerTest({
+                stdout: () => Sink.die(new Error('the report sink broke')),
+              })
+              const platform = Layer.mergeAll(Engine.nodePlatformLayer, failingStdio)
+              const drain = RunEvent.RunEventDrain.layerFile.pipe(Layer.provide(platform))
+              return { messages, services: Layer.mergeAll(platform, drain, Logger.layer([capturing])) }
+            }),
+        ),
+        When('the run opens, reports a failure, and closes')(
+          'result',
+          (s) =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-drain-' })
+                const streamFile = pathService.join(directory, 'stream.jsonl')
+                const drain = yield* RunEvent.RunEventDrain
+                yield* drain.setProgressStreamFile(streamFile)
+                const stream = yield* RunEvent.makeRunEventStream({ mode: 'machine', signal: 'tty' })
+                yield* stream.open
+                yield* offerAll(stream, [RUN_FAILED])
+                yield* stream.closeAndDrain
+                const opened = yield* fs.exists(streamFile)
+                return { logged: s.fixture.messages.join('\n'), opened }
+              }),
+            ).pipe(Effect.orDie, Effect.provide(s.fixture.services)),
+        ),
+        Then('the drain opened the file, and the defect is logged as a drain failure, never as a file failure')((
+          s,
+          expect,
+        ) =>
+          expect({
+            fileOpened: s.result.opened,
+            drainFailed: s.result.logged.includes('stryker.output.drain_failed'),
+            fileFailed: s.result.logged.includes('stryker.output.drain_file_failed'),
+          }).toEqual({ fileOpened: true, drainFailed: true, fileFailed: false })
         ),
       ),
     )

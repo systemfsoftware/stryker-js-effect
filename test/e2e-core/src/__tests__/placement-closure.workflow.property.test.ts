@@ -50,7 +50,7 @@ describe('placementClosure', () => {
       return Result.match(subject(commandOf([entry], [], [])), {
         onFailure: (failure) =>
           S.is(PlacementUnwitnessed)(failure) &&
-          failure.name === drawn.name &&
+          failure.entryName === drawn.name &&
           failure.tier === drawn.tier,
         onSuccess: () => false,
       })
@@ -75,7 +75,7 @@ describe('placementClosure', () => {
     (subject, [drawn, reason]) => {
       const entry = entryOf(drawn.id, drawn.name, drawn.tier)
       return Result.match(subject(commandOf([entry], [drawn.name], [{ name: drawn.name, reason }])), {
-        onFailure: (failure) => S.is(PlacementWaiverStale)(failure) && failure.name === drawn.name,
+        onFailure: (failure) => S.is(PlacementWaiverStale)(failure) && failure.entryName === drawn.name,
         onSuccess: () => false,
       })
     },
@@ -93,7 +93,7 @@ describe('placementClosure', () => {
       }
       const entry = entryOf(drawn.id, drawn.name, drawn.tier)
       return Result.match(subject(commandOf([entry], [drawn.name], [{ name: otherName, reason }])), {
-        onFailure: (failure) => S.is(PlacementWaiverStale)(failure) && failure.name === otherName,
+        onFailure: (failure) => S.is(PlacementWaiverStale)(failure) && failure.entryName === otherName,
         onSuccess: () => false,
       })
     },

@@ -29,10 +29,10 @@ const ruleOf = (negate: boolean, expression: RegExp): CompiledIgnoreRule => ({
   prefix: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
 })
 
-const compileIgnoreRule = (pattern: string): CompiledIgnoreRule => {
+const compileIgnoreRule = (caseInsensitive: boolean) => (pattern: string): CompiledIgnoreRule => {
   const negate = pattern.startsWith('!')
   const body = Boolean.match(negate, { onTrue: () => pattern.slice(1), onFalse: () => pattern })
-  return Match.value(expressionOf(body, true)).pipe(
+  return Match.value(expressionOf(body, caseInsensitive)).pipe(
     Match.withReturnType<CompiledIgnoreRule>(),
     Match.tag('GlobMatcher', (matcher) => ruleOf(negate, new RegExp(matcher.source, matcher.flags))),
     Match.tag('GlobUnmatchable', () => ruleOf(negate, UNMATCHABLE)),
@@ -81,25 +81,29 @@ const isIncluded = (
     true,
   )
 
-export class DiscoveredEntryCommand extends S.TaggedClass<DiscoveredEntryCommand>()('DiscoveredEntryCommand', {
-  ignorePatterns: S.Array(S.String),
-  entryName: S.String,
-  entryPath: S.String,
-  isDirectory: S.Boolean,
-}) {
+export class DiscoveredEntryCommand
+  extends S.TaggedClass<DiscoveredEntryCommand, { readonly brand: unique symbol }>()('DiscoveredEntryCommand', {
+    ignorePatterns: S.Array(S.String),
+    outputPatterns: S.Array(S.String),
+    outputCaseSensitive: S.Boolean,
+    entryName: S.String,
+    entryPath: S.String,
+    isDirectory: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     entryName: 'stryker.discovered_entry.name',
     isDirectory: 'stryker.discovered_entry.is_directory',
   } as const
 }
 
-export class EntryIncluded extends S.TaggedClass<EntryIncluded>()('EntryIncluded', {
+export class EntryIncluded extends S.TaggedClass<EntryIncluded, { readonly brand: unique symbol }>()('EntryIncluded', {
   entryName: S.String,
 }) {
   readonly [DiscoveredEntryTypeId] = DiscoveredEntryTypeId
 }
 
-export class EntryIgnored extends S.TaggedClass<EntryIgnored>()('EntryIgnored', {
+export class EntryIgnored extends S.TaggedClass<EntryIgnored, { readonly brand: unique symbol }>()('EntryIgnored', {
   entryName: S.String,
 }) {
   readonly [DiscoveredEntryTypeId] = DiscoveredEntryTypeId
@@ -116,7 +120,10 @@ export const admitDiscoveredEntry = Workflow.make({
     Result.succeed(
       Boolean.match(
         isIncluded(
-          command.ignorePatterns.map(compileIgnoreRule),
+          [
+            ...command.ignorePatterns.map(compileIgnoreRule(true)),
+            ...command.outputPatterns.map(compileIgnoreRule(!command.outputCaseSensitive)),
+          ],
           command.entryName,
           command.entryPath,
           command.isDirectory,

@@ -74,12 +74,12 @@ interface ReuseCounts {
 
 type Services = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 
-const decodeLine = S.decodeOption(RunEvent.RunEventWireLine)
+const decodeStdout = S.decodeOption(RunEvent.RunEventWireText)
 
 const reuseOf = (stdout: string): Option.Option<RunEvent.ReuseReported> =>
-  Arr.findFirst(
-    stdout.split('\n').flatMap((line) => Option.toArray(decodeLine(line))),
-    (event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event),
+  Option.flatMap(
+    decodeStdout(stdout),
+    Arr.findFirst((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
   )
 
 const spawnRun = (root: string): Effect.Effect<RunOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>

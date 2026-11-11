@@ -24,7 +24,7 @@ export const FramingState = S.Struct({
 })
 export type FramingState = typeof FramingState.Type
 
-export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
+export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand, { readonly brand: unique symbol }>()(
   'FrameRunEventCommand',
   {
     state: FramingState,
@@ -34,7 +34,7 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
+export class EventFramed extends S.TaggedClass<EventFramed, { readonly brand: unique symbol }>()('EventFramed', {
   state: FramingState,
   event: RunEvent.RunEvent,
   stderrLine: S.NullOr(S.String),
@@ -42,7 +42,7 @@ export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
   readonly [FrameRunEventTypeId] = FrameRunEventTypeId
 }
 
-export class EventSuppressed extends S.TaggedClass<EventSuppressed>()(
+export class EventSuppressed extends S.TaggedClass<EventSuppressed, { readonly brand: unique symbol }>()(
   'EventSuppressed',
   {
     state: FramingState,

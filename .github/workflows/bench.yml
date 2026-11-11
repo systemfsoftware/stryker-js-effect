@@ -1,42 +1,85 @@
+# Cost: about 236 runner-min/day (190-278) for the runs pushes to main start.
+# Run shape: a plan job, then one bench job per selected leg. On a push, side A is the
+# lane's last green main commit, and a leg runs only when Turbo reports affected the
+# package holding its entry or an engine directory every leg builds. The full corpus
+# (three repo projects and the enterprise fixture) runs on a dispatch, when no green
+# ancestor exists, and when the lane's own inputs changed.
+# Per leg: median job-min (range) over the seven dispatch runs 38297580066, 38279943505,
+# 38144176368, 38143012318, 38140987766, 38138985254 and 38135504932: typescript-checker
+# 6.90 (6.58-7.68), vitest-runner 4.52 (3.08-5.05), e2e-core 3.17 (1.95-3.67), enterprise
+# 2.68 (2.35-3.83). Plan job: 0.40-0.71 min, the same setup steps as timed in those runs'
+# bench jobs, plus the plan step itself (2.7-3.8 s, timed locally).
+# Rate: 110 first-parent commits on main, 2026-10-06T01:54Z to 2026-10-13T01:54Z. The plan
+# program, run over each with its parent as side A (every run green), picks no leg for
+# 16, the enterprise leg alone for 2 and all four for 92 (64 of them because the lane's
+# inputs changed): 1,655 job-min (1,333-1,948) that week. This public repo runs on
+# standard runners: occupancy, billed at 0.
+# PR CI: a push holds at most 4 runners at once; the plan job ends before any bench job
+# starts. That week, jobs with no `needs` started within a 2 s median below 40 concurrent
+# jobs and queued a median 33-224 s at 40-69, so Bench delays PR CI only while the pool
+# already holds about 40 jobs. A replay of the week, dropping the pull_request Bench
+# (500.7 runner-min/day) and adding a full-corpus run per push unqueued, lowers the hours
+# at 40+ concurrent jobs from 11.98 to 11.45; the selection only removes jobs from it.
 name: Bench
 
 on:
-  pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: bench-${{ github.event_name == 'push' && github.sha || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   plan:
-    name: bench · one job per corpus entry
+    name: bench · side A and the legs
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 60
     outputs:
+      base: ${{ steps.plan.outputs.base }}
       targets: ${{ steps.targets.outputs.targets }}
     steps:
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          sparse-checkout: test/bench/corpus.json
-          sparse-checkout-cone-mode: false
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Released tarballs
+        uses: ./.github/actions/released-tarballs
+      - name: Install the bench harness
+        run: pnpm install --frozen-lockfile
+
+      - id: plan
+        name: Side A and the legs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm --filter @systemfsoftware/stryker-bench plan
       - id: targets
-        name: Corpus entries
+        name: One target per leg
+        env:
+          LEGS: ${{ steps.plan.outputs.legs }}
         run: |
-          targets=$(jq -c '[.repo[].project, .enterprise.fixture] | map({ entry: ., slug: gsub("[^A-Za-z0-9._-]+"; "-") })' test/bench/corpus.json)
+          targets=$(jq -c 'map({ entry: ., slug: gsub("[^A-Za-z0-9._-]+"; "-") })' <<< "$LEGS")
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
   bench:
     name: bench · ${{ matrix.target.entry }}
     needs: plan
+    if: ${{ needs.plan.outputs.targets != '[]' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -44,12 +87,12 @@ jobs:
     env:
       CI: "true"
     steps:
-      - name: Bench deadline, 7.5 minutes after the job starts
-        run: echo "BENCH_DEADLINE_MS=$(($(date +%s%3N) + 450000))" >> "$GITHUB_ENV"
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -58,18 +101,18 @@ jobs:
           cache: pnpm
 
       - id: sides
-        name: Side A at the merge-base with the base branch
+        name: Both sides as sibling worktrees
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE: ${{ needs.plan.outputs.base }}
         run: |
-          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          base=$(git merge-base HEAD "origin/$BASE_REF")
           side_a="$RUNNER_TEMP/bench-a"
-          git worktree add --detach "$side_a" "$base"
+          side_b="$RUNNER_TEMP/bench-b"
+          git worktree add --detach "$side_a" "$BASE"
+          git worktree add --detach "$side_b" HEAD
           pin() { jq -c '.nodes["stryker-published"].locked' "$1/flake.lock"; }
           {
-            echo "base=$base"
             echo "a=$side_a"
+            echo "b=$side_b"
             echo "same-pin=$([ "$(pin "$side_a")" = "$(pin .)" ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
 
@@ -81,6 +124,7 @@ jobs:
       - name: Tarballs and install, both sides by one mechanism
         env:
           SIDE_A: ${{ steps.sides.outputs.a }}
+          SIDE_B: ${{ steps.sides.outputs.b }}
           SAME_PIN: ${{ steps.sides.outputs.same-pin }}
           TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: |
@@ -95,6 +139,10 @@ jobs:
             chmod u+w "$SIDE_A"/.sfs-deps/*.tgz
           fi
           printf 'side A: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
+          started=$(date +%s%3N)
+          rm -rf "$SIDE_B/.sfs-deps"
+          cp -r .sfs-deps "$SIDE_B/.sfs-deps"
+          printf 'side B: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           install() {
             local name=$1 root=$2 started
             started=$(date +%s%3N)
@@ -102,13 +150,21 @@ jobs:
             printf 'side %s: pnpm install\t%s\n' "$name" "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           }
           install A "$SIDE_A"
-          install B "$GITHUB_WORKSPACE"
+          install B "$SIDE_B"
+
+      - name: Install the bench harness in the checkout
+        env:
+          TIMINGS: ${{ runner.temp }}/bench-setup.tsv
+        run: |
+          started=$(date +%s%3N)
+          pnpm install --frozen-lockfile
+          printf 'checkout: harness pnpm install\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
 
       - name: Turbo cache
         uses: actions/cache@v6
         with:
           path: .turbo/cache
-          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.event.pull_request.head.sha }}
+          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-
             turbo-${{ runner.os }}-dist-
@@ -117,14 +173,16 @@ jobs:
         env:
           BENCH_ENTRY: ${{ matrix.target.entry }}
           BENCH_SIDE_A: ${{ steps.sides.outputs.a }}
-          BENCH_SIDE_B: ${{ github.workspace }}
-          BENCH_BASE_SHA: ${{ steps.sides.outputs.base }}
-          BENCH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BENCH_SIDE_B: ${{ steps.sides.outputs.b }}
+          BENCH_TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/cache
+          BENCH_BASE_SHA: ${{ needs.plan.outputs.base }}
+          BENCH_HEAD_SHA: ${{ github.sha }}
+          BENCH_REF: ${{ github.ref }}
           BENCH_SETUP_TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: pnpm --filter @systemfsoftware/stryker-bench bench
 
       - name: Bench report artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-report-${{ matrix.target.slug }}
@@ -133,7 +191,7 @@ jobs:
           retention-days: 30
 
       - name: Bench run streams artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-runs-${{ matrix.target.slug }}

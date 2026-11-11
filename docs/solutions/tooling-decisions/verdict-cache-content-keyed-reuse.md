@@ -127,9 +127,24 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   reporter color flags). A run scoped to fewer mutants, or rendered
   differently, still produces the same verdict for the mutants it runs.
 - **A run never feeds its own inputs.** The crawl that computes the closure
-  digest excludes every declared Stryker output path. `strykerOutputFilesOf`
-  is the one list of those paths; a new sidecar joins it there, not in a second
-  place.
+  digest excludes every Stryker output path, declared or default.
+  `strykerOutputFilesOf` is the one list of those paths; a new sidecar joins it
+  there, not in a second place. An entry inside the project is resolved
+  against it and named exactly as the crawl names that file's entry, so
+  `./out/x`, `out//x` and `out/x/` all exclude `out/x` on every platform; an
+  entry outside the project keeps its spelling. Containment is lexical, so an
+  absolute entry excludes its file only when it names the project through the
+  path the crawl starts from. The stream file the CLI opens before the engine
+  reads its config is one the engine excludes, because `pinnedRequestOf` sets
+  the resolved name as a command-line option, which wins the engine's config
+  merge. Output entries match with exact case only where the project's file
+  system tells case apart, so a stream under another casing on a
+  case-insensitive volume is still the excluded file. Gate, on Linux with
+  `/dev/full` and a temp directory on a volume that tells case apart, after
+  `pnpm --filter @systemfsoftware/stryker-js build`:
+  `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/progress-stream-file.integration.test.ts`
+  re-runs the built CLI on a project twice and fails when the second run
+  re-runs a mutant.
 - **Refusal is named.** Every mutant a key refuses carries exactly one reason
   by fixed precedence - semantics changed, policy changed, run inputs changed,
   closure changed, a flaky dependency, a timeout that has not reproduced, or no

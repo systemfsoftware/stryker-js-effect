@@ -20,6 +20,7 @@ import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { admitStreamOverwrite, StreamOverwriteCommand } from './admit-stream-overwrite.workflow.js'
 import type {
   FailedRunOutcome,
   RunOk,
@@ -39,6 +40,7 @@ import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
 import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
 import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
+import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -102,8 +104,6 @@ export type FramedDrain = (
   toStdout: boolean,
 ) => Effect.Effect<void, never, never>
 
-const DEFAULT_PROGRESS_STREAM_FILE = 'reports/mutation-stream.jsonl'
-
 export interface RunEventDrainShape {
   readonly drainFramed: FramedDrain
   readonly setProgressStreamFile: (fileName: string) => Effect.Effect<void, never, never>
@@ -122,8 +122,6 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
       })
     }),
   )
-
-  static readonly DefaultProgressStreamFile = DEFAULT_PROGRESS_STREAM_FILE
 
   static readonly layerFile: Layer.Layer<
     RunEventDrain,
@@ -146,6 +144,85 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
     onFalse: () => Stream.runDrain(lines),
   })
 
+const DRAIN_FILE_FAILED = 'stryker.output.drain_file_failed'
+
+const DRAIN_FAILED = 'stryker.output.drain_failed'
+
+const logFileFailure = <E>(error: E) => Effect.logError(DRAIN_FILE_FAILED, error)
+
+const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (line: string) =>
+  Effect.flatMap(Ref.get(fileFailed), (failed) =>
+    Boolean.match(failed, {
+      onTrue: () => Effect.void,
+      onFalse: () =>
+        handle.writeAll(encodeUtf8(line)).pipe(
+          Effect.andThen(handle.sync),
+          Effect.tapError(logFileFailure),
+          Effect.as(false),
+          Effect.orElseSucceed(() => true),
+          Effect.flatMap((failedNow) => Ref.set(fileFailed, failedNow)),
+        ),
+    }))
+
+const LEADING_BYTES_LIMIT = 1_048_576
+
+const decodeLeading = (bytes: Uint8Array) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
+
+const regularCommandOf = (handle: FileSystem.File, fileName: string) =>
+  Effect.all([
+    handle.readAlloc(LEADING_BYTES_LIMIT).pipe(Effect.map(Option.getOrElse(() => new Uint8Array(0)))),
+    handle.readAlloc(1).pipe(Effect.map(Option.isNone)),
+  ]).pipe(
+    Effect.map(([bytes, atEndOfFile]) =>
+      StreamOverwriteCommand.make({
+        file: fileName,
+        regularFile: true,
+        empty: bytes.length === 0,
+        wholeFileRead: atEndOfFile,
+        leadingText: decodeLeading(bytes),
+      })
+    ),
+  )
+
+const overwriteCommandOf = (handle: FileSystem.File, fileName: string) =>
+  Effect.flatMap(handle.stat, (info) =>
+    Boolean.match(info.type === 'File', {
+      onTrue: () => regularCommandOf(handle, fileName),
+      onFalse: () =>
+        Effect.succeed(
+          StreamOverwriteCommand.make({
+            file: fileName,
+            regularFile: false,
+            empty: true,
+            wholeFileRead: true,
+            leadingText: '',
+          }),
+        ),
+    }))
+
+const claimHandle = (handle: FileSystem.File, fileName: string) =>
+  overwriteCommandOf(handle, fileName).pipe(
+    Effect.flatMap((command) =>
+      Effect.fromResult(admitStreamOverwrite(command)).pipe(
+        Effect.flatMap((decision) =>
+          Match.value(decision).pipe(
+            Match.tag('OverwriteAllowed', () =>
+              Boolean.match(command.regularFile, {
+                onTrue: () => handle.truncate(0),
+                onFalse: () => Effect.void,
+              })),
+            Match.tag('OverwriteRefused', (refused) => Effect.fail(refused)),
+            Match.exhaustive,
+          )
+        ),
+      )
+    ),
+    Effect.as(handle),
+  )
+
+const openStreamFile = (fs: FileSystem.FileSystem, fileName: string) =>
+  fs.open(fileName, { flag: 'a+' }).pipe(Effect.flatMap((handle) => claimHandle(handle, fileName)))
+
 const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -154,14 +231,19 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
   toStdout: boolean,
   framed: Stream.Stream<string>,
 ) {
-  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
   yield* Effect.scoped(
     Effect.gen(function*() {
-      const handle = yield* fs.open(fileName, { flag: 'w' })
-      const withFile = framed.pipe(
-        Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
+      const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
+        Effect.andThen(openStreamFile(fs, fileName)),
+        Effect.tapError(logFileFailure),
+        Effect.option,
       )
-      yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
+      const fileFailed = yield* Ref.make(false)
+      const lines = Option.match(opened, {
+        onNone: () => framed,
+        onSome: (handle) => framed.pipe(Stream.tap(writeLineOf(handle, fileFailed))),
+      })
+      yield* runToSink(stdio, lines, toStdout).pipe(Effect.ignore)
     }),
   )
 })
@@ -175,7 +257,7 @@ const drainStoredFile = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainStoredFi
   framed: Stream.Stream<string>,
 ) {
   const fileName = yield* Ref.get(fileNameRef)
-  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed).pipe(Effect.orDie)
+  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed)
 })
 
 const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(function*(
@@ -187,7 +269,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
   return RunEventDrain.of({
     drainFramed: (framed, toStdout) =>
       drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
-        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+        Effect.tapCause((cause) => Effect.logError(DRAIN_FAILED, cause)),
         Effect.ignoreCause,
       ),
     setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
@@ -197,7 +279,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
 const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
   runToSink(stdio, framed, toStdout).pipe(
     Effect.withSpan(SpanTaxonomy.Spans.outputDrain.name),
-    Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
+    Effect.tapCause((cause) => Effect.logError(DRAIN_FAILED, cause)),
     Effect.ignoreCause,
   )
 

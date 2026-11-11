@@ -1,5 +1,6 @@
-import { BenchEnterpriseCorpus, BenchRepoEntry } from '@systemfsoftware/stryker-e2e-core'
 import * as S from 'effect/Schema'
+
+import { BenchEnterpriseCorpus, BenchRepoEntry } from './bench-corpus.schema.js'
 
 export const BenchTarget = S.TaggedUnion({
   repo: { entry: BenchRepoEntry },

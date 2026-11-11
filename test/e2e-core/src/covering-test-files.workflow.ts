@@ -18,9 +18,11 @@ const DecodeReport = S.decodeResult(S.fromJsonString(IncrementalReportSubset))
 
 type IncrementalReport = typeof IncrementalReportSubset.Type
 
-export class CoveringTestFilesCommand extends S.TaggedClass<CoveringTestFilesCommand>()('CoveringTestFilesCommand', {
-  report: S.String,
-}) {
+export class CoveringTestFilesCommand
+  extends S.TaggedClass<CoveringTestFilesCommand, { readonly brand: unique symbol }>()('CoveringTestFilesCommand', {
+    report: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -29,17 +31,21 @@ const CoveringTestFilesFoundTypeId: unique symbol = Symbol.for(
 )
 type CoveringTestFilesFoundTypeId = typeof CoveringTestFilesFoundTypeId
 
-export class CoveringTestFilesFound extends S.TaggedClass<CoveringTestFilesFound>()('CoveringTestFilesFound', {
-  mutatedFiles: S.Array(S.String),
-  testFiles: S.Array(S.String),
-}) {
+export class CoveringTestFilesFound
+  extends S.TaggedClass<CoveringTestFilesFound, { readonly brand: unique symbol }>()('CoveringTestFilesFound', {
+    mutatedFiles: S.Array(S.String),
+    testFiles: S.Array(S.String),
+  })
+{
   readonly [CoveringTestFilesFoundTypeId] = CoveringTestFilesFoundTypeId
 }
 
-export class IncrementalReportUnreadable extends S.TaggedError<IncrementalReportUnreadable>()(
-  'IncrementalReportUnreadable',
-  { reason: S.String },
-) {
+export class IncrementalReportUnreadable
+  extends S.TaggedError<IncrementalReportUnreadable, { readonly brand: unique symbol }>()(
+    'IncrementalReportUnreadable',
+    { reason: S.String },
+  )
+{
   override get message(): string {
     return `the run's incremental report is unreadable: ${this.reason}`
   }

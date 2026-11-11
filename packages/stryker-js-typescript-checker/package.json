@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-typescript-checker",
-  "version": "8.3.2",
+  "version": "9.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -25,6 +25,11 @@
       "@systemfsoftware/source": "./src/runtime/mod.ts",
       "types": "./dist/runtime.d.mts",
       "default": "./dist/runtime.mjs"
+    },
+    "./type-query": {
+      "@systemfsoftware/source": "./src/type-query/mod.ts",
+      "types": "./dist/type-query.d.mts",
+      "default": "./dist/type-query.mjs"
     },
     "./package.json": "./package.json"
   },
@@ -62,6 +67,7 @@
     "@microsoft/api-extractor": "catalog:",
     "@std/jsonc": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/differential-spec": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
@@ -76,15 +82,16 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "fast-check": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "vitest": "catalog:"
   },
   "inlinedDependencies": {
-    "@effect/opentelemetry": "4.0.0",
-    "@effect/platform-node": "4.0.0",
-    "@effect/platform-node-shared": "4.0.0",
+    "@effect/opentelemetry": "4.1.0",
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@eslint-community/regexpp": "4.12.2",
     "@jsr/std__jsonc": "1.0.2",
     "@noble/hashes": "2.4.0",
@@ -103,9 +110,8 @@
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@systemfsoftware/effect-cell-types": "12.0.0",
-    "effect": "4.0.0",
-    "oxc-parser": "0.150.0",
-    "ws": "8.22.0"
+    "effect": "4.1.0",
+    "oxc-parser": "0.150.0"
   },
   "publishConfig": {
     "access": "public",
@@ -118,6 +124,10 @@
       "./runtime": {
         "types": "./dist/runtime.d.mts",
         "default": "./dist/runtime.mjs"
+      },
+      "./type-query": {
+        "types": "./dist/type-query.d.mts",
+        "default": "./dist/type-query.mjs"
       },
       "./package.json": "./package.json"
     }

@@ -11,6 +11,7 @@ import type * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
@@ -48,6 +49,13 @@ import {
   GateNewSurvivorsCommand,
   GateRejected,
 } from './gate-new-survivors.workflow.js'
+import { GateReportDocument } from './gate-report.schema.js'
+import {
+  gateScoreBreak,
+  GateScoreBreakCommand,
+  type ProjectScore,
+  ScoreBelowBreak,
+} from './gate-score-break.workflow.js'
 import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
@@ -62,6 +70,7 @@ import {
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
+import { readConfig } from './run/load-config.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
@@ -74,6 +83,7 @@ import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
+import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
@@ -118,6 +128,7 @@ export type CliFailure =
   | GateInputUnusable
   | BudgetExceeded
   | BudgetInputUnusable
+  | ScoreBelowBreak
   | AnnotationsUnusable
   | AuditFailed
   | AuditInputUnusable
@@ -132,26 +143,53 @@ export type CliFailure =
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
   Option.getOrElse(
     S.decodeUnknownOption(S.NonEmptyString)(options['progressStreamFile']),
-    () => RunEventDrain.DefaultProgressStreamFile,
+    () => DEFAULT_PROGRESS_STREAM_FILE,
   )
 
-const progressStreamFileOf = (invocation: CliInvocation): string =>
-  invocation.environment.pathService.resolve(
-    invocation.environment.basePath,
-    progressStreamFileName(invocation.options),
+interface StreamedRequest {
+  readonly fileName: string
+  readonly options: Options.PartialStrykerOptions
+}
+
+const flaggedRequestOf = (invocation: CliInvocation): StreamedRequest => ({
+  fileName: progressStreamFileName(invocation.options),
+  options: invocation.options,
+})
+
+const pinnedRequestOf = (invocation: CliInvocation, fileName: string): StreamedRequest => ({
+  fileName,
+  options: { ...invocation.options, progressStreamFile: fileName },
+})
+
+const streamedRequestOf = (
+  invocation: CliInvocation,
+): Effect.Effect<StreamedRequest, never, FileSystem.FileSystem | Path.Path> =>
+  Match.value(invocation.route.route).pipe(
+    Match.tag(
+      'run',
+      () =>
+        readConfig(invocation.options, { command: 'run', mode: invocation.environment.mode.mode }).pipe(
+          Effect.map((resolved) => pinnedRequestOf(invocation, progressStreamFileName(resolved))),
+          Effect.orElseSucceed(() => flaggedRequestOf(invocation)),
+        ),
+    ),
+    Match.orElse(() => Effect.succeed(flaggedRequestOf(invocation))),
   )
 
 const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
 ): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
   const drain = yield* RunEventDrain
-  yield* drain.setProgressStreamFile(progressStreamFileOf(invocation))
+  const request = yield* streamedRequestOf(invocation)
+  yield* drain.setProgressStreamFile(
+    invocation.environment.pathService.resolve(invocation.environment.basePath, request.fileName),
+  )
   yield* invocation.environment.stream.open
   return {
     _tag: invocation.route._tag,
     route: invocation.route.route,
     environment: invocation.environment,
-    options: invocation.options,
+    options: request.options,
   }
 })
 
@@ -301,7 +339,7 @@ const compareReports = (
 
 const GATE_REPORT_FILE = 'reports/mutation/mutation.json'
 
-const decodeGateReport = S.decodeUnknownResult(S.fromJsonString(PriorReportDocument))
+const decodeGateReport = S.decodeUnknownResult(S.fromJsonString(GateReportDocument))
 const decodeGateBaseline = S.decodeUnknownResult(S.fromJsonString(Baseline))
 
 const gateEntriesOf = (report: PriorReportDocument): ReadonlyArray<GateEntry> =>
@@ -316,7 +354,7 @@ const gateEntriesOf = (report: PriorReportDocument): ReadonlyArray<GateEntry> =>
 
 const readGateReport = (
   file: string,
-): Effect.Effect<PriorReportDocument, GateInputUnusable, FileSystem.FileSystem> =>
+): Effect.Effect<GateReportDocument, GateInputUnusable, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFileString(file).pipe(
       Effect.mapError(() =>
@@ -444,10 +482,44 @@ const reportUnchecked = (unchecked: ReadonlyArray<Mutant.MutantId>): Effect.Effe
 const GATE_REMEDIATION_LINE =
   'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
 
+const UNSHARDED_PROJECT = '.'
+
+const scoreOfFiles = (report: GateReportDocument, files: ReadonlyArray<string>): Report.MutationScore =>
+  Report.metricsFromMutants(
+    files.flatMap((file) => Option.toArray(Option.fromUndefinedOr(report.files[file]))).flatMap((file) => file.mutants),
+  ).mutationScore
+
+const projectScoresOf = (report: GateReportDocument): ReadonlyArray<ProjectScore> => {
+  const grouped = new Set(report.projects.flatMap((merged) => merged.files))
+  const ungrouped = Object.keys(report.files).filter((file) => !grouped.has(file))
+  return [
+    ...report.projects.map((merged) => ({
+      project: merged.project,
+      score: scoreOfFiles(report, merged.files),
+      thresholds: merged.thresholds,
+    })),
+    ...[ungrouped].filter((files) => files.length > 0).map((files) => ({
+      project: UNSHARDED_PROJECT,
+      score: scoreOfFiles(report, files),
+      thresholds: { _tag: 'Recorded' as const, break: report.thresholds.break },
+    })),
+  ]
+}
+
+const runScoreBreakGate = (report: GateReportDocument): Effect.Effect<void, ScoreBelowBreak> =>
+  Effect.flatMap(
+    Effect.fromResult(gateScoreBreak(GateScoreBreakCommand.make({ projects: [...projectScoresOf(report)] }))),
+    (cleared) => Effect.forEach(cleared.lines, (line) => Effect.logInfo(line), { discard: true }),
+  ).pipe(
+    Effect.tapError((refused) => Effect.forEach(refused.lines, (line) => Effect.logInfo(line), { discard: true })),
+  )
+
+const ownsItsRemediation = S.is(S.Union([BudgetExceeded, BudgetInputUnusable, ScoreBelowBreak]))
+
 const remediateGateRefusal = (
-  failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+  failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable | ScoreBelowBreak,
 ): Effect.Effect<void> =>
-  Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
+  Boolean.match(ownsItsRemediation(failure), {
     onTrue: () => Effect.void,
     onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
   })
@@ -463,7 +535,7 @@ const gateReport = (
   channel: CliRead,
 ): Effect.Effect<
   void,
-  GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+  GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable | ScoreBelowBreak,
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
@@ -492,6 +564,7 @@ const gateReport = (
       { discard: true },
     )
     yield* runBudgetGate(gate, report, basePath)
+    yield* runScoreBreakGate(report)
   })
 
 const SURFACING_DEFAULTS: SurfacingCaps = { perLine: 1, perFile: 7 }

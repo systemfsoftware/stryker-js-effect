@@ -1,9 +1,11 @@
 import { Schema as S } from 'effect'
 
-export class ManifestUnreadable extends S.TaggedError<ManifestUnreadable>()('ManifestUnreadable', {
-  specifier: S.String,
-  cause: S.Unknown,
-}) {
+export class ManifestUnreadable
+  extends S.TaggedError<ManifestUnreadable, { readonly brand: unique symbol }>()('ManifestUnreadable', {
+    specifier: S.String,
+    cause: S.Unknown,
+  })
+{
   override get message(): string {
     return `Package manifest is unreadable: ${this.specifier}`
   }

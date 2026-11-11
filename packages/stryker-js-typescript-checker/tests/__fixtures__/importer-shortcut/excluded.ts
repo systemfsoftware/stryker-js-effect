@@ -1,0 +1,3 @@
+export function tripled(x: number): number {
+  return x * 3
+}

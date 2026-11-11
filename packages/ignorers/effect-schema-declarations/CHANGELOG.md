@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-ignorer-effect-schema-declarations
 
+## 0.3.1
+
+Build and lint with effect 4.1.0 and @effect/tsgo 0.63.0; the published code is unchanged.
+
 ## 0.3.0
 
 A schema that annotates a `recursionBudget` beside a behaviour key such as `toEquivalence` no longer fails the dry run with `Budget_RequiresTransform`.

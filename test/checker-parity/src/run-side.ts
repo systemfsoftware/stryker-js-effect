@@ -29,14 +29,17 @@ import { assignDriftLegs, AssignDriftLegsCommand } from './assign-drift-legs.wor
 import { blocksOf, DEFAULT_BLOCK_MUTANTS } from './blocks.js'
 import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
+  checkedOnLeg,
   corpusEntries,
   ISOLATED_DECLARATIONS_PROJECT,
   programFilesFromListing,
+  projectOnLeg,
   tsconfigsNamedByConfig,
 } from './corpus.js'
 import { DriverFailure } from './DriverFailure.schema.js'
 import { execText } from './exec-text.js'
 import { changedFiles } from './lane-trigger.js'
+import { isPastDeadline, type LegDeadline, remainingOf } from './leg-deadline.js'
 import { type OtlpReceiver, startOtlpReceiver } from './otlp-receiver.js'
 import {
   CacheEntry,
@@ -54,6 +57,7 @@ import {
   PlannedLeg,
   PlannedUnit,
   ProjectBootFailed,
+  type ProjectLeg,
   ProjectSkipped,
   type RunScopeName,
   ScopeSettings,
@@ -74,7 +78,6 @@ import {
   VerdictCacheIdentity,
 } from './reuse-cached-verdicts.workflow.js'
 import { selectScope, SelectScopeCommand } from './select-scope.workflow.js'
-import { inShard } from './shard.js'
 import {
   COUNTS_SCHEMA_VERSION,
   countsOfSpans,
@@ -82,6 +85,7 @@ import {
   projectCheckSpans,
   type SpanRecord,
 } from './span-counts.js'
+import { branchTypeQueryLines, BranchWorkerRpcs, type FileContent, type TypeQueryInput } from './type-query-side.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -252,10 +256,17 @@ export const decodeLines: {
     ),
 )
 
-export interface LegDeadline {
-  readonly startedAt: number
-  readonly deadlineAt: Option.Option<number>
-}
+const fileContentsOf = (
+  repoRoot: string,
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+): Effect.Effect<ReadonlyArray<FileContent>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    return yield* Effect.forEach(
+      Arr.dedupe(wires.map((wire) => wire.fileName)),
+      (name) => Effect.map(readText(path.resolve(repoRoot, name)), (content) => ({ name, content })),
+    )
+  })
 
 interface SideInput {
   readonly side: Side
@@ -482,11 +493,6 @@ interface BatchRun {
   readonly freshCheckCalls: number
   readonly outcome: BatchOutcome
 }
-
-const remainingOf = (deadline: LegDeadline): Effect.Effect<Option.Option<number>> =>
-  Effect.map(Clock.currentTimeMillis, (now) => Option.map(deadline.deadlineAt, (at) => at - now))
-
-const isPastDeadline = (remaining: Option.Option<number>): boolean => Option.exists(remaining, (ms) => ms <= 0)
 
 const heartbeat = (input: SideInput, detail: string): Effect.Effect<void> =>
   Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -767,8 +773,17 @@ const bootFailedRun = (input: SideInput, error: Worker.WorkerBootError): Effect.
     freshFiles: 0,
   })
 
+const typeQueryInputOf = (input: SideInput): TypeQueryInput => ({
+  project: input.project,
+  tsconfigFile: input.tsconfigFile,
+  repoRoot: input.repoRoot,
+  checkerName: CHECKER_NAME,
+  deadline: input.deadline,
+})
+
 const runSide = (
   input: SideInput,
+  typeQuery: boolean,
 ): Effect.Effect<SideRun, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
@@ -789,7 +804,21 @@ const runSide = (
           OTEL_SERVICE_NAME: input.serviceName,
         },
       })
-      return yield* sideBody(client, input)
+      const [run, typeQueryLines] = yield* Effect.all([
+        sideBody(client, input),
+        Boolean.match(typeQuery, {
+          onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
+          onTrue: () =>
+            Effect.flatMap(
+              fileContentsOf(input.repoRoot, input.wires),
+              (contents) =>
+                branchTypeQueryLines(typeQueryInputOf(input), { contents, wires: input.wires }).pipe(
+                  Effect.provideService(BranchWorkerRpcs, client),
+                ),
+            ),
+        }),
+      ], { concurrency: 'unbounded' })
+      return { ...run, lines: [...run.lines, ...typeQueryLines] }
     }),
   ).pipe(
     Effect.catchTags({
@@ -1050,8 +1079,12 @@ const samplesOnThisLeg = (input: ProjectInput): boolean =>
     (pullRequest) => Option.contains(HashMap.get(pullRequest.driftLegs, input.project), shardIndex(input.shard)),
   )
 
-const changedOnThisLeg = (input: ProjectInput, pullRequest: PullRequestScope) => (file: string): boolean =>
-  HashSet.has(pullRequest.changedFiles, file) && inShard(file, input.shard)
+const legOf = (input: ProjectInput, pullRequest: PullRequestScope): ProjectLeg => ({
+  project: input.project,
+  changedFiles: Arr.fromIterable(pullRequest.changedFiles),
+  samplesOnLeg: samplesOnThisLeg(input),
+  shard: input.shard,
+})
 
 const pullRequestScope = (
   input: ProjectInput,
@@ -1059,7 +1092,7 @@ const pullRequestScope = (
   pullRequest: PullRequestScope,
 ): Effect.Effect<ScopedWires, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const changed = owned.filter(changedOnThisLeg(input, pullRequest))
+    const changed = owned.filter(checkedOnLeg(legOf(input, pullRequest)))
     const changedWires = yield* instrumentNonEmpty(input, changed)
     const sample = yield* Boolean.match(samplesOnThisLeg(input), {
       onTrue: () => firstFileWithMutants(input, seededOrder(pullRequest.settings, owned)),
@@ -1107,13 +1140,14 @@ const checkBothSides = (
 ): Effect.Effect<
   Pick<ProjectResult, 'lines' | 'status' | 'cachedFiles' | 'freshFiles'>,
   DriverFailure,
-  Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path
+  Worker.WorkerLauncher | DriverServices
 > =>
   Effect.gen(function*() {
     const sideInputs = Side.literals.map(sideInputOf(input, wires))
     const runs = yield* Effect.forEach(
       sideInputs,
-      (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
+      (sideInput) =>
+        Effect.map(runSide(sideInput, sideInput.side === 'branch'), (run) => ({ ...run, side: sideInput.side })),
       { concurrency: 'unbounded' },
     )
     const mutantIds = HashSet.fromIterable(wires.map((wire) => wire.id))
@@ -1129,24 +1163,17 @@ const checkBothSides = (
     }
   })
 
-const projectDirectoryOf = (project: string): string => project.slice(0, project.lastIndexOf('/') + 1)
-
 const inScopeOf = (input: ProjectInput): boolean =>
   Option.match(input.pullRequest, {
     onNone: () => true,
-    onSome: (pullRequest) =>
-      samplesOnThisLeg(input) ||
-      HashSet.some(
-        pullRequest.changedFiles,
-        (file) => file.startsWith(projectDirectoryOf(input.project)) && inShard(file, input.shard),
-      ),
+    onSome: (pullRequest) => projectOnLeg(legOf(input, pullRequest)),
   })
 
 const checkedProject = (
   input: ProjectInput,
   scoped: ScopedWires,
   listAndInstrumentMs: number,
-): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> => {
+): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | DriverServices> => {
   const counted: ProjectResult = {
     ...EMPTY_RESULT,
     mutants: scoped.wires.length,
@@ -1524,7 +1551,7 @@ const legDeadlineFailure = (
       Option.getOrElse(command.deadline, () => 0)
     } s deadline: ${freshBatches} batch(es) were checked and cached this attempt; ${
       deferred.filter((line) => line.fileName !== null).length
-    } file run(s) (${deferred.reduce((total, line) => total + line.mutants, 0)} mutant(s)) and ${
+    } file or query run(s) (${deferred.reduce((total, line) => total + line.mutants, 0)} mutant(s)) and ${
       deferred.filter((line) => line.fileName === null).length
     } project(s) are deferred (${
       deferred.filter((line) => line.reason === 'interrupted-at-deadline').length

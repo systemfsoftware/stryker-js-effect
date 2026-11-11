@@ -688,6 +688,7 @@ jobs:
           node test/checker-parity/dist/main.mjs compare
           --shards ${{ needs.checker-parity-changes.outputs.shards }}
           --summary checker-parity-summary.json
+          --shortcut-gate
           checker-parity-shards
       - name: Upload summary
         if: always() && needs.checker-parity-changes.outputs.run == 'true'

@@ -1,10 +1,12 @@
-import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Checker, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 
 export interface CheckerRuntimeShape {
   readonly checker: Effect.Effect<Checker.Checker['Service'], Cause.Cause<Checker.CheckerFailed>>
+  readonly capabilities: TypeQuery.CheckerCapabilities
+  readonly typeQuery: Effect.Effect<TypeQuery.TypeQueryShape>
 }
 
 export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRuntimeShape>()(

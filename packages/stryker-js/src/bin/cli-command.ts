@@ -11,7 +11,9 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import { CliRouteCommand } from '../Cli.schema.js'
+import { ALWAYS_IGNORE } from '../project-ignores.js'
 import { type CliAnswer, type CliEnvironment, runRequestCell } from '../run-request.cell.js'
+import { strykerOutputSources } from '../stryker-outputs.js'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
@@ -19,6 +21,13 @@ const splitOnComma = createSplitter(',')
 const splitOnSpace = createSplitter(' ')
 
 const decodePluginFileUrl = S.decodeOption(Options.PluginFileUrl)
+
+const alwaysIgnoredDescription = [
+  `These patterns are always ignored: [${ALWAYS_IGNORE.map((pattern) => `\`${pattern}\``).join(', ')}].`,
+  'Because Stryker always ignores these, you should rarely have to adjust the `ignorePatterns` setting at all.',
+  `Stryker's own output files are always excluded too: ${strykerOutputSources.join(', ')}.`,
+  'Other files under `reports/` are not ignored.',
+].join(' ')
 
 const CLEAN_TEMP_DIR_DISABLED = ['false', '0'] as const
 
@@ -58,7 +67,7 @@ const runOptions = {
   ignorePatterns: Flag.String('ignorePatterns')
     .pipe(
       Flag.withDescription(
-        'A comma separated list of patterns used for specifying which files need to be ignored. This should only be used in cases where you experience a slow Stryker startup, because too many (or too large) files are copied to the sandbox that are not needed to run the tests. For example, image or movie directories. Note: This option will have NO effect when using the `--inPlace` option. The directories `node_modules`, `.git` and some others are always ignored. Example: `--ignorePatterns dist`. These patterns are ALWAYS ignored: [`node_modules`, `.git`, `/reports`, `*.tsbuildinfo`, `/stryker.log`, `.stryker-tmp`]. Because Stryker always ignores these, you should rarely have to adjust the `ignorePatterns` setting at all. This is useful to speed up Stryker by reducing the size of the sandbox directory which has a positive effect on performance.',
+        `A comma separated list of patterns used for specifying which files need to be ignored. This should only be used in cases where you experience a slow Stryker startup, because too many (or too large) files are copied to the sandbox that are not needed to run the tests. For example, image or movie directories. Note: This option will have NO effect when using the \`--inPlace\` option. Example: \`--ignorePatterns dist\`. ${alwaysIgnoredDescription} This is useful to speed up Stryker by reducing the size of the sandbox directory which has a positive effect on performance.`,
       ),
       Flag.map(splitOnComma),
       optional,
@@ -371,13 +380,13 @@ const gateOptions = {
   baseline: Flag.String('baseline')
     .pipe(
       Flag.withDescription(
-        'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds. Optional when a budget baseline is given.',
+        'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds. After the baseline and budget checks the gate fails, in the same exit 1, when any project scores below its own `thresholds.break`. Optional when a budget baseline is given.',
       ),
       optional,
     ),
   updateBaseline: Flag.map(optional(Flag.Boolean('update-baseline')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Rewrite the baseline file with exactly the survivors of the finished report and exit 0, instead of gating against it.',
+      'Rewrite the baseline file with exactly the survivors of the finished report, clearing the survivor verdict. The budget and break checks still run afterwards, so an updated baseline does not accept a below-break score.',
     ),
   ),
   budgetBaseline: Flag.String('budget-baseline')
@@ -397,7 +406,7 @@ const gateOptions = {
   ),
   updateBudgetBaseline: Flag.map(optional(Flag.Boolean('update-budget-baseline')), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Rewrite the budget baseline file with the finished run duration and exit 0, instead of gating against it.',
+      'Rewrite the budget baseline file with the finished run duration, clearing the budget verdict. The break check still runs afterwards, so an updated baseline does not accept a below-break score.',
     ),
   ),
 }
