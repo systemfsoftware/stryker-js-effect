@@ -27,11 +27,13 @@ export const GuardMutantSchema = S.Struct({
 })
 export type GuardMutant = typeof GuardMutantSchema.Type
 
-export class GuardRelationCommand extends S.TaggedClass<GuardRelationCommand, { readonly brand: unique symbol }>()('GuardRelationCommand', {
-  policy: Options.MutantSetPolicy,
-  sites: S.Array(GuardSiteSchema),
-  mutants: S.Array(GuardMutantSchema),
-}) {
+export class GuardRelationCommand
+  extends S.TaggedClass<GuardRelationCommand, { readonly brand: unique symbol }>()('GuardRelationCommand', {
+    policy: Options.MutantSetPolicy,
+    sites: S.Array(GuardSiteSchema),
+    mutants: S.Array(GuardMutantSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -40,10 +42,12 @@ const GuardRelationDecisionTypeId: unique symbol = Symbol.for(
 )
 type GuardRelationDecisionTypeId = typeof GuardRelationDecisionTypeId
 
-export class GuardedByBlock extends S.TaggedClass<GuardedByBlock, { readonly brand: unique symbol }>()('GuardedByBlock', {
-  id: Mutant.MutantId,
-  guard: Mutant.Guard,
-}) {
+export class GuardedByBlock
+  extends S.TaggedClass<GuardedByBlock, { readonly brand: unique symbol }>()('GuardedByBlock', {
+    id: Mutant.MutantId,
+    guard: Mutant.Guard,
+  })
+{
   readonly [GuardRelationDecisionTypeId] = GuardRelationDecisionTypeId
 }
 

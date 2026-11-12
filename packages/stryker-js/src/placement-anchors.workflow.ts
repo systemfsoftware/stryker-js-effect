@@ -14,9 +14,11 @@ export const AnchoredMutantSchema = S.Struct({
 })
 export type AnchoredMutant = typeof AnchoredMutantSchema.Type
 
-export class PlacementAnchorsCommand extends S.Class<PlacementAnchorsCommand, { readonly brand: unique symbol }>('PlacementAnchorsCommand')({
-  mutants: S.Array(AnchoredMutantSchema),
-}) {
+export class PlacementAnchorsCommand
+  extends S.Class<PlacementAnchorsCommand, { readonly brand: unique symbol }>('PlacementAnchorsCommand')({
+    mutants: S.Array(AnchoredMutantSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

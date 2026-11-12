@@ -14,24 +14,28 @@ import { MutantTestPlanCommand } from './MutantTestPlanCommand.schema.js'
 const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantPlan')
 type MutantPlanTypeId = typeof MutantPlanTypeId
 
-export class PlannedRunMutant extends S.TaggedClass<PlannedRunMutant, { readonly brand: unique symbol }>()('PlannedRunMutant', {
-  mutantId: Mutant.MutantId,
-  netTime: S.Finite,
-  runOptions: PlannedMutantRunOptions,
-  static: S.optional(S.Boolean),
-  coveredBy: S.String.pipe(S.Array, S.optional),
-  heldBy: S.optional(Mutant.Guard),
-}) {
+export class PlannedRunMutant
+  extends S.TaggedClass<PlannedRunMutant, { readonly brand: unique symbol }>()('PlannedRunMutant', {
+    mutantId: Mutant.MutantId,
+    netTime: S.Finite,
+    runOptions: PlannedMutantRunOptions,
+    static: S.optional(S.Boolean),
+    coveredBy: S.String.pipe(S.Array, S.optional),
+    heldBy: S.optional(Mutant.Guard),
+  })
+{
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
 
-export class PlannedEarlyResultMutant extends S.TaggedClass<PlannedEarlyResultMutant, { readonly brand: unique symbol }>()('PlannedEarlyResultMutant', {
-  mutantId: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  statusReason: S.optional(S.String),
-  static: S.optional(S.Boolean),
-  coveredBy: S.String.pipe(S.Array, S.optional),
-}) {
+export class PlannedEarlyResultMutant
+  extends S.TaggedClass<PlannedEarlyResultMutant, { readonly brand: unique symbol }>()('PlannedEarlyResultMutant', {
+    mutantId: Mutant.MutantId,
+    status: Mutant.MutantStatusSchema,
+    statusReason: S.optional(S.String),
+    static: S.optional(S.Boolean),
+    coveredBy: S.String.pipe(S.Array, S.optional),
+  })
+{
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
 
