@@ -434,13 +434,18 @@ if (import.meta.vitest !== void 0) {
   )
 
   const Struct = await import('effect/Struct')
+  const Boolean = await import('effect/Boolean')
+  const withoutEligibility = <T extends object>(value: T, absent: boolean): T | Omit<T, 'probeEligibility'> =>
+    Boolean.match(absent, {
+      onTrue: () => Struct.omit(value, ['probeEligibility']),
+      onFalse: () => value,
+    })
   const eligibilityOf = (mutant: Mutant, absent: boolean) => {
-    const encoded = S.encodeOption(Mutant)(mutant)
     const decoded = Option.map(
-      Option.flatMap(encoded, (e) => S.decodeOption(Mutant)(absent ? Struct.omit(e, ['probeEligibility']) : e)),
+      Option.flatMap(S.encodeOption(Mutant)(mutant), (e) => S.decodeOption(Mutant)(withoutEligibility(e, absent))),
       (d) => d.probeEligibility,
     )
-    const constructed = Mutant.make(absent ? Struct.omit(mutant, ['probeEligibility']) : mutant).probeEligibility
+    const constructed = Mutant.make(withoutEligibility(mutant, absent)).probeEligibility
     return { decoded, constructed }
   }
   const isNotDecided = (eligibility: ProbeEligibility): boolean =>
@@ -451,7 +456,7 @@ if (import.meta.vitest !== void 0) {
   // One subject for both shapes: an absent field is not-decided, a present one is kept.
   // A constant impostor answers not-decided for the present case too, so it fails here.
   it.prop(
-    '∀m,absent_≡OwnEligibilityUnlessAbsentThenNotDecided',
+    '∀m_OwnEligibility_≡OwnUnlessAbsentIsNotDecided',
     { of: [Mutant, S.Boolean], subject: eligibilityOf },
     (subject, [mutant, absent]) => {
       const { decoded, constructed } = subject(mutant, absent)
