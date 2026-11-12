@@ -68,14 +68,14 @@ const CASED_DEFAULT_STREAM = 'Reports/Mutation-Stream.jsonl'
 const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `test -f ${CASED_DEFAULT_STREAM}`)}\n`
 
 const LONG_STREAM_RECORD = `${
-  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', runId: 'r', note: 'x'.repeat(5000) })
+  JSON.stringify({ _tag: 'stream', schemaVersion: '11.0', runId: 'r', note: 'x'.repeat(5000) })
 }\n`
 
 const OVERSIZED_STREAM_RECORD = `${
-  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', runId: 'r', note: 'x'.repeat(1_100_000) })
+  JSON.stringify({ _tag: 'stream', schemaVersion: '11.0', runId: 'r', note: 'x'.repeat(1_100_000) })
 }\n`
 
-const TORN_RECORD = '{"_tag":"verdict","schemaVersion":"9.0","runId":"06GK'
+const TORN_RECORD = '{"_tag":"verdict","schemaVersion":"11.0","runId":"06GK'
 
 const LINK_TARGET = 'linked-stream.jsonl'
 
