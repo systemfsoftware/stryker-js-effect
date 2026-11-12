@@ -435,9 +435,10 @@ if (import.meta.vitest !== void 0) {
 
   const Struct = await import('effect/Struct')
   const Boolean = await import('effect/Boolean')
-  const withoutEligibility = <T extends object>(value: T, absent: boolean): T | Omit<T, 'probeEligibility'> =>
+  // The omitted field is dropped at runtime; the cast keeps the caller's type, which the decoder re-checks.
+  const withoutEligibility = <T extends object>(value: T, absent: boolean): T =>
     Boolean.match(absent, {
-      onTrue: () => Struct.omit(value, ['probeEligibility']),
+      onTrue: () => Struct.omit(value, ['probeEligibility']) as unknown as T,
       onFalse: () => value,
     })
   const eligibilityOf = (mutant: Mutant, absent: boolean) => {
