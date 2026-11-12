@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "runId": {
@@ -289,7 +289,8 @@
                   },
                   "checkerConfigChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "closureChanged": {
                     "type": "integer",
@@ -318,11 +319,13 @@
                   },
                   "entryUnreadable": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "storeUnavailable": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "noPriorRecord": {
                     "type": "integer",
@@ -405,7 +408,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "role": {
@@ -983,7 +986,8 @@
             },
             "checkerConfigChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "closureChanged": {
               "type": "integer",
@@ -1012,11 +1016,13 @@
             },
             "entryUnreadable": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "storeUnavailable": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "noPriorRecord": {
               "type": "integer",
@@ -1249,7 +1255,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "runId": {
@@ -1655,7 +1661,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "code": {
@@ -1796,7 +1802,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "code": {
@@ -1833,7 +1839,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "rule": {
