@@ -68,10 +68,13 @@ const ProbedMutatorName = S.Literals([
 type ProbedMutatorName = typeof ProbedMutatorName.Type
 
 export class AssessProbeEligibilityCommand
-  extends S.TaggedClass<AssessProbeEligibilityCommand, { readonly brand: unique symbol }>()('AssessProbeEligibilityCommand', {
-    mutatorName: S.Union([ProbedMutatorName, S.String]),
-    site: ProbeSite,
-  })
+  extends S.TaggedClass<AssessProbeEligibilityCommand, { readonly brand: unique symbol }>()(
+    'AssessProbeEligibilityCommand',
+    {
+      mutatorName: S.Union([ProbedMutatorName, S.String]),
+      site: ProbeSite,
+    },
+  )
 {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
