@@ -14,31 +14,31 @@ export const NeverStartedReason = S.Literal('a fresh test runner did not start t
 
 const CONFIRMATION_DEADLINE_FACTOR = 2
 
-export class MutantRunSettled extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', {}) {
+export class MutantRunSettled extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm>()('MutantRunConfirm', {
+export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm, { readonly brand: unique symbol }>()('MutantRunConfirm', {
   timeoutMs: Mutant.RunOptionsFields.timeout,
 }) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
 export class MutantRunTimeoutConfirmed
-  extends S.TaggedClass<MutantRunTimeoutConfirmed>()('MutantRunTimeoutConfirmed', {})
+  extends S.TaggedClass<MutantRunTimeoutConfirmed, { readonly brand: unique symbol }>()('MutantRunTimeoutConfirmed', {})
 {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunNeverStarted extends S.TaggedClass<MutantRunNeverStarted>()('MutantRunNeverStarted', {}) {
+export class MutantRunNeverStarted extends S.TaggedClass<MutantRunNeverStarted, { readonly brand: unique symbol }>()('MutantRunNeverStarted', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetry extends S.TaggedClass<MutantRunRetry>()('MutantRunRetry', {}) {
+export class MutantRunRetry extends S.TaggedClass<MutantRunRetry, { readonly brand: unique symbol }>()('MutantRunRetry', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetryExhausted extends S.TaggedClass<MutantRunRetryExhausted>()('MutantRunRetryExhausted', {}) {
+export class MutantRunRetryExhausted extends S.TaggedClass<MutantRunRetryExhausted, { readonly brand: unique symbol }>()('MutantRunRetryExhausted', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
@@ -50,7 +50,7 @@ export type MutantRunOutcome =
   | MutantRunRetry
   | MutantRunRetryExhausted
 
-export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
+export class MutantRunObservation extends S.Class<MutantRunObservation, { readonly brand: unique symbol }>('MutantRunObservation')({
   workerReplaced: S.Boolean,
   neverStarted: S.Boolean,
   confirming: S.Boolean,
