@@ -22,11 +22,13 @@ import { mutantRerunAdmissionCell, RerunRefused } from '../Rerun/mod.js'
 import { mutantDetailEventsOf } from '../Rerun/rerun-selection.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
-import { RunEnvironment, type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
+import type { RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
 import { mcpToolkit } from './mcp-tools.js'
 import { MutantDetail, MutantUnusable, RerunUnusable } from './mcp-tools.schema.js'
+import { scoped as rerunStageScoped } from './rerun-stage.blueprint.js'
+import * as RerunStage from './rerun-stage.handle.js'
 
 const MCP_RUN_ID = RunEvent.RunId.make('01ARZ3NDEKTSV4RRFFQ69G5FAM')
 
@@ -137,13 +139,12 @@ const runRestricted = (
       builtinReporters: {},
       allowConsoleColors: false,
     }
-    const runLayer = Layer.merge(
-      RunEnvironment.stage(environment, queue),
-      MachineConsole.captureLayer.pipe(Layer.provide(MachineConsole.layer)),
-    )
-    return yield* mutationTestCell
-      .run({ cliOptions: options, targetMutatePatterns: undefined })
-      .pipe(Effect.provide(runLayer), Effect.scoped, Effect.orDie)
+    return yield* Effect.scoped(
+      Effect.flatMap(
+        rerunStageScoped({ environment, events: queue }),
+        RerunStage.run(mutationTestCell, { cliOptions: options, targetMutatePatterns: undefined }),
+      ),
+    ).pipe(Effect.orDie)
   })
 
 const NO_RESULTS: MutationTestDone = { results: [], verdict: null }
@@ -205,16 +206,23 @@ const handlers = (basePath: string) =>
       recordFeedbackCell({ basePath, id, judgment, reason: reason ?? null }),
   })
 
+const provideEngineToRequests = McpServer.middleware<{ provides: EnginePorts }>()(
+  Effect.map(
+    Effect.context<EnginePorts>(),
+    (context) => (effect) => Effect.provideContext(effect, context),
+  ),
+)
+
 export const mcpServerLayer = ({ basePath }: McpServerOptions) =>
-  Layer.merge(
-    McpServer.layerStdio({
-      name: 'stryker',
-      version: StrykerPackage.version,
-      instructions: MCP_SERVER_INSTRUCTIONS,
-      protocols: [McpProtocol.v2025_06_18],
-    }),
-    McpServer.toolkit(mcpToolkit),
-  ).pipe(
-    Layer.provide(handlers(basePath)),
+  McpServer.layerStdio({
+    name: 'stryker',
+    version: StrykerPackage.version,
+    instructions: MCP_SERVER_INSTRUCTIONS,
+    protocols: [McpProtocol.v2025_06_18],
+    registrations: McpServer.toolkit(mcpToolkit).pipe(
+      Layer.provide(provideEngineToRequests.layer),
+      Layer.provide(handlers(basePath)),
+    ),
+  }).pipe(
     Layer.provide(MachineConsole.layer),
   )

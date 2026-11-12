@@ -36,7 +36,7 @@ export namespace Options {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerDigestRequest, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
+    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCapabilitiesRequest, CheckerCheckResult, CheckerDigestRequest, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
 }
 
 // @public (undocumented)
@@ -57,6 +57,11 @@ export namespace TestRunner {
 // @public (undocumented)
 export namespace Trace {
     export { PropagatedTrace, TraceContextMiddleware, TraceContextParts, TraceContextPartsSchema, TraceContextReference, TracedRpc, Traceparent, TraceparentHeader, TraceparentParts, Tracestate, TracestateHeader };
+}
+
+// @public (undocumented)
+export namespace TypeQuery {
+    export { Assignable, CandidateAnswer, CheckerCapabilities, FileAnswered, FileOutcome, FileRefused, FileRefusedReason, NotAssignable, SiteAnswer, TypeAnswer, TypeAnswerTypeId, TypeQuery, TypeQueryCandidate, TypeQueryFile, TypeQueryNotServed, TypeQueryRefused, TypeQueryRefusedReason, TypeQueryRequest, TypeQueryResponse, TypeQueryServed, TypeQueryServing, TypeQueryShape, TypeQuerySite, TypeQuerySiteKind, TypeQueryVersion, Unknown, UnknownReason, typeQueryServingOf };
 }
 
 // (No @packageDocumentation comment for this package)

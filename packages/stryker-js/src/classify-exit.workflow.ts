@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -9,31 +9,49 @@ import * as S from 'effect/Schema'
 const ExitDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ExitDecision')
 type ExitDecisionTypeId = typeof ExitDecisionTypeId
 
-export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
-  pending: S.Array(Plugin.ExitClass),
-  score: Report.MutationScore,
-  breakingThreshold: S.NullOr(Report.Percentage),
-}) {
+export class ClassifyExitCommand
+  extends S.TaggedClass<ClassifyExitCommand, { readonly brand: unique symbol }>()('ClassifyExitCommand', {
+    pending: S.Array(Plugin.ExitClass),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ExitPassed extends S.TaggedClass<ExitPassed>()('ExitPassed', {}) {
+export class ExitPassed
+  extends S.TaggedClass<ExitPassed, { readonly brand: unique symbol }>()('ExitPassed', { exitClass: S.Null })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitVerdictFailed extends S.TaggedClass<ExitVerdictFailed>()('ExitVerdictFailed', {}) {
+export class ExitVerdictFailed
+  extends S.TaggedClass<ExitVerdictFailed, { readonly brand: unique symbol }>()('ExitVerdictFailed', {
+    exitClass: S.tag('VerdictFail'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitConfigErrored extends S.TaggedClass<ExitConfigErrored>()('ExitConfigErrored', {}) {
+export class ExitConfigErrored
+  extends S.TaggedClass<ExitConfigErrored, { readonly brand: unique symbol }>()('ExitConfigErrored', {
+    exitClass: S.tag('ConfigError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitRuntimeErrored extends S.TaggedClass<ExitRuntimeErrored>()('ExitRuntimeErrored', {}) {
+export class ExitRuntimeErrored
+  extends S.TaggedClass<ExitRuntimeErrored, { readonly brand: unique symbol }>()('ExitRuntimeErrored', {
+    exitClass: S.tag('RuntimeError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
-export class ExitInternalErrored extends S.TaggedClass<ExitInternalErrored>()('ExitInternalErrored', {}) {
+export class ExitInternalErrored
+  extends S.TaggedClass<ExitInternalErrored, { readonly brand: unique symbol }>()('ExitInternalErrored', {
+    exitClass: S.tag('InternalError'),
+  })
+{
   readonly [ExitDecisionTypeId] = ExitDecisionTypeId
 }
 
@@ -53,7 +71,7 @@ const PRECEDENCE = ['InternalError', 'RuntimeError', 'ConfigError', 'VerdictFail
 const precedenceOf = (pending: ReadonlyArray<Plugin.ExitClass>) =>
   Arr.findFirst(PRECEDENCE, (candidate) => pending.includes(candidate))
 
-const decisionOf = (exitClass: Plugin.ExitClass) =>
+const decisionOf = (exitClass: Plugin.ExitClass): ClassifyExitDecision =>
   Match.value(exitClass).pipe(
     Match.when('VerdictFail', () => ExitVerdictFailed.make({})),
     Match.when('ConfigError', () => ExitConfigErrored.make({})),
@@ -62,29 +80,10 @@ const decisionOf = (exitClass: Plugin.ExitClass) =>
     Match.exhaustive,
   )
 
-const verdictExitClass = (score: Report.MutationScore, breakingThreshold: number | null) =>
-  Match.valueTags(score, {
-    Unscored: () => null,
-    Scored: ({ percentage }) =>
-      Option.match(Option.fromNullishOr(breakingThreshold), {
-        onNone: () => null,
-        onSome: (threshold) =>
-          Match.value(percentage < threshold).pipe(
-            Match.when(true, (): Plugin.ExitClass => 'VerdictFail'),
-            Match.when(false, (): Plugin.ExitClass | null => null),
-            Match.exhaustive,
-          ),
-      }),
-  })
-
 const decide = (command: ClassifyExitCommand): Result.Result<ClassifyExitDecision, never> =>
-  Option.match(Option.fromNullishOr(verdictExitClass(command.score, command.breakingThreshold)), {
-    onNone: () =>
-      Option.match(precedenceOf(command.pending), {
-        onNone: () => Result.succeed(ExitPassed.make({})),
-        onSome: (exitClass) => Result.succeed(decisionOf(exitClass)),
-      }),
-    onSome: () => Result.succeed(ExitVerdictFailed.make({})),
+  Option.match(precedenceOf(command.pending), {
+    onNone: () => Result.succeed(ExitPassed.make({ exitClass: null })),
+    onSome: (exitClass) => Result.succeed(decisionOf(exitClass)),
   })
 
 export const classifyExit = Workflow.make({

@@ -54,28 +54,27 @@ type InstrumentRaw = typeof InstrumentCommand.Encoded & {
 }
 
 const writeInstrument = (raw: InstrumentRaw) =>
-  enteringInstrumentPhase(
-    raw.filesToMutate.length,
-    Effect.as(
-      offerSkipsIfAny({ skipped: raw.instrumentResult.skipped, claimants: raw.prev.frameworkClaimants }),
-      {
-        ...raw.prev,
-        project: raw.instrumentedProject,
-        mutants: raw.instrumentResult.mutants,
-        fileContentDigests: raw.fileContentDigests,
-        sandbox: raw.sandbox,
-        concurrency: {
-          testRunners: raw.concurrency.testRunners,
-          checkers: raw.concurrency.checkers,
-        },
+  Effect.as(
+    offerSkipsIfAny({ skipped: raw.instrumentResult.skipped, claimants: raw.prev.frameworkClaimants }),
+    {
+      ...raw.prev,
+      project: raw.instrumentedProject,
+      mutants: raw.instrumentResult.mutants,
+      fileContentDigests: raw.fileContentDigests,
+      sandbox: raw.sandbox,
+      concurrency: {
+        testRunners: raw.concurrency.testRunners,
+        checkers: raw.concurrency.checkers,
       },
-    ),
+    },
   )
 
-const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
-  command: PrepareDone & {
-    readonly concurrency: { readonly testRunners: number; readonly checkers: number }
-  },
+type InstrumentInput = PrepareDone & {
+  readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+}
+
+const gatherInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
+  command: InstrumentInput,
 ) {
   yield* Scope.Scope
   const env = yield* RunEnvironment
@@ -111,8 +110,11 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
   return raw
 })
 
+const readInstrument = (command: InstrumentInput) =>
+  enteringInstrumentPhase(command.project.filesToMutate.size, gatherInstrument(command))
+
 export const instrumentCell: Cell.Cell<
-  PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
+  InstrumentInput,
   InstrumentDone,
   StageError,
   | Scope.Scope

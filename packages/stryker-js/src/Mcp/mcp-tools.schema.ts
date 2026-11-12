@@ -14,15 +14,17 @@ export const MutantDetail = S.Struct({
 
 export type MutantDetail = typeof MutantDetail.Type
 
-export class MutantUnusable extends S.TaggedError<MutantUnusable>()('MutantUnusable', {
-  id: Mutant.MutantId,
-}) {
+export class MutantUnusable
+  extends S.TaggedError<MutantUnusable, { readonly brand: unique symbol }>()('MutantUnusable', {
+    id: Mutant.MutantId,
+  })
+{
   override get message(): string {
     return `No mutant ${this.id} in the finished mutation report; run \`stryker run\` first, or read a known id from list_survivors.`
   }
 }
 
-export class RerunUnusable extends S.TaggedError<RerunUnusable>()('RerunUnusable', {
+export class RerunUnusable extends S.TaggedError<RerunUnusable, { readonly brand: unique symbol }>()('RerunUnusable', {
   id: Mutant.MutantId,
   reason: S.String,
 }) {

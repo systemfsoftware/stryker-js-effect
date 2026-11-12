@@ -28,7 +28,7 @@ import {
   setupFilesOf,
   testFileModulesOf as testFileModulesDriverOf,
   type VitestValue,
-} from './drivers/vitest-node.js'
+} from './vitest-node.js'
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')

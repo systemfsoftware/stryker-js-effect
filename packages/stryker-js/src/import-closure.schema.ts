@@ -1,6 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const ImportClosureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/TestFileClosure')
 type ImportClosureTypeId = typeof ImportClosureTypeId
@@ -13,30 +17,111 @@ export type ImportClosureModule = typeof ImportClosureModuleSchema.Type
 
 export type ImportClosureModuleTable = Readonly<Record<string, ImportClosureModule>>
 
-export class ImportClosureCommand extends S.TaggedClass<ImportClosureCommand>()('ImportClosureCommand', {
-  modules: S.Record(S.String, ImportClosureModuleSchema),
-  globalInputs: S.Array(S.String),
-  testFiles: S.Array(S.String),
-}) {
+export class ImportClosureCommand
+  extends S.TaggedClass<ImportClosureCommand, { readonly brand: unique symbol }>()('ImportClosureCommand', {
+    modules: S.Record(S.String, ImportClosureModuleSchema),
+    globalInputs: S.Array(S.String),
+    testFiles: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class TestFileClosure extends S.TaggedClass<TestFileClosure>()('TestFileClosure', {
-  testFile: S.String,
-  files: S.Array(S.String),
-  open: S.Boolean,
-}) {
+export class TestFileClosure
+  extends S.TaggedClass<TestFileClosure, { readonly brand: unique symbol }>()('TestFileClosure', {
+    testFile: S.String,
+    files: S.Array(S.String),
+    open: S.Boolean,
+  })
+{
   readonly [ImportClosureTypeId] = ImportClosureTypeId
 }
 
-export const ExportEntrySchema = S.Union([S.String, S.Record(S.String, S.String)])
-export type ExportEntry = typeof ExportEntrySchema.Type
+const EntryPathSchema = S.TaggedStruct('EntryPath', { path: S.String })
+export type EntryPath = typeof EntryPathSchema.Type
+
+const EntryFallbacksTag = S.TaggedStruct('EntryFallbacks', {})
+export type EntryFallbacks = typeof EntryFallbacksTag.Type & { readonly fallbacks: ReadonlyArray<PackageEntry> }
+
+const EntryMapTag = S.TaggedStruct('EntryMap', {})
+export type EntryMap = typeof EntryMapTag.Type & { readonly entries: { readonly [key: string]: PackageEntry } }
+
+const EntryNullSchema = S.TaggedStruct('EntryNull', {})
+export type EntryNull = typeof EntryNullSchema.Type
+
+const EntryScalarSchema = S.TaggedStruct('EntryScalar', { value: S.Union([S.Finite, S.Boolean]) })
+export type EntryScalar = typeof EntryScalarSchema.Type
+
+export type PackageEntry = EntryPath | EntryFallbacks | EntryMap | EntryNull | EntryScalar
+
+const EntryFallbacksSchema = EntryFallbacksTag.pipe(
+  S.fieldsAssign({ fallbacks: S.Array(S.suspend((): S.Codec<PackageEntry> => PackageEntrySchema)) }),
+)
+
+const EntryMapSchema = EntryMapTag.pipe(
+  S.fieldsAssign({ entries: S.Record(S.String, S.suspend((): S.Codec<PackageEntry> => PackageEntrySchema)) }),
+)
+
+export const PackageEntrySchema: S.Codec<PackageEntry> = S.suspend((): S.Codec<PackageEntry> =>
+  S.Union([EntryPathSchema, EntryFallbacksSchema, EntryMapSchema, EntryNullSchema, EntryScalarSchema])
+).annotate({ identifier: 'PackageEntry', recursionBudget: { maxDepth: 4, depthSize: 'small' } })
+
+export const PackageEntryFieldSchema = S.Union([PackageEntrySchema, S.TaggedStruct('EntryUndeclared', {})])
+export type PackageEntryField = typeof PackageEntryFieldSchema.Type
+
+const isJsonList = (json: S.Json): json is S.JsonArray => Array.isArray(json)
+
+const isJsonObject = (json: S.Json): json is S.JsonObject => Predicate.isObject(json)
+
+const entryOf = (json: S.Json): PackageEntry =>
+  Match.value(json).pipe(
+    Match.when(Predicate.isString, (path): PackageEntry => ({ _tag: 'EntryPath', path })),
+    Match.when(Predicate.isNull, (): PackageEntry => ({ _tag: 'EntryNull' })),
+    Match.when(
+      isJsonList,
+      (fallbacks): PackageEntry => ({ _tag: 'EntryFallbacks', fallbacks: fallbacks.map(entryOf) }),
+    ),
+    Match.when(isJsonObject, (record): PackageEntry => ({
+      _tag: 'EntryMap',
+      entries: Object.fromEntries(Object.entries(record).map(([key, target]) => [key, entryOf(target)])),
+    })),
+    Match.orElse((value): PackageEntry => ({ _tag: 'EntryScalar', value })),
+  )
+
+const jsonOf = (entry: PackageEntry): S.Json =>
+  Match.value(entry).pipe(
+    Match.tagsExhaustive({
+      EntryPath: ({ path }): S.Json => path,
+      EntryFallbacks: ({ fallbacks }): S.Json => fallbacks.map(jsonOf),
+      EntryMap: ({ entries }): S.Json =>
+        Object.fromEntries(Object.entries(entries).map(([key, target]) => [key, jsonOf(target)])),
+      EntryNull: (): S.Json => null,
+      EntryScalar: ({ value }): S.Json => value,
+    }),
+  )
+
+const declaredFieldOf = (json: Option.Option<S.Json>): Option.Option<PackageEntryField> =>
+  Option.some(Option.match(json, { onNone: (): PackageEntryField => ({ _tag: 'EntryUndeclared' }), onSome: entryOf }))
+
+const declaredJsonOf = (field: Option.Option<PackageEntryField>): Option.Option<S.Json> =>
+  Option.flatMap(field, (present) =>
+    Match.value(present).pipe(
+      Match.tag('EntryUndeclared', () => Option.none<S.Json>()),
+      Match.orElse((entry) => Option.some(jsonOf(entry))),
+    ))
+
+const PackageEntryFieldFromKey = S.optionalKey(S.Json).pipe(
+  S.decodeTo(
+    PackageEntryFieldSchema,
+    SchemaTransformation.transformOptional({ decode: declaredFieldOf, encode: declaredJsonOf }),
+  ),
+)
 
 export const PackageManifestSchema = S.Struct({
-  exports: S.optionalKey(S.Union([S.String, S.Record(S.String, ExportEntrySchema)])),
-  imports: S.optionalKey(S.Json),
-  main: S.optionalKey(S.String),
-  module: S.optionalKey(S.String),
+  exports: PackageEntryFieldFromKey,
+  imports: PackageEntryFieldFromKey,
+  main: PackageEntryFieldFromKey,
+  module: PackageEntryFieldFromKey,
 })
 export type PackageManifest = typeof PackageManifestSchema.Type
 
@@ -44,32 +129,45 @@ const ModuleSpecifierKindTypeId: unique symbol = Symbol.for('@systemfsoftware/st
 type ModuleSpecifierKindTypeId = typeof ModuleSpecifierKindTypeId
 
 export class ClassifyModuleSpecifierCommand
-  extends S.TaggedClass<ClassifyModuleSpecifierCommand>()('ClassifyModuleSpecifierCommand', {
-    specifier: S.String,
-    builtins: S.Array(S.String),
-  })
+  extends S.TaggedClass<ClassifyModuleSpecifierCommand, { readonly brand: unique symbol }>()(
+    'ClassifyModuleSpecifierCommand',
+    {
+      specifier: S.String,
+      builtins: S.Array(S.String),
+    },
+  )
 {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class PathSpecifier extends S.TaggedClass<PathSpecifier>()('PathSpecifier', { specifier: S.String }) {
-  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
-}
-
-export class SubpathImportSpecifier
-  extends S.TaggedClass<SubpathImportSpecifier>()('SubpathImportSpecifier', { specifier: S.String })
+export class PathSpecifier
+  extends S.TaggedClass<PathSpecifier, { readonly brand: unique symbol }>()('PathSpecifier', { specifier: S.String })
 {
   readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
 }
 
-export class BuiltinSpecifier extends S.TaggedClass<BuiltinSpecifier>()('BuiltinSpecifier', { specifier: S.String }) {
+export class SubpathImportSpecifier
+  extends S.TaggedClass<SubpathImportSpecifier, { readonly brand: unique symbol }>()('SubpathImportSpecifier', {
+    specifier: S.String,
+  })
+{
   readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
 }
 
-export class PackageSpecifier extends S.TaggedClass<PackageSpecifier>()('PackageSpecifier', {
-  packageName: S.String,
-  subpath: S.String,
-}) {
+export class BuiltinSpecifier
+  extends S.TaggedClass<BuiltinSpecifier, { readonly brand: unique symbol }>()('BuiltinSpecifier', {
+    specifier: S.String,
+  })
+{
+  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
+}
+
+export class PackageSpecifier
+  extends S.TaggedClass<PackageSpecifier, { readonly brand: unique symbol }>()('PackageSpecifier', {
+    packageName: S.String,
+    subpath: S.String,
+  })
+{
   readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
 }
 
@@ -95,36 +193,48 @@ export const ModuleSpecifierKindSchema = S.Union([
 export type ModuleSpecifierKind = typeof ModuleSpecifierKindSchema.Type
 
 export class PackageExportRequest
-  extends S.TaggedClass<PackageExportRequest>()('PackageExportRequest', { subpath: S.String })
+  extends S.TaggedClass<PackageExportRequest, { readonly brand: unique symbol }>()('PackageExportRequest', {
+    subpath: S.String,
+  })
 {}
 
 export class PackageImportRequest
-  extends S.TaggedClass<PackageImportRequest>()('PackageImportRequest', { specifier: S.String })
+  extends S.TaggedClass<PackageImportRequest, { readonly brand: unique symbol }>()('PackageImportRequest', {
+    specifier: S.String,
+  })
 {}
 
 const ManifestTargetTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ManifestTarget')
 type ManifestTargetTypeId = typeof ManifestTargetTypeId
 
-export class ManifestTargetCommand extends S.TaggedClass<ManifestTargetCommand>()('ManifestTargetCommand', {
-  manifest: PackageManifestSchema,
-  request: S.Union([PackageExportRequest, PackageImportRequest]),
-}) {
+export class ManifestTargetCommand
+  extends S.TaggedClass<ManifestTargetCommand, { readonly brand: unique symbol }>()('ManifestTargetCommand', {
+    manifest: PackageManifestSchema,
+    request: S.Union([PackageExportRequest, PackageImportRequest]),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export class ManifestPathTarget
-  extends S.TaggedClass<ManifestPathTarget>()('ManifestPathTarget', { target: S.String })
+  extends S.TaggedClass<ManifestPathTarget, { readonly brand: unique symbol }>()('ManifestPathTarget', {
+    target: S.String,
+  })
 {
   readonly [ManifestTargetTypeId] = ManifestTargetTypeId
 }
 
 export class ManifestPackageTarget
-  extends S.TaggedClass<ManifestPackageTarget>()('ManifestPackageTarget', { specifier: S.String })
+  extends S.TaggedClass<ManifestPackageTarget, { readonly brand: unique symbol }>()('ManifestPackageTarget', {
+    specifier: S.String,
+  })
 {
   readonly [ManifestTargetTypeId] = ManifestTargetTypeId
 }
 
-export class ManifestTargetMissing extends S.TaggedClass<ManifestTargetMissing>()('ManifestTargetMissing', {}) {
+export class ManifestTargetMissing
+  extends S.TaggedClass<ManifestTargetMissing, { readonly brand: unique symbol }>()('ManifestTargetMissing', {})
+{
   readonly [ManifestTargetTypeId] = ManifestTargetTypeId
 }
 
@@ -138,20 +248,27 @@ const ModuleSpecifiersTypeId: unique symbol = Symbol.for('@systemfsoftware/stryk
 type ModuleSpecifiersTypeId = typeof ModuleSpecifiersTypeId
 
 export class ExtractModuleSpecifiersCommand
-  extends S.TaggedClass<ExtractModuleSpecifiersCommand>()('ExtractModuleSpecifiersCommand', { program: S.Json })
+  extends S.TaggedClass<ExtractModuleSpecifiersCommand, { readonly brand: unique symbol }>()(
+    'ExtractModuleSpecifiersCommand',
+    { program: S.Json },
+  )
 {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ModuleSpecifiersClosed extends S.TaggedClass<ModuleSpecifiersClosed>()('ModuleSpecifiersClosed', {
-  specifiers: S.Array(S.String),
-}) {
+export class ModuleSpecifiersClosed
+  extends S.TaggedClass<ModuleSpecifiersClosed, { readonly brand: unique symbol }>()('ModuleSpecifiersClosed', {
+    specifiers: S.Array(S.String),
+  })
+{
   readonly [ModuleSpecifiersTypeId] = ModuleSpecifiersTypeId
 }
 
-export class ModuleSpecifiersOpen extends S.TaggedClass<ModuleSpecifiersOpen>()('ModuleSpecifiersOpen', {
-  specifiers: S.Array(S.String),
-}) {
+export class ModuleSpecifiersOpen
+  extends S.TaggedClass<ModuleSpecifiersOpen, { readonly brand: unique symbol }>()('ModuleSpecifiersOpen', {
+    specifiers: S.Array(S.String),
+  })
+{
   readonly [ModuleSpecifiersTypeId] = ModuleSpecifiersTypeId
 }
 

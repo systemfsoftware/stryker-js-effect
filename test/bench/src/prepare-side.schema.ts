@@ -1,10 +1,12 @@
 import { Schema as S } from 'effect'
 
-export class BenchSetupFailed extends S.TaggedError<BenchSetupFailed>()('BenchSetupFailed', {
-  step: S.String,
-  detail: S.String,
-  cause: S.optional(S.Unknown),
-}) {
+export class BenchSetupFailed
+  extends S.TaggedError<BenchSetupFailed, { readonly brand: unique symbol }>()('BenchSetupFailed', {
+    step: S.String,
+    detail: S.String,
+    cause: S.optional(S.Unknown),
+  })
+{
   override get message(): string {
     return `${this.step}: ${this.detail}`
   }

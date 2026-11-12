@@ -13,7 +13,7 @@ import { WorkerOptionsWire } from './worker-options.schema.js'
 export class WorkerOptions extends Context.Service<WorkerOptions, Options.StrykerOptions>()(
   '@systemfsoftware/stryker-js-plugin-runtime/worker-options.service/WorkerOptions',
 ) {
-  static readonly layer: Layer.Layer<
+  static readonly layerConfig: Layer.Layer<
     WorkerOptions,
     Config.ConfigError | PlatformError | S.SchemaError,
     FileSystem.FileSystem | Path.Path

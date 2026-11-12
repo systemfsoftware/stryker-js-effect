@@ -12,8 +12,8 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 
-import { CheckerRuntime } from './CheckerRuntime.service.js'
-import { checkerHandlers } from './CheckerWorker.service.js'
+import { checkerHandlers } from './CheckerWorker.js'
+import { layer as typescriptCheckerRuntime } from './typescript-checker-runtime.js'
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
@@ -40,14 +40,14 @@ const workerPlatformLayer = Layer.unwrap(
 const checkerRuntimeLayer = Layer.unwrap(
   Effect.gen(function*() {
     const options = yield* Worker.WorkerOptions
-    return CheckerRuntime.layer(options)
+    return typescriptCheckerRuntime(options)
   }),
 )
 
-const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layer))
+const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layerConfig))
 
 const workerRootLayer = checkerRuntimeLayer.pipe(
-  Layer.provideMerge(Worker.WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
+  Layer.provideMerge(Worker.WorkerOptions.layerConfig.pipe(Layer.provideMerge(servedPlatformLayer))),
 )
 
 NodeRuntime.runMain(

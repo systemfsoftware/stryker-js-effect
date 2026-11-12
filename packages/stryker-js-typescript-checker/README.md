@@ -36,15 +36,80 @@ export default defineConfig({
 })
 ```
 
+## Options
+
+Options go in a `typescriptChecker` block of the Stryker config. A key the block does not define, or a value it does not accept, fails the check with `invalid-checker-options`.
+
+### `importerCheck`
+
+`'location-rule'` (default) or `'always'`.
+
+When a mutant compiles in its own file, the checker normally re-checks every file that imports that file, and every file of the program when the mutated file is a script or declares `declare global`. Under `'location-rule'` it skips that re-check when the edit cannot change any type another file sees:
+
+- the edit sits inside the body of one function, method, constructor, accessor or arrow function;
+- that function has an explicit return type annotation, or is a `set` accessor (a constructor never qualifies: an unannotated class property takes its type from the constructor's assignments, so a constructor body edit can change what importers see);
+- the file is a TypeScript module with no `declare global`;
+- the edit holds no `import()`, `require()` or `import("…")` type;
+- no other project compiles the file: a project that includes or imports it without reaching its owner through `references` checks it under its own compiler options, so its errors in that file are read too.
+
+All five must hold before and after the edit, and the function's header (everything before its body) must be unchanged. Mutants that meet the rule and sit in different files are checked together in one snapshot update. Under `isolatedDeclarations`, every exported function has an annotation, so the rule applies to most of its body edits.
+
+`'always'` re-checks importers for every mutant that compiles in its own file and checks one mutant per snapshot update. Use it if you suspect a verdict is wrong. Changing the option changes the program digest, so incremental runs never mix verdicts from the two modes.
+
+```ts
+export default defineConfig({
+  checkers: ['typescript'],
+  plugins: ['@systemfsoftware/stryker-js-typescript-checker'],
+  typescriptChecker: { importerCheck: 'always' },
+})
+```
+
 ## In-process runtime (`./runtime`)
 
 The default entry is the worker plugin Stryker loads from `plugins`, and that is all a normal setup needs. Tooling that drives the compiler itself — for example an oracle that instruments a project and hands the mutants to the real checker — can import the in-process runtime from the `./runtime` subpath instead:
 
 ```ts
-import { CheckerRuntime, nodes, TypeScriptCompiler } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import {
+  CheckerRuntime,
+  nodes,
+  TypeScriptCheckerRuntime,
+  TypeScriptCompiler,
+} from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 ```
 
-It publishes the runtime Layer (`CheckerRuntime.layer(options)`), its `CheckerRuntimeShape` type, the `TypeScriptCompiler` service tag and the `nodes` program-graph accessor. Everything else stays behind the worker entry.
+It publishes the `CheckerRuntime` service tag and its `CheckerRuntimeShape` type, the TypeScript-backed implementation as the `TypeScriptCheckerRuntime` namespace (`TypeScriptCheckerRuntime.layer(options)` builds the runtime Layer, and `TypeScriptCheckerRuntime.make(compiler)` builds the checker service it holds), the `TypeScriptCompiler` service tag, the `nodes` program-graph accessor, and the `TSCompiler` type both `make` and `nodes` take. Everything else stays behind the worker entry.
+
+`CheckerRuntimeShape` carries three members:
+
+- `checker` — the lazy checker service the worker resolves for `check`, `group` and `digest`.
+- `capabilities` — the static `CheckerCapabilities` the checker declares, `{ typeQuery: [1, 2] }`.
+- `typeQuery` — an `Effect<TypeQueryShape>` built on first use: the `./type-query` entry's `layer` is built into the runtime layer's scope when the effect first runs and closed with that scope, so `check`, `group` and `digest` never open a query server.
+
+The checker worker serves both over the `Plugin.CheckerRpcs` group: `capabilities` answers the declaration for `"typescript"` without resolving the checker, and `typeQuery` delegates to the lazy `TypeQuery` service.
+
+## Type query (`./type-query`)
+
+Provisional: this entry changes shape when its consumer confirms it, and that change ships as an ordinary break.
+
+`./type-query` exports `layer`, a `Layer` that implements the `TypeQuery` port from the `TypeQuery` namespace of `@systemfsoftware/stryker-js-plugin-interface`. It answers type queries on its own tsgo server, opened on first use per `tsconfigFile` and closed when the layer's scope closes.
+
+A candidate is `NotAssignable` only where a declared type enforces the site's context. A site under an object spread or a non-null assertion, or on the right of `??`, `||` or `&&` when the left operand's type keeps that side out of the result, answers `Unknown` with reason `context-not-enforced`, because the checker never checks such a site against the context.
+
+```ts
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import * as Effect from 'effect/Effect'
+
+const answered = Effect.scoped(
+  Effect.provide(
+    Effect.gen(function*() {
+      const query = yield* TypeQuery.TypeQuery
+      return yield* query.query(request)
+    }),
+    TypeQueryTsgo.layer,
+  ),
+)
+```
 
 ## License
 

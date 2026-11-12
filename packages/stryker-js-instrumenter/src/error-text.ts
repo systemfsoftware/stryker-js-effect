@@ -47,15 +47,18 @@ const fieldOf = <A = unknown>(value: object, key: string): A | undefined =>
       ),
   )
 
-const hasStringCode = (error: Error): boolean =>
-  Match.value(fieldOf(error, 'code')).pipe(
+const isStringField = (error: Error, key: string): boolean =>
+  Match.value(fieldOf(error, key)).pipe(
     Match.when(Match.string, () => true),
     Match.orElse(() => false),
   )
 
 const isErrnoException = (error: unknown): error is ErrnoException =>
   Match.value(error).pipe(
-    Match.when(Match.instanceOf(Error), hasStringCode),
+    Match.when(
+      Match.instanceOf(Error),
+      (candidate) => isStringField(candidate, 'code') && isStringField(candidate, 'syscall'),
+    ),
     Match.orElse(() => false),
   )
 
@@ -239,5 +242,20 @@ function objectCauseTextOf<A = unknown>(cause: A, depth: number): string | undef
       Option.filter(Option.some(cause), Predicate.isObjectOrArray),
       (object) => textWithNested(ownCauseText(object), causeText(fieldOf(object, 'cause'), depth + 1)),
     ),
+  )
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const startsWithText = (rendered: Option.Option<ErrorText>, prefix: string): boolean =>
+    Option.exists(rendered, (text) => text.text.startsWith(prefix))
+
+  it.prop(
+    '∀e_ErrorTextOf_≡ErrnoFormatOnlyWhenTheErrorNamesItsSyscall',
+    { of: [S.NonEmptyString, S.NonEmptyString, S.NonEmptyString], subject: errorTextOf },
+    (subject, [message, code, syscall]) =>
+      startsWithText(subject(Object.assign(new Error(message), { code, syscall })), `Error: ${code} (${syscall}) `) &&
+      startsWithText(subject(Object.assign(new Error(message), { code })), `Error: ${message}\n`),
   )
 }

@@ -1,4 +1,8 @@
 packs:
-  - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/cell-architecture
-  - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/boundary-testing
-  - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/schema-laws
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/cell-architecture
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/boundary-testing
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/schema-laws
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/package-topology
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/mutation-discipline
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/ci-wall-clock
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/a578c704a48db36b697d21359c7c09b73eee0ece/compound-packs/turbo-task-graph

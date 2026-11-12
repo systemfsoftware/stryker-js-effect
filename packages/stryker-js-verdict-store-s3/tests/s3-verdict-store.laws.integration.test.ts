@@ -37,6 +37,7 @@ const emulatorLayer = Layer.effect(
 )
 
 const optionsAt = (url: string, overrides: Partial<S3VerdictStoreOptions> = {}): S3VerdictStoreOptions => ({
+  kind: 's3',
   bucket: BUCKET,
   prefix: PREFIX,
   region: 'us-east-1',

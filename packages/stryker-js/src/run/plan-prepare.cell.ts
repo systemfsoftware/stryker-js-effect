@@ -8,7 +8,7 @@ import * as Scope from 'effect/Scope'
 
 import type { ReadProjectDone } from '../read-project.cell.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
-import { Reporter } from '../reporter.service.js'
+import { Reporter } from '../Reporter/reporter.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'

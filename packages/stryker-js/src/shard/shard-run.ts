@@ -67,7 +67,7 @@ const settlementOf = (exitCode: number): SettleShardChildDecision =>
   Result.getOrElse(settleShardChild(SettleShardChildCommand.make({ exitCode })), (neverError) => neverError)
 
 const subThresholdLine = (project: string): string =>
-  `stryker shard: ${project} scored below thresholds.break over this shard's mutants; the merged report carries the project verdict`
+  `stryker shard: ${project} scored below thresholds.break over this shard's mutants; \`stryker gate\` judges the project's break over the merged report`
 
 const missingStreamFailure = (project: string, exitCode: number, streamFile: string): ShardChildFailed =>
   ShardChildFailed.make({

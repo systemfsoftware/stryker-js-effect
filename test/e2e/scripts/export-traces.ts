@@ -1,6 +1,8 @@
 #!/usr/bin/env -S deno run --config=scripts/deno.json --allow-env --allow-net --allow-read --allow-write --allow-import
 
+// @boundaries-ignore Deno resolves @std/* through the scripts/deno.json import map named in this file's shebang; Turbo reads only package.json
 import { ensureDir } from '@std/fs/ensure-dir'
+// @boundaries-ignore Deno resolves @std/* through the scripts/deno.json import map named in this file's shebang; Turbo reads only package.json
 import { join, resolve } from '@std/path'
 
 const SEARCH_WINDOW_SECONDS = 604_800

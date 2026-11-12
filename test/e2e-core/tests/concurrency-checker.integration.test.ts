@@ -7,6 +7,7 @@ import {
   CheckerRuntime,
   type CheckerRuntimeShape,
   nodes,
+  TypeScriptCheckerRuntime,
   TypeScriptCompiler,
 } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Cause from 'effect/Cause'
@@ -114,7 +115,7 @@ const rigLayers = (
   Layer.unwrap(
     optionsFor(layout).pipe(
       Effect.orDie,
-      Effect.map((options) => CheckerRuntime.layer(options).pipe(Layer.provide(spawnerLayer))),
+      Effect.map((options) => TypeScriptCheckerRuntime.layer(options).pipe(Layer.provide(spawnerLayer))),
     ),
   )
 

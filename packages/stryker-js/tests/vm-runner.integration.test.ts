@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+// @boundaries-ignore packages/stryker-js/package.json declares this name as a workspace alias of @systemfsoftware/stryker-js-vitest-runner; Turbo matches workspace dependencies by their target name only
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'

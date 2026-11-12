@@ -1,39 +1,46 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  type DryRunReusePrior,
   DryRunReusePriorSchema,
   type DryRunRunReason,
   DryRunRunReasonSchema,
+  type PriorUnderCurrentRoot,
 } from './dry-run-coverage.schema.js'
 
 const DryRunReuseDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/DryRunReuseDecision')
 type DryRunReuseDecisionTypeId = typeof DryRunReuseDecisionTypeId
 
-export class DryRunCoverageReused extends S.TaggedClass<DryRunCoverageReused>()('DryRunCoverageReused', {
-  testClosureDigest: S.String,
-}) {
+export class DryRunCoverageReused
+  extends S.TaggedClass<DryRunCoverageReused, { readonly brand: unique symbol }>()('DryRunCoverageReused', {
+    testClosureDigest: S.String,
+  })
+{
   readonly [DryRunReuseDecisionTypeId] = DryRunReuseDecisionTypeId
 }
 
-export class DryRunCoverageStale extends S.TaggedClass<DryRunCoverageStale>()('DryRunCoverageStale', {
-  reason: DryRunRunReasonSchema,
-}) {
+export class DryRunCoverageStale
+  extends S.TaggedClass<DryRunCoverageStale, { readonly brand: unique symbol }>()('DryRunCoverageStale', {
+    reason: DryRunRunReasonSchema,
+  })
+{
   readonly [DryRunReuseDecisionTypeId] = DryRunReuseDecisionTypeId
 }
 
 export type DryRunReuseDecision = DryRunCoverageReused | DryRunCoverageStale
 
-export class DryRunReuseCommand extends S.TaggedClass<DryRunReuseCommand>()('DryRunReuseCommand', {
-  prior: S.optional(DryRunReusePriorSchema),
-  currentTestClosureDigest: S.optional(S.String),
-  currentRunInputsDigest: S.String,
-  force: S.Boolean,
-}) {
+export class DryRunReuseCommand
+  extends S.TaggedClass<DryRunReuseCommand, { readonly brand: unique symbol }>()('DryRunReuseCommand', {
+    prior: DryRunReusePriorSchema,
+    currentTestClosureDigest: S.optional(S.String),
+    currentRunInputsDigest: S.String,
+    force: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.dry_run_reuse.force',
     currentRunInputsDigest: 'stryker.dry_run_reuse.run_inputs_digest',
@@ -42,18 +49,18 @@ export class DryRunReuseCommand extends S.TaggedClass<DryRunReuseCommand>()('Dry
 
 const staleOf = (reason: DryRunRunReason): DryRunCoverageStale => DryRunCoverageStale.make({ reason })
 
-const closureMatches = (prior: DryRunReusePrior, digest: string): boolean => prior.testClosureDigest === digest
+const closureMatches = (prior: PriorUnderCurrentRoot, digest: string): boolean => prior.testClosureDigest === digest
 
-const mismatchReasonOf = (prior: DryRunReusePrior, digest: string): DryRunRunReason =>
+const mismatchReasonOf = (prior: PriorUnderCurrentRoot, digest: string): DryRunRunReason =>
   Boolean.match(closureMatches(prior, digest), {
     onTrue: (): DryRunRunReason => 'runInputsChanged',
     onFalse: (): DryRunRunReason => 'closureChanged',
   })
 
-const matchesPrior = (prior: DryRunReusePrior, command: DryRunReuseCommand, digest: string): boolean =>
+const matchesPrior = (prior: PriorUnderCurrentRoot, command: DryRunReuseCommand, digest: string): boolean =>
   Boolean.and(closureMatches(prior, digest), prior.runInputsDigest === command.currentRunInputsDigest)
 
-const againstPrior = (command: DryRunReuseCommand, prior: DryRunReusePrior): DryRunReuseDecision =>
+const againstPrior = (command: DryRunReuseCommand, prior: PriorUnderCurrentRoot): DryRunReuseDecision =>
   Option.match(Option.fromUndefinedOr(command.currentTestClosureDigest), {
     onNone: () => staleOf('closureUnavailable'),
     onSome: (digest) =>
@@ -63,15 +70,20 @@ const againstPrior = (command: DryRunReuseCommand, prior: DryRunReusePrior): Dry
       }),
   })
 
-const decideReuse = (command: DryRunReuseCommand): DryRunReuseDecision =>
+const unlessForced = (command: DryRunReuseCommand, unforced: () => DryRunReuseDecision): DryRunReuseDecision =>
   Boolean.match(command.force, {
     onTrue: () => staleOf('forced'),
-    onFalse: () =>
-      Option.match(Option.fromUndefinedOr(command.prior), {
-        onNone: () => staleOf('noPriorCoverage'),
-        onSome: (prior) => againstPrior(command, prior),
-      }),
+    onFalse: unforced,
   })
+
+const decideReuse = (command: DryRunReuseCommand): DryRunReuseDecision =>
+  Match.value(command.prior).pipe(
+    Match.tag('PriorUnderOtherRoots', () => staleOf('rootChanged')),
+    Match.tag('PriorRootUnrecorded', () => staleOf('rootUnrecorded')),
+    Match.tag('NoPriorCoverage', () => unlessForced(command, () => staleOf('noPriorCoverage'))),
+    Match.tag('PriorUnderCurrentRoot', (prior) => unlessForced(command, () => againstPrior(command, prior))),
+    Match.exhaustive,
+  )
 
 export const dryRunReuse = Workflow.make({
   command: DryRunReuseCommand,

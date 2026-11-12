@@ -26,11 +26,8 @@ export interface WorkerReportsShape {
 
 export class WorkerReports extends Context.Service<WorkerReports, WorkerReportsShape>()(
   '@systemfsoftware/stryker-js/run-events.service/WorkerReports',
-) {}
-
-export const WorkerReportsLive: Layer.Layer<WorkerReports, never, RunEvents> = Layer.effect(
-  WorkerReports,
-  Effect.gen(function*() {
+) {
+  static readonly make: Effect.Effect<WorkerReportsShape, never, RunEvents> = Effect.gen(function*() {
     const queue = yield* RunEvents
     const counters: Record<RunEvent.WorkerRole, Ref.Ref<number>> = {
       testRunner: yield* Ref.make(0),
@@ -51,5 +48,7 @@ export const WorkerReportsLive: Layer.Layer<WorkerReports, never, RunEvents> = L
           )
         }),
     })
-  }),
-)
+  })
+
+  static readonly layer: Layer.Layer<WorkerReports, never, RunEvents> = Layer.effect(this, this.make)
+}

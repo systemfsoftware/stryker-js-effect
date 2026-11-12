@@ -2,19 +2,28 @@ import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platfor
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as PlatformError from 'effect/PlatformError'
+import * as Predicate from 'effect/Predicate'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import {
+  classifyEmptyDirectoryRemoval,
+  ClassifyEmptyDirectoryRemovalCommand,
+} from './classify-empty-directory-removal.workflow.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from './classify-worker-exit.workflow.js'
+import { EmptyDirectoryRemovalRejected } from './empty-directory.schema.js'
+import { EmptyDirectory } from './empty-directory.service.js'
 import { GitDiff } from './git-diff.service.js'
 import { layer as oxcSourceParserLayer } from './oxc-source-parser.js'
 import type { EnginePorts } from './run/StageServices.service.js'
@@ -39,7 +48,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
   Layer.effect(
     WorkerLauncher,
     Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* SecureRandom.SecureRandom
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -48,7 +57,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
         spawn: Effect.fn(SpanTaxonomy.Spans.workerSpawn.name)(
           function*(params: WorkerSpawnParams) {
             const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
-            const workerId = yield* crypto.randomUUIDv4
+            const workerId = yield* crypto.uuidV4()
             const socketPath = Match.value(globalThis.process.platform).pipe(
               Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
               Match.orElse(() => path.join(workerDir, 'worker.sock')),
@@ -124,6 +133,67 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
     }),
   )
 
+const hasErrnoCode = (cause: unknown): cause is { readonly code: string } =>
+  Predicate.hasProperty(cause, 'code') && Predicate.isString(cause.code)
+
+const removalErrorTagByCode: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
+  EACCES: 'PermissionDenied',
+  EPERM: 'PermissionDenied',
+  EISDIR: 'BadResource',
+  EBUSY: 'Busy',
+  ELOOP: 'BadResource',
+}
+
+const removalErrorTag = (code: string | undefined): PlatformError.SystemErrorTag =>
+  Option.getOrElse(
+    Option.fromNullishOr(code).pipe(Option.flatMap((defined) => Option.fromNullishOr(removalErrorTagByCode[defined]))),
+    (): PlatformError.SystemErrorTag => 'Unknown',
+  )
+
+const settleRemoval = (
+  rejection: EmptyDirectoryRemovalRejected,
+  path: string,
+): Effect.Effect<void, PlatformError.PlatformError> =>
+  Result.match(
+    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code: rejection.code })),
+    {
+      onFailure: (impossible) => Effect.fail(impossible),
+      onSuccess: (removal) =>
+        Match.value(removal).pipe(
+          Match.tag('DirectoryKept', () => Effect.void),
+          Match.tag('DirectoryAbsent', () => Effect.void),
+          Match.tag('RemovalFailed', (failed) =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: removalErrorTag(failed.code),
+                module: 'EmptyDirectory',
+                method: 'removeIfEmpty',
+                syscall: 'rmdir',
+                pathOrDescriptor: path,
+                description: failed.code,
+                cause: rejection.cause,
+              }),
+            )),
+          Match.exhaustive,
+        ),
+    },
+  )
+
+const nodeEmptyDirectoryLayer = Layer.succeed(
+  EmptyDirectory,
+  EmptyDirectory.of({
+    removeIfEmpty: (path) =>
+      Effect.tryPromise({
+        try: () => globalThis.process.getBuiltinModule('node:fs/promises').rmdir(path),
+        catch: (cause) =>
+          EmptyDirectoryRemovalRejected.make({
+            code: hasErrnoCode(cause) ? cause.code : undefined,
+            cause,
+          }),
+      }).pipe(Effect.catch((rejection) => settleRemoval(rejection, path))),
+  }),
+)
+
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFsPathLayer))
@@ -134,10 +204,11 @@ export const makeNodePlatformLayer = (options: {
   readonly childEnv: Readonly<Record<string, string>>
 }): Layer.Layer<EnginePorts> =>
   Layer.mergeAll(
-    nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
+    nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layerSecureRandom))),
     nodeBase,
     GitDiff.layer,
     oxcSourceParserLayer,
+    nodeEmptyDirectoryLayer,
   )
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })

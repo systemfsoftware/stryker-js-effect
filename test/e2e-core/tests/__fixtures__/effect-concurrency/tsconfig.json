@@ -22,5 +22,6 @@
     "allowJs": true,
     "types": ["node"],
     "noEmit": true
-  }
+  },
+  "include": ["../../../../../packages/stryker-js-instrumenter/testResources/effect-concurrency/*.ts"]
 }

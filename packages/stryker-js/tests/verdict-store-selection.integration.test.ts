@@ -65,7 +65,7 @@ const writeS3Package = (
 const projectInstallingS3Package = (
   entrySource: string,
 ): Effect.Effect<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.flatMap(writeProject(), (root) => Effect.as(writeS3Package(root, entrySource), root))
+  Effect.tap(writeProject(), (root) => writeS3Package(root, entrySource))
 
 const removeProject = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true })))

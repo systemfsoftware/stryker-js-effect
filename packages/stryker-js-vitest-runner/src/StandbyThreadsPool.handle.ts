@@ -10,6 +10,7 @@ import * as Scope from 'effect/Scope'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { PoolOptions, ResolvedConfig } from 'vitest/node'
 
+import { type StandbyThreadStopFailed } from './StandbyThreadsPool.schema.js'
 import {
   isLive,
   type PoolThread,
@@ -17,8 +18,7 @@ import {
   standbyPoolRunner,
   type StandbyThreadStage,
   stopThread,
-} from './drivers/vitest-pool.js'
-import { type StandbyThreadStopFailed } from './StandbyThreadsPool.schema.js'
+} from './vitest-pool.js'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/StandbyThreadsPool')
 export type TypeId = typeof TypeId

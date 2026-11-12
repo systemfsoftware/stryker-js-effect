@@ -9,7 +9,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 
 import type { ResolvedMode } from '../output-mode.schema.js'
-import { makeRunEventStream, RunEventDrainLive } from '../run-event-stream.service.js'
+import { makeRunEventStream, RunEventDrain } from '../run-event-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { MutationTestDone } from './mutation-test.cell.js'
 import { mutationTestCell } from './run-stages.cell.js'
@@ -22,11 +22,11 @@ const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
   Effect.flatMap((stream) =>
     Effect.map(
       RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: HtmlReporter.makeHtmlReporter } }),
-      (env) => RunEnvironment.stage(env, stream.queue),
+      (env) => RunEnvironment.layerStage(env, stream.queue),
     )
   ),
   Layer.unwrap,
-  Layer.provide(RunEventDrainLive),
+  Layer.provide(RunEventDrain.layer),
 )
 
 export const strykerCell: {

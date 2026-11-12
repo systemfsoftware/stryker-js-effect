@@ -22,9 +22,18 @@ export const VitestRunnerOptionsSchema = S.Struct({
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>
 
-export class CoverageDecodeFailed extends S.TaggedError<CoverageDecodeFailed>()('CoverageDecodeFailed', {
-  cause: S.Unknown,
-}) {
+export interface RunFilter {
+  testIds?: string[]
+  relatedFiles?: string[]
+  testFiles?: string[]
+  priorKillerTestIds?: string[]
+}
+
+export class CoverageDecodeFailed
+  extends S.TaggedError<CoverageDecodeFailed, { readonly brand: unique symbol }>()('CoverageDecodeFailed', {
+    cause: S.Unknown,
+  })
+{
   override get message(): string {
     return 'Failed to decode coverage data'
   }

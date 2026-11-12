@@ -18,7 +18,7 @@ export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^.
 export const DiagnosticSeveritySchema = S.Literals(['error', 'warning', 'suggestion', 'message'])
 export type DiagnosticSeverity = S.Schema.Type<typeof DiagnosticSeveritySchema>
 
-export class DiagnosticLine extends S.Class<DiagnosticLine>('DiagnosticLine')({
+export class DiagnosticLine extends S.Class<DiagnosticLine, { readonly brand: unique symbol }>('DiagnosticLine')({
   fileName: S.optional(SourceFileSchema),
   position: S.String,
   severity: DiagnosticSeveritySchema,
@@ -36,13 +36,13 @@ export interface NodeDecodedShape {
   readonly children: readonly NodeDecodedShape[]
 }
 
-export class MutantVerdict extends S.Class<MutantVerdict>('MutantVerdict')({
+export class MutantVerdict extends S.Class<MutantVerdict, { readonly brand: unique symbol }>('MutantVerdict')({
   id: Mutant.MutantId,
   diagnostics: S.Array(DiagnosticLine),
   tce: S.optional(TceOutcome),
 }) {}
 
-export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
+export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput, { readonly brand: unique symbol }>()(
   'CheckMutantsInput',
   {
     mutants: S.Array(Checker.CheckerMutantWire),

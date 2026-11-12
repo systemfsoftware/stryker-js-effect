@@ -12,7 +12,7 @@ import {
   ProgressReportCommand,
   type ProgressState,
   renderProgressReport,
-} from '../render-progress-report.workflow.js'
+} from '../Reporter/render-progress-report.workflow.js'
 import { metricsResultFromFiles } from '../reporting/metrics-from-report.js'
 
 const countArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))

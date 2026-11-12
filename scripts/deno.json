@@ -3,6 +3,22 @@
     "strict": true,
     "noImplicitOverride": true
   },
+  "permissions": {
+    "default": {
+      "read": [
+        "..",
+        "/tmp"
+      ],
+      "write": [
+        "/tmp"
+      ],
+      "env": true,
+      "run": [
+        "git",
+        "../node_modules/.bin/turbo"
+      ]
+    }
+  },
   "minimumDependencyAge": {
     "age": "P1D"
   },
@@ -12,6 +28,7 @@
     "@std/encoding/hex": "jsr:@std/encoding@1/hex",
     "@std/fs/ensure-dir": "jsr:@std/fs@1/ensure-dir",
     "@std/path": "jsr:@std/path@1",
+    "effect/": "npm:/effect@4.0.0/",
     "fast-check": "npm:fast-check@4.9.0"
   }
 }

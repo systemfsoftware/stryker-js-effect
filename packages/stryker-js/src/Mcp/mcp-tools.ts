@@ -7,6 +7,7 @@ import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 
+import { EmptyDirectory } from '../empty-directory.service.js'
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { GitDiff } from '../git-diff.service.js'
 import { SourceParser } from '../source-parser.service.js'
@@ -21,6 +22,7 @@ const engineDependencies = [
   Path.Path,
   Stdio.Stdio,
   ChildProcessSpawner.ChildProcessSpawner,
+  EmptyDirectory,
   GitDiff,
   SourceParser,
   WorkerLauncher,

@@ -80,7 +80,10 @@ const runOnce = (root: string): Effect.Effect<RunRead, never, never> =>
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
-    const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
+    const runLayer = Layer.merge(
+      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(root), queue), ports),
+      ports,
+    )
     yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root), targetMutatePatterns: undefined })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.orDie)

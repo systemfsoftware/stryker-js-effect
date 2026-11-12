@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -209,7 +209,7 @@ const digestOf = (
       const runtime = yield* CheckerRuntime
       const checker = yield* Effect.orDie(runtime.checker)
       return String(yield* Effect.orDie(checker.digest(scope)))
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
 const digestOutcomeOf = (
@@ -876,6 +876,30 @@ Feature('Identifying the TypeScript program and configuration a checker resolves
         ),
         Then('the config digest moves')((s, expect) =>
           expect({ moved: s.observed.before !== s.observed.after }).toEqual({ moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'changing the importerCheck option moves the digest while repeating one value keeps it',
+      Gherkin.Do.pipe(
+        Given('one program digested under both importerCheck values and under one of them twice')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const always = yield* digestOf(workspace.directory, { importerCheck: 'always' })
+                const locationRule = yield* digestOf(workspace.directory, { importerCheck: 'location-rule' })
+                const alwaysAgain = yield* digestOf(workspace.directory, { importerCheck: 'always' })
+                return { always, locationRule, alwaysAgain }
+              })
+            ),
+        ),
+        Then('the two values differ and the repeated value agrees with itself')((s, expect) =>
+          expect({
+            moved: s.observed.always !== s.observed.locationRule,
+            stable: s.observed.always === s.observed.alwaysAgain,
+          }).toEqual({ moved: true, stable: true })
         ),
       ),
     )

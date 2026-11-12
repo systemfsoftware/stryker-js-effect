@@ -6,7 +6,8 @@ import * as Predicate from 'effect/Predicate'
 import { cloneNode, type Program, type Statement } from './Ast.handle.js'
 import type { SpannedComment } from './Ast.schema.js'
 import { InstrumenterContext } from './InstrumentContext.schema.js'
-import { type ParseFailed, parseWithOxc } from './Parser.service.js'
+import { parseWithOxc } from './Parser.js'
+import type { ParseFailed } from './Parser.schema.js'
 
 interface LocatedComment extends SpannedComment {
   readonly loc?: {

@@ -12,25 +12,31 @@ const SKIPPED_IDS_IN_WARNING = 5
 const SkipWarningTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SkipWarning')
 type SkipWarningTypeId = typeof SkipWarningTypeId
 
-export class WarnSkippedMutantsCommand extends S.TaggedClass<WarnSkippedMutantsCommand>()('WarnSkippedMutantsCommand', {
-  checkerName: S.String,
-  skipped: S.Array(UndescribableMutant),
-}) {
+export class WarnSkippedMutantsCommand
+  extends S.TaggedClass<WarnSkippedMutantsCommand, { readonly brand: unique symbol }>()('WarnSkippedMutantsCommand', {
+    checkerName: S.String,
+    skipped: S.Array(UndescribableMutant),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     checkerName: 'stryker.checker.name',
   } as const
 }
 
-export class NoMutantSkipped extends S.TaggedClass<NoMutantSkipped>()('NoMutantSkipped', {}) {
+export class NoMutantSkipped
+  extends S.TaggedClass<NoMutantSkipped, { readonly brand: unique symbol }>()('NoMutantSkipped', {})
+{
   readonly [SkipWarningTypeId] = SkipWarningTypeId
 }
 
 const SkippedCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 
-export class MutantsSkippedWarned extends S.TaggedClass<MutantsSkippedWarned>()('MutantsSkippedWarned', {
-  skipped: SkippedCount,
-  warning: S.String,
-}) {
+export class MutantsSkippedWarned
+  extends S.TaggedClass<MutantsSkippedWarned, { readonly brand: unique symbol }>()('MutantsSkippedWarned', {
+    skipped: SkippedCount,
+    warning: S.String,
+  })
+{
   readonly [SkipWarningTypeId] = SkipWarningTypeId
 }
 

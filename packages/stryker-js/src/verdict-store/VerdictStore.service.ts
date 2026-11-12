@@ -1,4 +1,4 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 
@@ -11,6 +11,8 @@ export interface VerdictStoreShape {
   readonly list: (mutantId: Mutant.MutantId) => Effect.Effect<ListOutcome>
   readonly killingTests: (mutantId: Mutant.MutantId) => Effect.Effect<ReadonlyArray<string>>
 }
+
+export type S3VerdictStoreOptions = Options.S3VerdictStoreOptions
 
 export class VerdictStore extends Context.Service<VerdictStore, VerdictStoreShape>()(
   '@systemfsoftware/stryker-js/verdict-store/VerdictStore.service/VerdictStore',

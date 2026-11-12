@@ -5,7 +5,6 @@ import {
   Cache,
   Config,
   Context,
-  Crypto,
   Effect,
   FileSystem,
   Layer,
@@ -18,7 +17,8 @@ import {
   Scope,
   Stream,
 } from 'effect'
-import { Hex } from 'effect/encoding'
+import * as Digest from 'effect/crypto/Digest'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
@@ -52,13 +52,14 @@ import { FixtureKeys, MalformedClosure, TurboClosure, TurboDryRun } from './bake
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
-import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
+import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.js'
 import * as Warm from './warm-sandbox.handle.js'
 
 export type BakePlatform =
   | GuestJobs
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
+  | SecureRandom.SecureRandom
   | FileSystem.FileSystem
   | Path.Path
   | Readiness.HostProber
@@ -341,8 +342,8 @@ const leaseEntry = (directory: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const crypto = yield* Crypto.Crypto
-    const id = yield* crypto.randomUUIDv4
+    const secureRandom = yield* SecureRandom.SecureRandom
+    const id = yield* secureRandom.uuidV4()
     const file = path.join(directory, `${LEASE_PREFIX}${id}`)
     const pending = path.join(directory, `${LEASE_PENDING_PREFIX}${id}`)
     yield* fs.writeFileString(pending, String(Date.now()))
@@ -429,7 +430,7 @@ const canonicalFile = (file: FileBytes): FileBytes => ({
   bytes: canonicalBytes(file.relativePath, file.bytes),
 })
 
-const hashOf = (crypto: Crypto.Crypto, bytes: Uint8Array) => Effect.map(crypto.digest('SHA-256', bytes), Hex.encode)
+const hashOf = (digest: Digest.Digest['Service'], bytes: Uint8Array) => digest.digestHex(Digest.sha256, bytes)
 
 const keysRecordOf = (fixtures: ReadonlyArray<BakedFixture>): FixtureKeys =>
   Object.fromEntries(fixtures.map((fixture) => [fixture.fixtureId, fixture.key]))
@@ -672,13 +673,13 @@ const deriveBakeKeys = (
   fixtureInputs: ReadonlyArray<FixtureInput>,
 ): Effect.Effect<DerivedBakeKeys, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
-    const packsKey = yield* hashOf(crypto, packsKeyBytes(packsInput))
+    const digest = yield* Digest.Digest
+    const packsKey = yield* hashOf(digest, packsKeyBytes(packsInput))
     const fixtures = yield* Effect.forEach(
       fixtureInputs,
       (input) =>
         Effect.map(
-          hashOf(crypto, fixtureKeyBytes(input)),
+          hashOf(digest, fixtureKeyBytes(input)),
           (key): BakedFixture => ({ fixtureId: input.fixtureId, key }),
         ),
       { concurrency: UNPACK_CONCURRENCY },
@@ -711,22 +712,19 @@ const bakeMissing = (
     const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const crypto = yield* Crypto.Crypto
+    const secureRandom = yield* SecureRandom.SecureRandom
     const jobs = yield* GuestJobs
-    const stagingDir = `${root}${STAGING_MARKER}${yield* crypto.randomUUIDv4}`
+    const stagingDir = `${root}${STAGING_MARKER}${yield* secureRandom.uuidV4()}`
     yield* Effect.gen(function*() {
       yield* fs.remove(stagingDir, { recursive: true, force: true })
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
       yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs, closure)
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
-      yield* jobs.requireCleanExit(
-        STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures'], [
-          { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
-          { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
-        ]),
-      )
+      yield* jobs.requireCleanExit(STEP_BAKE, ['sh', '-c', bakeScript, 'bake-fixtures'], [
+        { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
+        { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
+      ])
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),

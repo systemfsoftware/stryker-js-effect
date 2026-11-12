@@ -9,6 +9,7 @@ import {
   type BenchSummary,
   type MeasuredSideCell,
   PhaseVerdict,
+  Regression,
   SideCell,
   statisticsOf,
   Workload,
@@ -17,6 +18,9 @@ import { BenchRunsInvalid, summarizeBench, SummarizeBenchCommand } from '../summ
 
 const NOT_RECORDED: RunEvent.CheckDuration = { _tag: 'not-recorded' }
 const NOT_RUN: RunEvent.CheckDuration = { _tag: 'not-run' }
+
+const isPhaseRegressed = S.is(Regression.cases.PhaseRegressed)
+const isNoLegRegressed = (summary: BenchSummary): boolean => S.is(Regression.cases.NoLegRegressed)(summary.regression)
 const REPORTING_MEASURED: RunEvent.ReportingDuration = { _tag: 'measured', ms: 0 }
 const REPORTING_NOT_RECORDED: RunEvent.ReportingDuration = { _tag: 'not-recorded' }
 
@@ -79,6 +83,19 @@ const runsWithChecks = (aSamples: ReadonlyArray<number>, bSamples: ReadonlyArray
   runFrom('B', 3, bSamples[3], { check: { _tag: 'measured', ms: bSamples[3] } }),
 ]
 
+const checkMeasured = (ms: number): RunEvent.CheckDuration => ({ _tag: 'measured', ms })
+
+const fourRunsWithChecks = (
+  side: 'A' | 'B',
+  mutationSamples: ReadonlyArray<number>,
+  checkSamples: ReadonlyArray<number>,
+): ReadonlyArray<BenchRunMeasured> => [
+  runFrom(side, 0, mutationSamples[0], { check: checkMeasured(checkSamples[0]) }),
+  runFrom(side, 1, mutationSamples[1], { check: checkMeasured(checkSamples[1]) }),
+  runFrom(side, 2, mutationSamples[2], { check: checkMeasured(checkSamples[2]) }),
+  runFrom(side, 3, mutationSamples[3], { check: checkMeasured(checkSamples[3]) }),
+]
+
 const allNotRunA = (aSamples: ReadonlyArray<number>): ReadonlyArray<BenchRun> =>
   fourRuns('A', aSamples, { check: NOT_RUN })
 
@@ -128,8 +145,16 @@ const positives = (values: ReadonlyArray<number>): ReadonlyArray<number> => valu
 
 type Subject = (command: SummarizeBenchCommand) => Result.Result<BenchSummary, BenchRunsInvalid>
 
+const MAIN_REF = 'refs/heads/main'
+
+const slowedOnB = (rawA: ReadonlyArray<number>, rawExtra: number): ReadonlyArray<BenchRun> => {
+  const a = positives(rawA)
+  const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
+  return runsOf(a, a.map((sample) => sample + gap))
+}
+
 const summaryOf = (subject: Subject, runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(subject(SummarizeBenchCommand.make({ runs })))
+  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', baseSha: 'base', ref: MAIN_REF, runs })))
 
 const rowOf = (summary: BenchSummary, phase: string) => {
   const row = summary.projects[0].rows.find((candidate) => candidate.phase === phase)
@@ -220,15 +245,15 @@ describe('summarizeBench', () => {
   )
 
   it.prop(
-    '∀abk_EverySampleScaled_≡VerdictKeptAndDeltaScaled',
+    '∀abk_EverySampleScaledOnA10MsGrid_≡VerdictKeptAndDeltaScaled',
     {
       of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int],
       subject: summarizeBench,
     },
     (subject, [rawA, rawB, rawScale]) => {
       const scale = Math.abs(rawScale) + 1
-      const a = positives(rawA)
-      const b = positives(rawB)
+      const a = positives(rawA).map((sample) => sample * 20)
+      const b = positives(rawB).map((sample) => sample * 20)
       const base = rowOf(summaryOf(subject, runsOf(a, b)), 'mutation-test').verdict
       const scaled = rowOf(
         summaryOf(subject, runsOf(a.map((sample) => sample * scale), b.map((sample) => sample * scale))),
@@ -325,7 +350,8 @@ describe('summarizeBench', () => {
     (subject, [rawA, rawB, reason, mask]) => {
       const runs = withInvalidA(positives(rawA), positives(rawB), mask, reason)
       const expected = labelsOf(runs.filter((run) => S.is(BenchRunInvalid)(run)))
-      return Result.match(subject(SummarizeBenchCommand.make({ runs })), {
+      const command = SummarizeBenchCommand.make({ sha: 'sha', baseSha: 'base', ref: MAIN_REF, runs })
+      return Result.match(subject(command), {
         onFailure: (failure) => S.is(BenchRunsInvalid)(failure) && labelsOf(failure.runs) === expected,
         onSuccess: () => expected.length === 0,
       })
@@ -397,5 +423,82 @@ describe('summarizeBench', () => {
         summary.projects[0].entry === 'entry' &&
         phases === 'prepare,instrument,check,dry-run,mutation-test,reporting,total'
     },
+  )
+
+  it.prop(
+    '∀agps_SeparatedSlowdownOnMain_≡BothShasTheTotalFirstThenThePhaseAndTheRevertNextAction',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString, S.NonEmptyString],
+      subject: summarizeBench,
+    },
+    (subject, [rawA, rawExtra, baseSha, sha]) => {
+      const runs = slowedOnB(rawA, rawExtra)
+      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, baseSha, ref: MAIN_REF, runs })))
+      const regression = summary.regression
+      return isPhaseRegressed(regression) &&
+        regression.sha === sha &&
+        regression.baseSha === baseSha &&
+        regression.metrics.map((metric) => `${metric.corpus}/${metric.entry}/${metric.phase}`).join(',') ===
+          'repo/entry/total,repo/entry/mutation-test' &&
+        regression.metrics[1].deltaMs === deltaOf(rowOf(summary, 'mutation-test').verdict) &&
+        regression.nextAction === 'root opens a revert PR of the culprit or a root-fix P0'
+    },
+  )
+
+  it.prop(
+    '∀aeb_SeparatedSlowdownDispatchedOnABranch_≡SpeedEvidenceOnlyNextAction',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString], subject: summarizeBench },
+    (subject, [rawA, rawExtra, branch]) => {
+      const ref = `refs/heads/stryker/${branch}`
+      const command = SummarizeBenchCommand.make({
+        sha: 'sha',
+        baseSha: 'base',
+        ref,
+        runs: slowedOnB(rawA, rawExtra),
+      })
+      const regression = Result.getOrThrow(subject(command)).regression
+      return isPhaseRegressed(regression) &&
+        regression.nextAction === `dispatched on ${ref}: speed evidence only, no revert`
+    },
+  )
+
+  it.prop(
+    '∀acg_SeparatedCheckSlowdownWithAnUnchangedTotal_≡CheckRegressedButNoRegression',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int],
+      subject: summarizeBench,
+    },
+    (subject, [rawMutation, rawCheck, rawExtra]) => {
+      const mutation = positives(rawMutation)
+      const check = positives(rawCheck)
+      const gap = Math.max(Math.max(...check) - Math.min(...check), Math.max(...check) * 0.1) + Math.abs(rawExtra) + 10
+      const runs: ReadonlyArray<BenchRun> = [
+        ...fourRunsWithChecks('A', mutation, check),
+        ...fourRunsWithChecks('B', mutation, check.map((sample) => sample + gap)),
+      ]
+      const summary = summaryOf(subject, runs)
+      return isRegressed(rowOf(summary, 'check').verdict) &&
+        isNoSignal(rowOf(summary, 'total').verdict) &&
+        isNoLegRegressed(summary)
+    },
+  )
+
+  it.prop(
+    '∀ad_SeparatedByUnderTenMs_≡NoSignalAndNoRegression',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int])], subject: summarizeBench },
+    (subject, [rawA]) => {
+      const a = rawA.map((sample) => Math.abs(sample) % 5)
+      const runs = runsOf(a, a.map((sample) => sample + 5))
+      const summary = summaryOf(subject, runs)
+      return isNoSignal(rowOf(summary, 'mutation-test').verdict) &&
+        isNoSignal(rowOf(summary, 'total').verdict) &&
+        isNoLegRegressed(summary)
+    },
+  )
+
+  it.prop(
+    '∀a_IdenticalSides_≡NoRegression',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int])], subject: summarizeBench },
+    (subject, [rawA]) => isNoLegRegressed(summaryOf(subject, runsOf(positives(rawA), positives(rawA)))),
   )
 })

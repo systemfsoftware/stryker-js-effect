@@ -6,6 +6,7 @@ import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
+import type * as Rpc from 'effect/rpc/Rpc'
 import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/rpc/RpcGroup'
@@ -37,7 +38,8 @@ const checkerRpcFailures = Metric.counter('stryker.checker.rpc_failures', {
 })
 
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
-type CheckerClient = RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>
+type EngineCalledRpcs = Rpc.ExtractTag<CheckerRpcsUnion, 'check' | 'group' | 'digest'>
+type CheckerClient = RpcClient.RpcClient<EngineCalledRpcs, RpcClientError>
 
 const CheckerHandle = Handle.make<Record<never, never>, CheckerClient>()(TypeId)
 
@@ -106,7 +108,7 @@ const recordCheckerCall = <A>(
         Match.exhaustive,
       )
     ),
-    Effect.tap(([duration]) => Metric.update(checkerDuration, duration)),
+    Effect.trackSuccesses(checkerDuration, ([duration]) => duration),
     Effect.map(([, result]) => result),
     Effect.mapError((error) =>
       Match.value(error).pipe(

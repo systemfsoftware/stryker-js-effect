@@ -3,18 +3,22 @@ import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class PruneStaleEntriesCommand extends S.TaggedClass<PruneStaleEntriesCommand>()('PruneStaleEntriesCommand', {
-  entries: S.Array(S.String),
-  keep: S.String,
-  leased: S.Array(S.String),
-}) {
+export class PruneStaleEntriesCommand
+  extends S.TaggedClass<PruneStaleEntriesCommand, { readonly brand: unique symbol }>()('PruneStaleEntriesCommand', {
+    entries: S.Array(S.String),
+    keep: S.String,
+    leased: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const PrunableEntryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/PrunableEntry')
 type PrunableEntryTypeId = typeof PrunableEntryTypeId
 
-export class PrunableEntry extends S.TaggedClass<PrunableEntry>()('PrunableEntry', { name: S.String }) {
+export class PrunableEntry
+  extends S.TaggedClass<PrunableEntry, { readonly brand: unique symbol }>()('PrunableEntry', { name: S.String })
+{
   readonly [PrunableEntryTypeId] = PrunableEntryTypeId
 }
 

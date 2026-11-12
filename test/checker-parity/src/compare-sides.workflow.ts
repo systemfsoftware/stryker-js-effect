@@ -2,28 +2,44 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   CheckCall,
   Counts,
   Gates,
+  NonNegativeInt,
   ParityLine,
   PhaseLine,
   ProjectBootFailed,
   ProjectSkipped,
   Side,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  TypeQueryServers,
   UnitOverBudget,
   Verdict,
   VerdictStatus,
 } from './Parity.schema.js'
+import {
+  SlowerThanMain,
+  speedGate,
+  SpeedGateCommand,
+  type SpeedGateDecision,
+  SpeedGateUnmeasured,
+} from './speed-gate.workflow.js'
 
 const SCHEMA_VERSION = S.Literal(1)
 const DISPLAY_LIMIT = 50
+
+const speedGateWorkflow = speedGate
+const speedGateCommand = SpeedGateCommand
 
 export const ObservedVerdict = S.Struct({
   status: VerdictStatus,
@@ -31,19 +47,21 @@ export const ObservedVerdict = S.Struct({
 })
 export type ObservedVerdict = typeof ObservedVerdict.Type
 
-export class VerdictMismatch extends S.TaggedClass<VerdictMismatch>()('VerdictMismatch', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('verdict-mismatch'),
-  nextAction: S.String,
-  project: S.String,
-  mutantId: S.String,
-  fileName: S.String,
-  line: S.Int,
-  main: S.NullOr(ObservedVerdict),
-  branch: S.NullOr(ObservedVerdict),
-}) {}
+export class VerdictMismatch
+  extends S.TaggedClass<VerdictMismatch, { readonly brand: unique symbol }>()('VerdictMismatch', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('verdict-mismatch'),
+    nextAction: S.String,
+    project: S.String,
+    mutantId: S.String,
+    fileName: S.String,
+    line: S.Int,
+    main: S.NullOr(ObservedVerdict),
+    branch: S.NullOr(ObservedVerdict),
+  })
+{}
 
-export class BootAsymmetry extends S.TaggedClass<BootAsymmetry>()('BootAsymmetry', {
+export class BootAsymmetry extends S.TaggedClass<BootAsymmetry, { readonly brand: unique symbol }>()('BootAsymmetry', {
   schemaVersion: SCHEMA_VERSION,
   code: S.Literal('boot-asymmetry'),
   nextAction: S.String,
@@ -51,58 +69,83 @@ export class BootAsymmetry extends S.TaggedClass<BootAsymmetry>()('BootAsymmetry
   failedSide: Side,
 }) {}
 
-export class ZeroSnapshotUpdates extends S.TaggedClass<ZeroSnapshotUpdates>()('ZeroSnapshotUpdates', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('zero-snapshot-updates'),
-  nextAction: S.String,
-  project: S.String,
-}) {}
-
-export class TelemetryMissingViolation extends S.TaggedClass<TelemetryMissingViolation>()(
-  'TelemetryMissingViolation',
-  {
+export class ZeroSnapshotUpdates
+  extends S.TaggedClass<ZeroSnapshotUpdates, { readonly brand: unique symbol }>()('ZeroSnapshotUpdates', {
     schemaVersion: SCHEMA_VERSION,
-    code: S.Literal('telemetry-missing'),
+    code: S.Literal('zero-snapshot-updates'),
     nextAction: S.String,
-    side: Side,
     project: S.String,
-    expectedSpans: S.Int,
-    receivedSpans: S.Int,
-  },
-) {}
+  })
+{}
 
-export class ZeroShortcuts extends S.TaggedClass<ZeroShortcuts>()('ZeroShortcuts', {
+export class TelemetryMissingViolation
+  extends S.TaggedClass<TelemetryMissingViolation, { readonly brand: unique symbol }>()(
+    'TelemetryMissingViolation',
+    {
+      schemaVersion: SCHEMA_VERSION,
+      code: S.Literal('telemetry-missing'),
+      nextAction: S.String,
+      side: Side,
+      project: S.String,
+      expectedSpans: S.Int,
+      receivedSpans: S.Int,
+    },
+  )
+{}
+
+export class ZeroShortcuts extends S.TaggedClass<ZeroShortcuts, { readonly brand: unique symbol }>()('ZeroShortcuts', {
   schemaVersion: SCHEMA_VERSION,
   code: S.Literal('zero-shortcuts'),
   nextAction: S.String,
   scope: S.Literals(['overall', 'isolatedDeclarations']),
 }) {}
 
-export class SlowerThanMain extends S.TaggedClass<SlowerThanMain>()('SlowerThanMain', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('slower-than-main'),
-  nextAction: S.String,
-  branchMs: S.Finite,
-  mainMs: S.Finite,
-}) {}
+export class NothingCompared
+  extends S.TaggedClass<NothingCompared, { readonly brand: unique symbol }>()('NothingCompared', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('nothing-compared'),
+    nextAction: S.String,
+    projectCount: S.Int,
+    skippedCount: S.Int,
+  })
+{}
 
-export class NothingCompared extends S.TaggedClass<NothingCompared>()('NothingCompared', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('nothing-compared'),
-  nextAction: S.String,
-  projectCount: S.Int,
-  skippedCount: S.Int,
-}) {}
+export class WrongNotAssignable
+  extends S.TaggedClass<WrongNotAssignable, { readonly brand: unique symbol }>()('WrongNotAssignable', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('wrong-not-assignable'),
+    nextAction: S.String,
+    project: S.String,
+    mutantId: S.String,
+    fileName: S.String,
+    line: S.Int,
+    column: S.Int,
+    candidate: S.String,
+    candidateType: S.String,
+    contextualType: S.String,
+    verdict: VerdictStatus,
+  })
+{}
 
-export class UnitOverBudgetViolation extends S.TaggedClass<UnitOverBudgetViolation>()('UnitOverBudgetViolation', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('unit-over-budget'),
-  nextAction: S.String,
-  side: Side,
-  project: S.String,
-  fileName: S.String,
-  mutantIds: S.Array(S.String),
-}) {}
+export class ZeroNotAssignable
+  extends S.TaggedClass<ZeroNotAssignable, { readonly brand: unique symbol }>()('ZeroNotAssignable', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('zero-not-assignable'),
+    nextAction: S.String,
+  })
+{}
+
+export class UnitOverBudgetViolation
+  extends S.TaggedClass<UnitOverBudgetViolation, { readonly brand: unique symbol }>()('UnitOverBudgetViolation', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('unit-over-budget'),
+    nextAction: S.String,
+    side: Side,
+    project: S.String,
+    fileName: S.String,
+    mutantIds: S.Array(S.String),
+  })
+{}
 
 export const Violation = S.Union([
   VerdictMismatch,
@@ -112,6 +155,8 @@ export const Violation = S.Union([
   ZeroShortcuts,
   SlowerThanMain,
   NothingCompared,
+  WrongNotAssignable,
+  ZeroNotAssignable,
   UnitOverBudgetViolation,
 ])
 export type Violation = typeof Violation.Type
@@ -135,6 +180,47 @@ export type SkippedProject = typeof SkippedProject.Type
 export const ShortcutCounts = S.Struct({ overall: S.Int, isolatedDeclarations: S.Int })
 export type ShortcutCounts = typeof ShortcutCounts.Type
 
+export const TypeQueryAnswerCounts = S.Struct({
+  assignable: NonNegativeInt,
+  notAssignable: NonNegativeInt,
+  unknown: NonNegativeInt,
+})
+export type TypeQueryAnswerCounts = typeof TypeQueryAnswerCounts.Type
+
+export const TypeQueryAnswerCountsBySiteKind = S.Struct({
+  expression: TypeQueryAnswerCounts,
+  'function-body': TypeQueryAnswerCounts,
+})
+export type TypeQueryAnswerCountsBySiteKind = typeof TypeQueryAnswerCountsBySiteKind.Type
+
+export const TypeQueryUnknownCounts = S.Record(TypeQuery.UnknownReason, NonNegativeInt)
+export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
+
+export const TypeQueryProjectShare = S.Struct({
+  project: S.String,
+  queried: NonNegativeInt,
+  assignable: NonNegativeInt,
+  notAssignable: NonNegativeInt,
+  unknown: NonNegativeInt,
+  unknownReasons: TypeQueryUnknownCounts,
+  refusedFiles: NonNegativeInt,
+  refusedMutants: NonNegativeInt,
+})
+export type TypeQueryProjectShare = typeof TypeQueryProjectShare.Type
+
+export const TypeQuerySummary = S.Struct({
+  queried: NonNegativeInt,
+  answers: TypeQueryAnswerCounts,
+  answersBySiteKind: TypeQueryAnswerCountsBySiteKind,
+  unknownReasons: TypeQueryUnknownCounts,
+  notAssignable: NonNegativeInt,
+  compileErrorAnsweredNotAssignable: NonNegativeInt,
+  compileErrorTotal: NonNegativeInt,
+  projects: S.Array(TypeQueryProjectShare),
+  refusedFiles: NonNegativeInt,
+})
+export type TypeQuerySummary = typeof TypeQuerySummary.Type
+
 export const ComparisonSummary = S.Struct({
   schemaVersion: SCHEMA_VERSION,
   projectCount: S.Int,
@@ -144,25 +230,28 @@ export const ComparisonSummary = S.Struct({
   main: SideTotals,
   branch: SideTotals,
   shortcutCount: ShortcutCounts,
+  typeQuery: TypeQuerySummary,
 })
 export type ComparisonSummary = typeof ComparisonSummary.Type
 
 const ComparisonTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/CompareSides')
 type ComparisonTypeId = typeof ComparisonTypeId
 
-export class ParityHolds extends S.TaggedClass<ParityHolds>()('ParityHolds', {
+export class ParityHolds extends S.TaggedClass<ParityHolds, { readonly brand: unique symbol }>()('ParityHolds', {
   schemaVersion: SCHEMA_VERSION,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
 
-export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', {
+export class ParityBroken extends S.TaggedClass<ParityBroken, { readonly brand: unique symbol }>()('ParityBroken', {
   schemaVersion: SCHEMA_VERSION,
   violations: S.Array(Violation),
   displayed: S.Array(Violation),
   omittedCount: S.Int,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
@@ -170,11 +259,13 @@ export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', 
 export const ComparisonDecision = S.Union([ParityHolds, ParityBroken])
 export type ComparisonDecision = typeof ComparisonDecision.Type
 
-export class CompareSidesCommand extends S.TaggedClass<CompareSidesCommand>()('CompareSidesCommand', {
-  lines: S.Array(ParityLine),
-  gates: Gates,
-  isolatedDeclarationsProject: S.String,
-}) {
+export class CompareSidesCommand
+  extends S.TaggedClass<CompareSidesCommand, { readonly brand: unique symbol }>()('CompareSidesCommand', {
+    lines: S.Array(ParityLine),
+    gates: Gates,
+    isolatedDeclarationsProject: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -203,11 +294,19 @@ const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
     Match.exhaustive,
   )
 
+const isTypeQueryServers = S.is(TypeQueryServers)
+
+/**
+ * Every line except the decode-only legacy {@link TypeQueryServers} row: no current producer emits it, so a
+ * stale one must neither invent a project nor change what a project's own lines say.
+ */
+const isCurrentLine = (line: ParityLine): boolean => !isTypeQueryServers(line)
+
 const projectsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<string> =>
-  Arr.dedupe(lines.map((line) => line.project))
+  Arr.dedupe(lines.filter(isCurrentLine).map((line) => line.project))
 
 const linesOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<ParityLine> =>
-  lines.filter((line) => line.project === project)
+  lines.filter((line) => Boolean.every([line.project === project, isCurrentLine(line)]))
 
 const verdictsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Verdict> =>
   lines.filter((line): line is Verdict => isVerdict(line))
@@ -224,22 +323,6 @@ const verdictsOf = (
   side: Side,
 ): ReadonlyArray<Verdict> =>
   verdictsIn(lines).filter((verdict) => Boolean.every([verdict.project === project, verdict.side === side]))
-
-const phaseLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<PhaseLine> =>
-  lines.filter((line): line is PhaseLine => isPhaseLine(line))
-
-const phaseLinesOf = (
-  lines: ReadonlyArray<ParityLine>,
-  project: string,
-  side: Side,
-): ReadonlyArray<PhaseLine> =>
-  phaseLinesIn(lines).filter((line) => Boolean.every([line.project === project, line.side === side, !line.cached]))
-
-const phaseMsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
-  phaseLinesOf(lines, project, side).reduce((total, line) => total + line.ms, 0)
-
-const measured = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): boolean =>
-  phaseLinesOf(lines, project, side).length > 0
 
 const bootFailuresOf = (
   lines: ReadonlyArray<ParityLine>,
@@ -427,7 +510,7 @@ const shortcutNextAction = (scope: 'overall' | 'isolatedDeclarations'): string =
     Match.when('overall', () =>
       `Read the branch Counts in the shard NDJSON: no mutant was decided by the importer shortcut; confirm the shortcut is enabled and typescript.importer_shortcut.count is exported.`),
     Match.when('isolatedDeclarations', () =>
-      `Read the isolatedDeclarations fixture's branch Counts in the shard NDJSON: its importerShortcuts is 0; the fixture must exercise an importer re-check path.`),
+      `Read the isolatedDeclarations fixture's branch Counts in the shard NDJSON: its importerShortcuts is 0, yet the fixture's body-edit mutants should take the importer shortcut. Confirm the shortcut is enabled and the fixture is still in scope on the leg.`),
     Match.exhaustive,
   )
 
@@ -457,32 +540,6 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
       }),
     ),
   ]
-}
-
-const measuredOnBoth = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): ReadonlyArray<string> =>
-  projects.filter((project) => Boolean.every([measured(lines, project, 'main'), measured(lines, project, 'branch')]))
-
-const speedSum = (
-  lines: ReadonlyArray<ParityLine>,
-  projects: ReadonlyArray<string>,
-  side: Side,
-): number => projects.reduce((total, project) => total + phaseMsOf(lines, project, side), 0)
-
-const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerThanMain> => {
-  const compared = measuredOnBoth(command.lines, projectsOf(command.lines))
-  const mainMs = speedSum(command.lines, compared, 'main')
-  const branchMs = speedSum(command.lines, compared, 'branch')
-  return when(
-    Boolean.every([command.gates.speed, compared.length > 0, branchMs >= mainMs]),
-    SlowerThanMain.make({
-      schemaVersion: 1,
-      code: 'slower-than-main',
-      nextAction:
-        `Compare the phase lines for projects measured on both sides in the shard NDJSON: branch ${branchMs} ms is not strictly below main ${mainMs} ms. Profile the branch checker's check phase.`,
-      branchMs,
-      mainMs,
-    }),
-  )
 }
 
 const nonCachedCheckCalls = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
@@ -542,7 +599,7 @@ const perMutant = (value: number, mutants: number): number =>
 const sideTotals = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
-  measuredProjects: ReadonlyArray<string>,
+  phaseMs: number,
   side: Side,
 ): SideTotals => {
   const mutants = mutatedCount(lines, side)
@@ -560,7 +617,7 @@ const sideTotals = (
     side,
     mutants,
     checkCalls: checkCallCount(lines, side),
-    phaseMs: speedSum(lines, measuredProjects, side),
+    phaseMs,
     snapshotUpdates,
     emitBuilds,
     snapshotUpdatesPerMutant: perMutant(snapshotUpdates, mutants),
@@ -606,17 +663,56 @@ const skippedProjects = (
 const excludedCachedProjectCount = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): number =>
   projects.filter((project) => linesOf(lines, project).some(isCachedLine)).length
 
-const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
+const speedGateOf = (command: CompareSidesCommand): SpeedGateDecision =>
+  Result.getOrElse(
+    speedGateWorkflow(
+      speedGateCommand.make({
+        lines: command.lines,
+        projects: projectsOf(command.lines),
+        speedGateEnabled: command.gates.speed,
+      }),
+    ),
+    (neverError) => neverError,
+  )
+
+interface SpeedGateReadout {
+  readonly measuredProjects: ReadonlyArray<string>
+  readonly mainMs: number
+  readonly branchMs: number
+  readonly slowerThanMain: ReadonlyArray<SlowerThanMain>
+  readonly unmeasured: ReadonlyArray<SpeedGateUnmeasured>
+}
+
+const speedGateReadoutOf = (command: CompareSidesCommand): SpeedGateReadout =>
+  Match.value(speedGateOf(command)).pipe(
+    Match.withReturnType<SpeedGateReadout>(),
+    Match.tag('SpeedGateEvaluated', (evaluated) => ({
+      measuredProjects: evaluated.measuredProjects,
+      mainMs: evaluated.mainMs,
+      branchMs: evaluated.branchMs,
+      slowerThanMain: evaluated.slowerThanMain,
+      unmeasured: [],
+    })),
+    Match.tag('SpeedGateUnmeasured', (unmeasured) => ({
+      measuredProjects: [],
+      mainMs: 0,
+      branchMs: 0,
+      slowerThanMain: [],
+      unmeasured: [unmeasured],
+    })),
+    Match.exhaustive,
+  )
+
+const summaryOf = (command: CompareSidesCommand, speed: SpeedGateReadout): ComparisonSummary => {
   const projects = projectsOf(command.lines)
-  const measuredProjects = measuredOnBoth(command.lines, projects)
   return {
     schemaVersion: 1,
     projectCount: projects.length,
-    measuredProjectCount: measuredProjects.length,
+    measuredProjectCount: speed.measuredProjects.length,
     excludedCachedProjectCount: excludedCachedProjectCount(command.lines, projects),
     skipped: skippedProjects(command.lines, projects),
-    main: sideTotals(command.lines, projects, measuredProjects, 'main'),
-    branch: sideTotals(command.lines, projects, measuredProjects, 'branch'),
+    main: sideTotals(command.lines, projects, speed.mainMs, 'main'),
+    branch: sideTotals(command.lines, projects, speed.branchMs, 'branch'),
     shortcutCount: {
       overall: sumCounts(command.lines, (counts) => counts.importerShortcuts),
       isolatedDeclarations: sumCounts(
@@ -624,6 +720,7 @@ const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
         (counts) => counts.importerShortcuts,
       ),
     },
+    typeQuery: typeQuerySummaryOf(command.lines, projects),
   }
 }
 
@@ -658,7 +755,166 @@ const nothingComparedViolations = (
     }),
   )
 
-const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
+const isTypeAnswerLine = S.is(TypeAnswerLine)
+const isTypeQueryFileRefused = S.is(TypeQueryFileRefused)
+const isAssignable = S.is(TypeQuery.Assignable)
+const isNotAssignable = S.is(TypeQuery.NotAssignable)
+const isUnknown = S.is(TypeQuery.Unknown)
+
+const typeAnswerLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<TypeAnswerLine> =>
+  lines.filter((line): line is TypeAnswerLine => isTypeAnswerLine(line))
+
+const answerCountsOf = (
+  answers: ReadonlyArray<TypeAnswerLine>,
+): { readonly assignable: number; readonly notAssignable: number; readonly unknown: number } => ({
+  assignable: answers.filter((line) => isAssignable(line.answer)).length,
+  notAssignable: answers.filter((line) => isNotAssignable(line.answer)).length,
+  unknown: answers.filter((line) => isUnknown(line.answer)).length,
+})
+
+const answerCountsBySiteKindOf = (
+  answers: ReadonlyArray<TypeAnswerLine>,
+): TypeQueryAnswerCountsBySiteKind => {
+  const ofKind = (kind: TypeQuery.TypeQuerySiteKind): TypeQueryAnswerCounts =>
+    answerCountsOf(answers.filter((line) => line.siteKind === kind))
+  return { expression: ofKind('expression'), 'function-body': ofKind('function-body') }
+}
+
+const unknownReasonOf = (line: TypeAnswerLine): Option.Option<TypeQuery.UnknownReason> =>
+  Option.map(Option.liftPredicate(line.answer, isUnknown), (answer) => answer.reason)
+
+const unknownReasonsOf = (answers: ReadonlyArray<TypeAnswerLine>): TypeQueryUnknownCounts => {
+  const reasons = Arr.getSomes(answers.map(unknownReasonOf))
+  const count = (reason: TypeQuery.UnknownReason): number => reasons.filter((answered) => answered === reason).length
+  return {
+    'candidate-not-context-free': count('candidate-not-context-free'),
+    'candidate-not-found': count('candidate-not-found'),
+    'site-not-found': count('site-not-found'),
+    'site-not-expression': count('site-not-expression'),
+    'no-contextual-type': count('no-contextual-type'),
+    'error-type': count('error-type'),
+    'instantiable-target': count('instantiable-target'),
+    'overloaded-or-generic-call': count('overloaded-or-generic-call'),
+    'context-not-enforced': count('context-not-enforced'),
+    'site-not-function-body': count('site-not-function-body'),
+    'candidate-not-empty-body': count('candidate-not-empty-body'),
+    'return-type-not-declared': count('return-type-not-declared'),
+    'generator-body': count('generator-body'),
+    'constructor-body': count('constructor-body'),
+    'getter-requires-return': count('getter-requires-return'),
+    'implicit-return-rejected': count('implicit-return-rejected'),
+    'async-return-not-promise': count('async-return-not-promise'),
+  }
+}
+
+const refusedLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<TypeQueryFileRefused> =>
+  lines.filter((line): line is TypeQueryFileRefused => isTypeQueryFileRefused(line))
+
+const projectSharesOf = (
+  lines: ReadonlyArray<ParityLine>,
+  projects: ReadonlyArray<string>,
+): ReadonlyArray<TypeQueryProjectShare> =>
+  projects.map((project) => {
+    const projectLines = linesOf(lines, project)
+    const answers = typeAnswerLinesIn(projectLines)
+    const refused = refusedLinesIn(projectLines)
+    return {
+      project,
+      queried: answers.length,
+      ...answerCountsOf(answers),
+      unknownReasons: unknownReasonsOf(answers),
+      refusedFiles: refused.length,
+      refusedMutants: refused.reduce((total, line) => total + line.mutantCount, 0),
+    }
+  })
+
+const notAssignableKeysOf = (lines: ReadonlyArray<ParityLine>): HashSet.HashSet<string> =>
+  HashSet.fromIterable(
+    typeAnswerLinesIn(lines)
+      .filter((line) => isNotAssignable(line.answer))
+      .map((line) => `${line.project}\u0000${line.mutantId}`),
+  )
+
+const typeQuerySummaryOf = (
+  lines: ReadonlyArray<ParityLine>,
+  projects: ReadonlyArray<string>,
+): TypeQuerySummary => {
+  const answers = typeAnswerLinesIn(lines)
+  const counts = answerCountsOf(answers)
+  const notAssignableKeys = notAssignableKeysOf(lines)
+  const compileErrors = verdictsIn(lines).filter((verdict) =>
+    Boolean.every([verdict.side === 'branch', verdict.status === 'compileError'])
+  )
+  return {
+    queried: answers.length,
+    answers: counts,
+    answersBySiteKind: answerCountsBySiteKindOf(answers),
+    unknownReasons: unknownReasonsOf(answers),
+    notAssignable: counts.notAssignable,
+    compileErrorAnsweredNotAssignable:
+      compileErrors.filter((verdict) => HashSet.has(notAssignableKeys, `${verdict.project}\u0000${verdict.mutantId}`))
+        .length,
+    compileErrorTotal: compileErrors.length,
+    projects: projectSharesOf(lines, projects),
+    refusedFiles: refusedLinesIn(lines).length,
+  }
+}
+
+const branchVerdictsByKey = (lines: ReadonlyArray<ParityLine>): HashMap.HashMap<string, Verdict> =>
+  HashMap.fromIterable(
+    verdictsIn(lines)
+      .filter((verdict) => verdict.side === 'branch')
+      .map((verdict) => [`${verdict.project}\u0000${verdict.mutantId}`, verdict] as const),
+  )
+
+const wrongNotAssignableViolations = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<WrongNotAssignable> => {
+  const branchVerdicts = branchVerdictsByKey(lines)
+  return Arr.getSomes(
+    typeAnswerLinesIn(lines).map((line) =>
+      Option.flatMap(Option.liftPredicate(line.answer, isNotAssignable), (answer) =>
+        Option.map(
+          Option.filter(
+            HashMap.get(branchVerdicts, `${line.project}\u0000${line.mutantId}`),
+            (verdict) => verdict.status !== 'compileError',
+          ),
+          (verdict) =>
+            WrongNotAssignable.make({
+              schemaVersion: 1,
+              code: 'wrong-not-assignable',
+              nextAction:
+                `Compare the TypeAnswerLine and Verdict rows for ${line.mutantId} in ${line.fileName} (project ${line.project}) in the shard NDJSON: the branch query answered TypeQuery.NotAssignable but the checker verdict is ${verdict.status}. Re-check the site or drop the candidate.`,
+              project: line.project,
+              mutantId: line.mutantId,
+              fileName: line.fileName,
+              line: line.line,
+              column: line.column,
+              candidate: line.candidate,
+              candidateType: answer.candidateType,
+              contextualType: answer.contextualType,
+              verdict: verdict.status,
+            }),
+        ))
+    ),
+  )
+}
+
+const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> => {
+  const answers = typeAnswerLinesIn(lines)
+  return when(
+    Boolean.every([
+      answers.filter((line) => isNotAssignable(line.answer)).length === 0,
+      answers.length > 0,
+    ]),
+    ZeroNotAssignable.make({
+      schemaVersion: 1,
+      code: 'zero-not-assignable',
+      nextAction:
+        'The run answered mutants but no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard. A shard that produced no answers at all suppresses this gate — a branch worker that failed to boot (ProjectBootFailed), a deferred leg (Deferred) or a refused file (TypeQueryFileRefused) names why.',
+    }),
+  )
+}
+
+const violationsOf = (command: CompareSidesCommand, speed: SpeedGateReadout): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
   return [
     ...projects.flatMap((project) =>
@@ -669,19 +925,26 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
     ...telemetryViolations(command.lines),
     ...overBudgetViolations(command.lines),
     ...shortcutViolationsFor(command),
-    ...speedViolationsFor(command),
+    ...speed.slowerThanMain,
     ...nothingComparedViolations(command.lines, projects),
+    ...wrongNotAssignableViolations(command.lines),
+    ...zeroNotAssignableViolation(command.lines),
   ]
 }
 
 const comparisonOf = (command: CompareSidesCommand): ComparisonDecision => {
-  const summary = summaryOf(command)
-  const violations = violationsOf(command)
+  const speed = speedGateReadoutOf(command)
+  const summary = summaryOf(command, speed)
+  const violations = violationsOf(command, speed)
+  const warnings = speed.unmeasured
   const displayed = violations.slice(0, DISPLAY_LIMIT)
   const omittedCount = violations.length - displayed.length
   return Match.value(violations.length === 0).pipe(
-    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary })),
-    Match.when(false, () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary })),
+    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary, warnings })),
+    Match.when(
+      false,
+      () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary, warnings }),
+    ),
     Match.exhaustive,
   )
 }

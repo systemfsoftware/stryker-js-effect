@@ -1,7 +1,7 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import { Boolean, Effect } from 'effect'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import type * as Scope from 'effect/Scope'
 import { NetworkPolicy, Sandbox, Snapshot } from 'microsandbox'
 import type { ExecHandle } from 'microsandbox'
@@ -9,6 +9,7 @@ import type { ExecHandle } from 'microsandbox'
 import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, GuestJobFailure, SandboxForkFailure } from './harness-failure.schema.js'
+import { guestJobOf } from './microsandbox-job.js'
 
 export interface WarmSandboxSnapshot {
   readonly reference: string
@@ -61,15 +62,14 @@ const populateScript =
 
 const uniqueName = (label: string) =>
   Effect.flatMap(
-    Crypto.Crypto,
-    (crypto) => Effect.map(Effect.orDie(crypto.randomUUIDv4), (uuid) => `${label}-${uuid.slice(0, NAME_SUFFIX_CHARS)}`),
+    SecureRandom.SecureRandom,
+    (crypto) => Effect.map(Effect.orDie(crypto.uuidV4()), (uuid) => `${label}-${uuid.slice(0, NAME_SUFFIX_CHARS)}`),
   )
 
 const bootAndCapture = (bakedFixtureDir: string, fixtureId: string, snapshotName: string) =>
   Effect.scoped(Effect.gen(function*() {
-    const jobs = yield* GuestJobs
     const step = `boot the warm ${fixtureId} microVM`
-    const vm = yield* jobs.job(IDLE_WORKLOAD, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
+    const vm = yield* guestJobOf(IDLE_WORKLOAD, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
       .scoped
       .pipe(Effect.mapError((cause) => new GuestJobFailure({ step, cause })))
     const populated = yield* MicroVM.exec(vm, 'sh', ['-c', populateScript]).pipe(
@@ -131,7 +131,7 @@ const teardown = (sandbox: Sandbox) =>
 export const fork = (
   warm: WarmSandbox,
   label: string,
-): Effect.Effect<SandboxFork, SandboxForkFailure, Crypto.Crypto | Scope.Scope> =>
+): Effect.Effect<SandboxFork, SandboxForkFailure, SecureRandom.SecureRandom | Scope.Scope> =>
   Effect.gen(function*() {
     const name = yield* uniqueName(label)
     return yield* Effect.acquireRelease(

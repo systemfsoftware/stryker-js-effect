@@ -7,14 +7,16 @@ import * as S from 'effect/Schema'
 const SelectShardTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SelectShard')
 type SelectShardTypeId = typeof SelectShardTypeId
 
-export class SelectShardCommand extends S.Class<SelectShardCommand>('SelectShardCommand')({
-  plan: ShardPlan,
-  shard: S.String,
-}) {
+export class SelectShardCommand
+  extends S.Class<SelectShardCommand, { readonly brand: unique symbol }>('SelectShardCommand')({
+    plan: ShardPlan,
+    shard: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class SelectedShard extends S.TaggedClass<SelectedShard>()('SelectedShard', {
+export class SelectedShard extends S.TaggedClass<SelectedShard, { readonly brand: unique symbol }>()('SelectedShard', {
   index: S.Int,
   count: S.Int,
   projects: S.Array(ShardProject),
@@ -22,7 +24,7 @@ export class SelectedShard extends S.TaggedClass<SelectedShard>()('SelectedShard
   readonly [SelectShardTypeId] = SelectShardTypeId
 }
 
-export class ShardUnknown extends S.TaggedError<ShardUnknown>()('ShardUnknown', {
+export class ShardUnknown extends S.TaggedError<ShardUnknown, { readonly brand: unique symbol }>()('ShardUnknown', {
   shard: S.String,
   reason: S.String,
 }) {

@@ -8,7 +8,6 @@ export {
   makeRunEventStream,
   type ResolvedModeInput,
   RunEventDrain,
-  RunEventDrainLive,
   type RunEventStream,
 } from '../run-event-stream.service.js'
 export { RunEvents, RunIdentity } from '../run-events.service.js'

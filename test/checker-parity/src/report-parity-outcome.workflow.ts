@@ -11,28 +11,37 @@ import {
   ComparisonDecision,
   type ObservedVerdict,
   type ParityBroken,
+  type ParityHolds,
   type SideTotals,
+  type TypeQueryAnswerCounts,
+  type TypeQueryProjectShare,
+  type TypeQuerySummary,
   type Violation,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
 import { LegScope, type RunScopeName, type ScopeSettings } from './Parity.schema.js'
+import { type Warning } from './speed-gate.workflow.js'
 
 const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
 type ReportTypeId = typeof ReportTypeId
 
-export class ProjectShard extends S.Class<ProjectShard>('ProjectShard')({ project: S.String, shard: S.Int }) {}
+export class ProjectShard
+  extends S.Class<ProjectShard, { readonly brand: unique symbol }>('ProjectShard')({ project: S.String, shard: S.Int })
+{}
 
-export class CompareFinished extends S.TaggedClass<CompareFinished>()('CompareFinished', {
-  decision: ComparisonDecision,
-  lineCount: S.Int,
-  shards: S.Int,
-  summaryFile: S.String,
-  projectShards: S.Array(ProjectShard),
-  legs: S.Array(LegScope),
-}) {}
+export class CompareFinished
+  extends S.TaggedClass<CompareFinished, { readonly brand: unique symbol }>()('CompareFinished', {
+    decision: ComparisonDecision,
+    lineCount: S.Int,
+    shards: S.Int,
+    summaryFile: S.String,
+    projectShards: S.Array(ProjectShard),
+    legs: S.Array(LegScope),
+  })
+{}
 
 export class ReportParityOutcomeCommand
-  extends S.TaggedClass<ReportParityOutcomeCommand>()('ReportParityOutcomeCommand', {
+  extends S.TaggedClass<ReportParityOutcomeCommand, { readonly brand: unique symbol }>()('ReportParityOutcomeCommand', {
     outcome: S.Union([CompareFinished, DriverFailure]),
     githubActions: S.Boolean,
     runId: S.String,
@@ -48,24 +57,30 @@ const reportFields = {
   stepSummary: S.String,
 }
 
-export class ParityHeldReport extends S.TaggedClass<ParityHeldReport>()('ParityHeldReport', {
-  exitCode: S.Literal(0),
-  ...reportFields,
-}) {
+export class ParityHeldReport
+  extends S.TaggedClass<ParityHeldReport, { readonly brand: unique symbol }>()('ParityHeldReport', {
+    exitCode: S.Literal(0),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 
-export class ParityBrokenReport extends S.TaggedClass<ParityBrokenReport>()('ParityBrokenReport', {
-  exitCode: S.Literal(1),
-  ...reportFields,
-}) {
+export class ParityBrokenReport
+  extends S.TaggedClass<ParityBrokenReport, { readonly brand: unique symbol }>()('ParityBrokenReport', {
+    exitCode: S.Literal(1),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 
-export class DriverFailedReport extends S.TaggedClass<DriverFailedReport>()('DriverFailedReport', {
-  exitCode: S.Literal(2),
-  ...reportFields,
-}) {
+export class DriverFailedReport
+  extends S.TaggedClass<DriverFailedReport, { readonly brand: unique symbol }>()('DriverFailedReport', {
+    exitCode: S.Literal(2),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 
@@ -96,6 +111,11 @@ const describeViolation = (violation: Violation): string =>
     SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
     NothingCompared: (nothing) =>
       `${nothing.code} 0 mutants compared across ${nothing.projectCount} project(s), ${nothing.skippedCount} skipped`,
+    WrongNotAssignable: (wrong) =>
+      `${wrong.code} ${wrong.project} ${wrong.mutantId} ${wrong.fileName}:${wrong.line} candidate ${
+        JSON.stringify(wrong.candidate)
+      } (${wrong.candidateType}) not assignable to ${wrong.contextualType} but verdict ${wrong.verdict}`,
+    ZeroNotAssignable: (zero) => zero.code,
     UnitOverBudgetViolation: (over) =>
       `${over.code} ${over.side} ${over.project} ${over.fileName} mutants ${over.mutantIds.join(',')}`,
   })
@@ -109,6 +129,8 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     ZeroShortcuts: () => Option.none(),
     SlowerThanMain: () => Option.none(),
     NothingCompared: () => Option.none(),
+    WrongNotAssignable: (wrong) => Option.some(wrong.project),
+    ZeroNotAssignable: () => Option.none(),
     UnitOverBudgetViolation: (over) => Option.some(over.project),
   })
 
@@ -121,6 +143,8 @@ const locationOf = (violation: Violation): string =>
     ZeroShortcuts: () => '',
     SlowerThanMain: () => '',
     NothingCompared: () => '',
+    WrongNotAssignable: (wrong) => `file=${escapeProperty(wrong.fileName)},line=${wrong.line},`,
+    ZeroNotAssignable: () => '',
     UnitOverBudgetViolation: (over) => `file=${escapeProperty(over.fileName)},`,
   })
 
@@ -160,6 +184,18 @@ const groupsByCode = (violations: ReadonlyArray<Violation>): ReadonlyArray<Arr.N
         onNonEmpty: Option.some,
       })
     ),
+  )
+
+const warningCodeOf = (warning: Warning): string => warning.code
+
+const warningsByCode = (warnings: ReadonlyArray<Warning>): ReadonlyArray<Warning> =>
+  Arr.dedupeWith(warnings, (a, b) => warningCodeOf(a) === warningCodeOf(b))
+
+const warningAnnotationsOf = (warnings: ReadonlyArray<Warning>): ReadonlyArray<string> =>
+  warningsByCode(warnings).map((warning) =>
+    `::warning title=${escapeProperty(`checker-parity ${warning.code}`)}::${
+      escapeData(`${warning.code}: ${warning.nextAction}`)
+    }`
   )
 
 const ratiosOf = (side: SideTotals): string =>
@@ -210,32 +246,68 @@ const scopeLinesOf = (legs: ReadonlyArray<LegScope>, first: LegScope): ReadonlyA
 const scopeLines = (legs: ReadonlyArray<LegScope>): ReadonlyArray<string> =>
   Option.match(Arr.head(legs), { onNone: () => [], onSome: (first) => scopeLinesOf(legs, first) })
 
+const unknownReasonsText = (share: TypeQueryProjectShare): string =>
+  Arr.match(Object.entries(share.unknownReasons).filter(([, count]) => count > 0), {
+    onEmpty: () => '',
+    onNonEmpty: (reasons) => ` (${reasons.map(([reason, count]) => `${reason} ${count}`).join(', ')})`,
+  })
+
+const typeQueryProjectLine = (share: TypeQueryProjectShare): string =>
+  `  - ${share.project}: ${share.queried} answered, ${share.notAssignable} NotAssignable, ${share.unknown} Unknown${
+    unknownReasonsText(share)
+  }, ${share.refusedFiles} file(s) refused (${share.refusedMutants} mutants)${
+    Boolean.match(share.queried === 0, { onTrue: () => ' - no answers', onFalse: () => '' })
+  }`
+
+const answerCountsText = (counts: TypeQueryAnswerCounts): string =>
+  `${counts.assignable} Assignable, ${counts.notAssignable} NotAssignable, ${counts.unknown} Unknown`
+
+const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
+  `- type query: ${typeQuery.queried} answered (${
+    answerCountsText(typeQuery.answers)
+  }), ${typeQuery.refusedFiles} file(s) refused, every answer taken over the branch worker's type-query RPC`,
+  `- type query by site kind: expression ${answerCountsText(typeQuery.answersBySiteKind.expression)}; function-body ${
+    answerCountsText(typeQuery.answersBySiteKind['function-body'])
+  }`,
+  ...typeQuery.projects.map(typeQueryProjectLine),
+]
+
+const warningLines = (warnings: ReadonlyArray<Warning>): ReadonlyArray<string> =>
+  warnings.map((warning) => `- warning ${warning.code}: ${warning.nextAction}`)
+
 const summaryMarkdown = (
   verdict: 'FAIL' | 'pass',
   finished: CompareFinished,
   violations: ReadonlyArray<Violation>,
+  warnings: ReadonlyArray<Warning>,
 ): string => {
   const summary = finished.decision.summary
   return [
     `### checker-parity: ${verdict}`,
     '',
     `- violations: ${violations.length}${codesSuffix(violations)}`,
+    ...warningLines(warnings),
     ...scopeLines(finished.legs),
     `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
     `- main: ${ratiosOf(summary.main)}`,
     `- branch: ${ratiosOf(summary.branch)}`,
     `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
+    ...typeQueryLines(summary.typeQuery),
     '',
   ].join('\n')
 }
 
-const heldReport = (finished: CompareFinished): ParityHeldReport =>
+const heldReport = (
+  command: ReportParityOutcomeCommand,
+  finished: CompareFinished,
+  held: ParityHolds,
+): ParityHeldReport =>
   ParityHeldReport.make({
     exitCode: 0,
     stdout: [`parity holds over ${finished.lineCount} lines across ${finished.shards} shards`],
     stderr: [],
-    annotations: [],
-    stepSummary: summaryMarkdown('pass', finished, []),
+    annotations: inActions(command, () => warningAnnotationsOf(held.warnings)),
+    stepSummary: summaryMarkdown('pass', finished, [], held.warnings),
   })
 
 const brokenReport = (
@@ -253,11 +325,11 @@ const brokenReport = (
       }),
     ],
     stderr: [],
-    annotations: inActions(
-      command,
-      () => groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
-    ),
-    stepSummary: summaryMarkdown('FAIL', finished, broken.violations),
+    annotations: inActions(command, () => [
+      ...groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
+      ...warningAnnotationsOf(broken.warnings),
+    ]),
+    stepSummary: summaryMarkdown('FAIL', finished, broken.violations, broken.warnings),
   })
 
 const failedReport = (command: ReportParityOutcomeCommand, failure: DriverFailure): DriverFailedReport =>
@@ -279,7 +351,7 @@ const reportOf = (command: ReportParityOutcomeCommand): ParityOutcomeReport =>
     DriverFailure: (failure) => failedReport(command, failure),
     CompareFinished: (finished) =>
       Match.valueTags(finished.decision, {
-        ParityHolds: () => heldReport(finished),
+        ParityHolds: (held) => heldReport(command, finished, held),
         ParityBroken: (broken) => brokenReport(command, finished, broken),
       }),
   })

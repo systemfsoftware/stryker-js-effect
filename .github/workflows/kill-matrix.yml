@@ -1,22 +1,18 @@
 name: Kill matrix
 
+# Called only by mutation.yml, whose guard job admits main alone and resolves the commit
+# every job here checks out.
 on:
   workflow_call:
     inputs:
+      sha:
+        description: Commit to check out, the caller's guard job output.
+        type: string
+        required: true
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
-  workflow_dispatch:
-    inputs:
-      projects:
-        description: Comma-separated projects to mutate, the dogfood corpus.
-        type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
-
-concurrency:
-  group: kill-matrix-${{ github.ref }}
-  cancel-in-progress: false
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
 
 permissions:
   contents: read
@@ -41,12 +37,22 @@ jobs:
       count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       - id: plan
@@ -75,19 +81,26 @@ jobs:
       key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
 
       - id: key
-        name: Content key of the build
-        env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
-        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/mutation-build-key
 
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       - name: Restore the build the mutation lane cached
@@ -96,7 +109,7 @@ jobs:
           path: .turbo/cache
           key: ${{ steps.key.outputs.key }}
           restore-keys: |
-            mutation-build-${{ runner.os }}-
+            ${{ steps.key.outputs.prefix }}
 
       - name: Build every mutated project
         run: |
@@ -114,12 +127,22 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
@@ -183,12 +206,22 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
-      - uses: ./.github/actions/released-tarballs
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:

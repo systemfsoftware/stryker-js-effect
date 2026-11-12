@@ -25,22 +25,26 @@ export const ReporterPlanDescriptorSchema = S.Struct({
 })
 export type ReporterPlanDescriptor = typeof ReporterPlanDescriptorSchema.Type
 
-export class DryRunCompleted extends S.TaggedClass<DryRunCompleted>()('dryRunCompleted', {
-  timing: RunTimingSchema,
-  capabilities: TestRunnerCapabilitiesSchema,
-  testCount: NonNegativeInt,
-  tests: S.Array(TestResultSchema),
-}) {}
+export class DryRunCompleted
+  extends S.TaggedClass<DryRunCompleted, { readonly brand: unique symbol }>()('dryRunCompleted', {
+    timing: RunTimingSchema,
+    capabilities: TestRunnerCapabilitiesSchema,
+    testCount: NonNegativeInt,
+    tests: S.Array(TestResultSchema),
+  })
+{}
 
-export class MutationTestingPlanReady extends S.TaggedClass<MutationTestingPlanReady>()(
-  'mutationTestingPlanReady',
-  {
-    total: NonNegativeInt,
-    plans: S.Array(ReporterPlanDescriptorSchema),
-  },
-) {}
+export class MutationTestingPlanReady
+  extends S.TaggedClass<MutationTestingPlanReady, { readonly brand: unique symbol }>()(
+    'mutationTestingPlanReady',
+    {
+      total: NonNegativeInt,
+      plans: S.Array(ReporterPlanDescriptorSchema),
+    },
+  )
+{}
 
-export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', {
+export class MutantTested extends S.TaggedClass<MutantTested, { readonly brand: unique symbol }>()('mutantTested', {
   id: MutantId,
   status: MutantStatusSchema,
   fileName: CanonicalFileName,
@@ -51,14 +55,16 @@ export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', 
   total: NonNegativeInt,
 }) {}
 
-export class MutationTestReportReady extends S.TaggedClass<MutationTestReportReady>()(
-  'mutationTestReportReady',
-  {
-    report: MutationTestResult,
-    metrics: MetricsResultSchema,
-    static: S.optional(StaticClassSummarySchema),
-  },
-) {}
+export class MutationTestReportReady
+  extends S.TaggedClass<MutationTestReportReady, { readonly brand: unique symbol }>()(
+    'mutationTestReportReady',
+    {
+      report: MutationTestResult,
+      metrics: MetricsResultSchema,
+      static: S.optional(StaticClassSummarySchema),
+    },
+  )
+{}
 
 export const ReporterEventUnion = S.Union([
   DryRunCompleted,
@@ -87,11 +93,13 @@ export type ReporterFactory = (
   init: ReporterInit,
 ) => (events: AsyncIterable<ReporterEvent>) => Effect.Effect<void, ReporterFailed>
 
-export class ReporterFailed extends S.TaggedError<ReporterFailed>()('ReporterFailed', {
-  cause: S.String,
-  event: ReporterEventKind,
-  reporterName: S.String,
-}) {
+export class ReporterFailed
+  extends S.TaggedError<ReporterFailed, { readonly brand: unique symbol }>()('ReporterFailed', {
+    cause: S.String,
+    event: ReporterEventKind,
+    reporterName: S.String,
+  })
+{
   override get message(): string {
     return `Reporter "${this.reporterName}" failed while handling ${this.event}: ${this.cause}`
   }

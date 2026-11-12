@@ -163,7 +163,7 @@ const withEngine = <A, E>(
     const consumer = yield* Stream.fromQueue(events).pipe(Stream.runForEach(consume), Effect.forkChild)
     const run = Effect.scoped(
       Effect.gen(function*() {
-        const context = yield* Layer.build(RunEnvironment.stage(env, events))
+        const context = yield* Layer.build(RunEnvironment.layerStage(env, events))
         return yield* use({ env, context })
       }),
     )

@@ -43,7 +43,7 @@ export type CheckAnswer = typeof CheckAnswerSchema.Type
 export const CheckStatus = S.Literals(CheckResultSchema.discriminants)
 export type CheckStatus = typeof CheckStatus.Type
 
-export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed', {
+export class CheckerFailed extends S.TaggedError<CheckerFailed, { readonly brand: unique symbol }>()('CheckerFailed', {
   cause: S.String,
   checkerName: S.String,
   mutantIds: S.Array(MutantId),
