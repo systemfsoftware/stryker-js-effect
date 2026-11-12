@@ -329,9 +329,10 @@ if (import.meta.vitest !== void 0) {
       return Option.exists(
         readSite(site.text, (sourceFile) => subject(sourceFile, span, false)),
         (facts) =>
-          admits(facts) === (span.end <= site.closingBrace) &&
-          facts.span.start === span.start &&
-          facts.span.length === span.end - span.start,
+          Boolean.and(
+            admits(facts) === (span.end <= site.closingBrace),
+            Boolean.and(facts.span.start === span.start, facts.span.length === span.end - span.start),
+          ),
       )
     },
   )
