@@ -192,24 +192,24 @@ catalogs:
       version: 3.9.0
 
 overrides:
-  '@systemfsoftware/oxlint-ignorer-config@*': file:.sfs-deps/oxlint-ignorer-config.tgz
-  '@systemfsoftware/stryker-framework-interface@*': file:.sfs-deps/stryker-framework-interface.tgz
-  '@systemfsoftware/stryker-ignorer-angular@*': file:.sfs-deps/stryker-ignorer-angular.tgz
-  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@*': file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@*': file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-  '@systemfsoftware/stryker-ignorer-interface@*': file:.sfs-deps/stryker-ignorer-interface.tgz
-  '@systemfsoftware/stryker-ignorer-kit@*': file:.sfs-deps/stryker-ignorer-kit.tgz
-  '@systemfsoftware/stryker-js@*': file:.sfs-deps/stryker-js.tgz
-  '@systemfsoftware/stryker-js-angular@*': file:.sfs-deps/stryker-js-angular.tgz
-  '@systemfsoftware/stryker-js-cli-contract@*': file:.sfs-deps/stryker-js-cli-contract.tgz
-  '@systemfsoftware/stryker-js-html-reporter@*': file:.sfs-deps/stryker-js-html-reporter.tgz
-  '@systemfsoftware/stryker-js-instrumenter@*': file:.sfs-deps/stryker-js-instrumenter.tgz
-  '@systemfsoftware/stryker-js-plugin-interface@*': file:.sfs-deps/stryker-js-plugin-interface.tgz
-  '@systemfsoftware/stryker-js-plugin-runtime@*': file:.sfs-deps/stryker-js-plugin-runtime.tgz
-  '@systemfsoftware/stryker-js-svelte@*': file:.sfs-deps/stryker-js-svelte.tgz
-  '@systemfsoftware/stryker-js-typescript-checker@*': file:.sfs-deps/stryker-js-typescript-checker.tgz
-  '@systemfsoftware/stryker-js-vitest-runner@*': file:.sfs-deps/stryker-js-vitest-runner.tgz
-  '@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.1': file:.sfs-deps/stryker-js-vitest-runner.tgz
+  '@systemfsoftware/oxlint-ignorer-config@*': file:.deps/oxlint-ignorer-config.tgz
+  '@systemfsoftware/stryker-framework-interface@*': file:.deps/stryker-framework-interface.tgz
+  '@systemfsoftware/stryker-ignorer-angular@*': file:.deps/stryker-ignorer-angular.tgz
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@*': file:.deps/stryker-ignorer-effect-schema-declarations.tgz
+  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@*': file:.deps/stryker-ignorer-in-source-vitest-block.tgz
+  '@systemfsoftware/stryker-ignorer-interface@*': file:.deps/stryker-ignorer-interface.tgz
+  '@systemfsoftware/stryker-ignorer-kit@*': file:.deps/stryker-ignorer-kit.tgz
+  '@systemfsoftware/stryker-js@*': file:.deps/stryker-js.tgz
+  '@systemfsoftware/stryker-js-angular@*': file:.deps/stryker-js-angular.tgz
+  '@systemfsoftware/stryker-js-cli-contract@*': file:.deps/stryker-js-cli-contract.tgz
+  '@systemfsoftware/stryker-js-html-reporter@*': file:.deps/stryker-js-html-reporter.tgz
+  '@systemfsoftware/stryker-js-instrumenter@*': file:.deps/stryker-js-instrumenter.tgz
+  '@systemfsoftware/stryker-js-plugin-interface@*': file:.deps/stryker-js-plugin-interface.tgz
+  '@systemfsoftware/stryker-js-plugin-runtime@*': file:.deps/stryker-js-plugin-runtime.tgz
+  '@systemfsoftware/stryker-js-svelte@*': file:.deps/stryker-js-svelte.tgz
+  '@systemfsoftware/stryker-js-typescript-checker@*': file:.deps/stryker-js-typescript-checker.tgz
+  '@systemfsoftware/stryker-js-vitest-runner@*': file:.deps/stryker-js-vitest-runner.tgz
+  '@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.1': file:.deps/stryker-js-vitest-runner.tgz
 
 patchedDependencies:
   '@systemfsoftware/differential-spec@1.0.1': e976436ae352fe9fcf978ef1d4dabae26df9728372562b28e5ca60d7cde9f9ee
@@ -770,17 +770,17 @@ importers:
         specifier: workspace:^
         version: link:../frameworks/interface
       '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
-        specifier: file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-        version: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-effect-schema-declarations.tgz
+        version: file:.deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-ignorer-in-source-vitest-block':
-        specifier: file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-        version: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-in-source-vitest-block.tgz
+        version: file:.deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../ignorers/interface
       '@systemfsoftware/stryker-js':
-        specifier: file:../../.sfs-deps/stryker-js.tgz
-        version: file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js.tgz
+        version: file:.deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -797,11 +797,11 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-runtime
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: file:../../.sfs-deps/stryker-js-typescript-checker.tgz
-        version: file:.sfs-deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: file:../../.deps/stryker-js-typescript-checker.tgz
+        version: file:.deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
-        specifier: file:../../.sfs-deps/stryker-js-vitest-runner.tgz
-        version: file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js-vitest-runner.tgz
+        version: file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -912,11 +912,11 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2001
       released-stryker-js-cli-contract:
-        specifier: file:../../.sfs-deps/stryker-js-cli-contract.tgz
-        version: '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz'
+        specifier: file:../../.deps/stryker-js-cli-contract.tgz
+        version: '@systemfsoftware/stryker-js-cli-contract@file:.deps/stryker-js-cli-contract.tgz'
       released-stryker-js-plugin-interface:
-        specifier: file:../../.sfs-deps/stryker-js-plugin-interface.tgz
-        version: '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz'
+        specifier: file:../../.deps/stryker-js-plugin-interface.tgz
+        version: '@systemfsoftware/stryker-js-plugin-interface@file:.deps/stryker-js-plugin-interface.tgz'
       rimraf:
         specifier: 'catalog:'
         version: 6.1.3
@@ -1307,20 +1307,20 @@ importers:
         specifier: workspace:^
         version: link:../toolchain/stryker-config
       '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
-        specifier: file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-        version: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-effect-schema-declarations.tgz
+        version: file:.deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-ignorer-in-source-vitest-block':
-        specifier: file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-        version: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-in-source-vitest-block.tgz
+        version: file:.deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: file:../../.sfs-deps/stryker-js.tgz
-        version: file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js.tgz
+        version: file:.deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: file:../../.sfs-deps/stryker-js-typescript-checker.tgz
-        version: file:.sfs-deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: file:../../.deps/stryker-js-typescript-checker.tgz
+        version: file:.deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
-        specifier: file:../../.sfs-deps/stryker-js-vitest-runner.tgz
-        version: file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js-vitest-runner.tgz
+        version: file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -1386,14 +1386,14 @@ importers:
         specifier: workspace:^
         version: link:../toolchain/stryker-config
       '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
-        specifier: file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-        version: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-effect-schema-declarations.tgz
+        version: file:.deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-ignorer-in-source-vitest-block':
-        specifier: file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-        version: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-in-source-vitest-block.tgz
+        version: file:.deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: file:../../.sfs-deps/stryker-js.tgz
-        version: file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js.tgz
+        version: file:.deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -1407,11 +1407,11 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-runtime
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: file:../../.sfs-deps/stryker-js-typescript-checker.tgz
-        version: file:.sfs-deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: file:../../.deps/stryker-js-typescript-checker.tgz
+        version: file:.deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
-        specifier: file:../../.sfs-deps/stryker-js-vitest-runner.tgz
-        version: file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js-vitest-runner.tgz
+        version: file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -1702,14 +1702,14 @@ importers:
         specifier: workspace:^
         version: link:../../packages/toolchain/stryker-config
       '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
-        specifier: file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz
-        version: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-effect-schema-declarations.tgz
+        version: file:.deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-ignorer-in-source-vitest-block':
-        specifier: file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz
-        version: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
+        specifier: file:../../.deps/stryker-ignorer-in-source-vitest-block.tgz
+        version: file:.deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: file:../../.sfs-deps/stryker-js.tgz
-        version: file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js.tgz
+        version: file:.deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../../packages/stryker-js-instrumenter
@@ -1717,8 +1717,8 @@ importers:
         specifier: workspace:^
         version: link:../../packages/stryker-js-typescript-checker
       '@systemfsoftware/stryker-js-vitest-runner':
-        specifier: file:../../.sfs-deps/stryker-js-vitest-runner.tgz
-        version: file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: file:../../.deps/stryker-js-vitest-runner.tgz
+        version: file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -3112,59 +3112,59 @@ packages:
       effect: ^4
       typescript: '>=5.0.0'
 
-  '@systemfsoftware/stryker-framework-interface@file:.sfs-deps/stryker-framework-interface.tgz':
-    resolution: {integrity: sha512-3Sw+RlwsFsl5mlDwgvgy/YvR5TOSfxa7CLRDkr7qWHXcppUkOmJTFbCMTgKjm67zXY6aMmZb/5JZG85pGc9A9A==, tarball: file:.sfs-deps/stryker-framework-interface.tgz}
+  '@systemfsoftware/stryker-framework-interface@file:.deps/stryker-framework-interface.tgz':
+    resolution: {integrity: sha512-3Sw+RlwsFsl5mlDwgvgy/YvR5TOSfxa7CLRDkr7qWHXcppUkOmJTFbCMTgKjm67zXY6aMmZb/5JZG85pGc9A9A==, tarball: file:.deps/stryker-framework-interface.tgz}
     version: 0.0.1
 
-  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz':
-    resolution: {integrity: sha512-5NIzS3PK361vXAevHLPcKrkwze597VbLsrC0utH/6VdWD9Y1/m53z9dpwp1hSe9ZRIJ3HKW7/PKTSXzemn7q3Q==, tarball: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz}
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@file:.deps/stryker-ignorer-effect-schema-declarations.tgz':
+    resolution: {integrity: sha512-5NIzS3PK361vXAevHLPcKrkwze597VbLsrC0utH/6VdWD9Y1/m53z9dpwp1hSe9ZRIJ3HKW7/PKTSXzemn7q3Q==, tarball: file:.deps/stryker-ignorer-effect-schema-declarations.tgz}
     version: 0.2.1
 
-  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz':
-    resolution: {integrity: sha512-sESsrNlXfdav+of+yBaOH/fE8I0jASa0paIvc/6lasId0heWRVlaSTAlaFLTlXX6vSgxAgjaOTT3OFERPnY6Dw==, tarball: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz}
+  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@file:.deps/stryker-ignorer-in-source-vitest-block.tgz':
+    resolution: {integrity: sha512-sESsrNlXfdav+of+yBaOH/fE8I0jASa0paIvc/6lasId0heWRVlaSTAlaFLTlXX6vSgxAgjaOTT3OFERPnY6Dw==, tarball: file:.deps/stryker-ignorer-in-source-vitest-block.tgz}
     version: 0.1.2
 
-  '@systemfsoftware/stryker-ignorer-interface@file:.sfs-deps/stryker-ignorer-interface.tgz':
-    resolution: {integrity: sha512-/MxWDRSecBqAXf9LHLfsxUt48UER/B54cKMaGzBF1eIGE7VFkslps6SubdjGOs084nuUOnYOIX7wC5vIyodWZQ==, tarball: file:.sfs-deps/stryker-ignorer-interface.tgz}
+  '@systemfsoftware/stryker-ignorer-interface@file:.deps/stryker-ignorer-interface.tgz':
+    resolution: {integrity: sha512-/MxWDRSecBqAXf9LHLfsxUt48UER/B54cKMaGzBF1eIGE7VFkslps6SubdjGOs084nuUOnYOIX7wC5vIyodWZQ==, tarball: file:.deps/stryker-ignorer-interface.tgz}
     version: 0.1.2
 
-  '@systemfsoftware/stryker-ignorer-kit@file:.sfs-deps/stryker-ignorer-kit.tgz':
-    resolution: {integrity: sha512-tCKgNbVWU7WPbTxLd1XO+MUFJKo1JmEtwCe56cOpS40NkZN11u8KLr9BQRbM1I8opLSgzqGqsCSwRJsCUPhE+w==, tarball: file:.sfs-deps/stryker-ignorer-kit.tgz}
+  '@systemfsoftware/stryker-ignorer-kit@file:.deps/stryker-ignorer-kit.tgz':
+    resolution: {integrity: sha512-tCKgNbVWU7WPbTxLd1XO+MUFJKo1JmEtwCe56cOpS40NkZN11u8KLr9BQRbM1I8opLSgzqGqsCSwRJsCUPhE+w==, tarball: file:.deps/stryker-ignorer-kit.tgz}
     version: 0.1.2
 
-  '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz':
-    resolution: {integrity: sha512-Al6/xLfkql9rhXDAPkleSD69Q+iqRxyK2+ZlYPmJo21JI8hFApX3abL4h6w1fFhZ+vNF8/9dZbDr1MIQRzjn+w==, tarball: file:.sfs-deps/stryker-js-cli-contract.tgz}
+  '@systemfsoftware/stryker-js-cli-contract@file:.deps/stryker-js-cli-contract.tgz':
+    resolution: {integrity: sha512-Al6/xLfkql9rhXDAPkleSD69Q+iqRxyK2+ZlYPmJo21JI8hFApX3abL4h6w1fFhZ+vNF8/9dZbDr1MIQRzjn+w==, tarball: file:.deps/stryker-js-cli-contract.tgz}
     version: 0.4.0
     engines: {node: '>=20.0.0'}
 
-  '@systemfsoftware/stryker-js-instrumenter@file:.sfs-deps/stryker-js-instrumenter.tgz':
-    resolution: {integrity: sha512-+9atN/9bLwoGIYtacpk+DUZpWa/Onpy3DfQqKGKXcds73/ki1BeXi29Y/PpXBdPStLbqtWsoHTT88i4agwBqWQ==, tarball: file:.sfs-deps/stryker-js-instrumenter.tgz}
+  '@systemfsoftware/stryker-js-instrumenter@file:.deps/stryker-js-instrumenter.tgz':
+    resolution: {integrity: sha512-+9atN/9bLwoGIYtacpk+DUZpWa/Onpy3DfQqKGKXcds73/ki1BeXi29Y/PpXBdPStLbqtWsoHTT88i4agwBqWQ==, tarball: file:.deps/stryker-js-instrumenter.tgz}
     version: 12.1.2
     engines: {node: '>=20.0.0'}
 
-  '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz':
-    resolution: {integrity: sha512-DOJ2Ed4I2KpwnkkHjk3KY+LcA8DKXr6e9hsVPK4+j7kXKbH6nGVJwVP3uC/EWJL3ihbH1Mwmr3j6kn63LibKzA==, tarball: file:.sfs-deps/stryker-js-plugin-interface.tgz}
+  '@systemfsoftware/stryker-js-plugin-interface@file:.deps/stryker-js-plugin-interface.tgz':
+    resolution: {integrity: sha512-DOJ2Ed4I2KpwnkkHjk3KY+LcA8DKXr6e9hsVPK4+j7kXKbH6nGVJwVP3uC/EWJL3ihbH1Mwmr3j6kn63LibKzA==, tarball: file:.deps/stryker-js-plugin-interface.tgz}
     version: 15.0.0
     engines: {node: '>=20.0.0'}
 
-  '@systemfsoftware/stryker-js-plugin-runtime@file:.sfs-deps/stryker-js-plugin-runtime.tgz':
-    resolution: {integrity: sha512-wQ1YXpe2Jnj49WikhigGk6TI+IHMLAkmGT+mvGZK6PDKls4fZax1RSVv/0ZpoACB4c0L/Rtme+Tl2Rh/inAwrQ==, tarball: file:.sfs-deps/stryker-js-plugin-runtime.tgz}
+  '@systemfsoftware/stryker-js-plugin-runtime@file:.deps/stryker-js-plugin-runtime.tgz':
+    resolution: {integrity: sha512-wQ1YXpe2Jnj49WikhigGk6TI+IHMLAkmGT+mvGZK6PDKls4fZax1RSVv/0ZpoACB4c0L/Rtme+Tl2Rh/inAwrQ==, tarball: file:.deps/stryker-js-plugin-runtime.tgz}
     version: 7.0.3
     engines: {node: '>=22.18.0'}
 
-  '@systemfsoftware/stryker-js-typescript-checker@file:.sfs-deps/stryker-js-typescript-checker.tgz':
-    resolution: {integrity: sha512-SM3mFEyj3q3/3CgJs+1WXLBpBtfVKmN4ADLNxVIER57AbIdMAbBr/bU0kVhvJmUcxMEqQYy+8fiA/tgmgOsWdA==, tarball: file:.sfs-deps/stryker-js-typescript-checker.tgz}
+  '@systemfsoftware/stryker-js-typescript-checker@file:.deps/stryker-js-typescript-checker.tgz':
+    resolution: {integrity: sha512-SM3mFEyj3q3/3CgJs+1WXLBpBtfVKmN4ADLNxVIER57AbIdMAbBr/bU0kVhvJmUcxMEqQYy+8fiA/tgmgOsWdA==, tarball: file:.deps/stryker-js-typescript-checker.tgz}
     version: 8.3.1
 
-  '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz':
-    resolution: {integrity: sha512-a0yptek9pPAQwLf2rnCy67ZSy8geb2+/A+Gh99PJxyyr2h5FEucARZIYHBV6H65OctJF40CZpshcJo6WnfKyXA==, tarball: file:.sfs-deps/stryker-js-vitest-runner.tgz}
+  '@systemfsoftware/stryker-js-vitest-runner@file:.deps/stryker-js-vitest-runner.tgz':
+    resolution: {integrity: sha512-a0yptek9pPAQwLf2rnCy67ZSy8geb2+/A+Gh99PJxyyr2h5FEucARZIYHBV6H65OctJF40CZpshcJo6WnfKyXA==, tarball: file:.deps/stryker-js-vitest-runner.tgz}
     version: 9.0.1
     engines: {node: '>=22.18.0'}
     peerDependencies:
       vitest: ^5
 
-  '@systemfsoftware/stryker-js@file:.sfs-deps/stryker-js.tgz':
-    resolution: {integrity: sha512-1jS8pzkgkhUXVvK8N4QKDEXyZhlEEnPuYXFRAJ7f38rToHq2k8fu0OZsccLSOM8lbVofpReM86RwidNVtrYWSw==, tarball: file:.sfs-deps/stryker-js.tgz}
+  '@systemfsoftware/stryker-js@file:.deps/stryker-js.tgz':
+    resolution: {integrity: sha512-1jS8pzkgkhUXVvK8N4QKDEXyZhlEEnPuYXFRAJ7f38rToHq2k8fu0OZsccLSOM8lbVofpReM86RwidNVtrYWSw==, tarball: file:.deps/stryker-js.tgz}
     version: 18.1.0
     engines: {node: '>=24.13.1'}
     hasBin: true
@@ -5873,69 +5873,69 @@ snapshots:
       effect: 4.0.0
       typescript: 7.0.2
 
-  '@systemfsoftware/stryker-framework-interface@file:.sfs-deps/stryker-framework-interface.tgz':
+  '@systemfsoftware/stryker-framework-interface@file:.deps/stryker-framework-interface.tgz':
     dependencies:
-      '@systemfsoftware/stryker-ignorer-interface': file:.sfs-deps/stryker-ignorer-interface.tgz
+      '@systemfsoftware/stryker-ignorer-interface': file:.deps/stryker-ignorer-interface.tgz
 
-  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)':
+  '@systemfsoftware/stryker-ignorer-effect-schema-declarations@file:.deps/stryker-ignorer-effect-schema-declarations.tgz(rolldown@1.2.8)':
     dependencies:
-      '@systemfsoftware/stryker-ignorer-interface': file:.sfs-deps/stryker-ignorer-interface.tgz
-      '@systemfsoftware/stryker-ignorer-kit': file:.sfs-deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)
+      '@systemfsoftware/stryker-ignorer-interface': file:.deps/stryker-ignorer-interface.tgz
+      '@systemfsoftware/stryker-ignorer-kit': file:.deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)':
+  '@systemfsoftware/stryker-ignorer-in-source-vitest-block@file:.deps/stryker-ignorer-in-source-vitest-block.tgz(rolldown@1.2.8)':
     dependencies:
-      '@systemfsoftware/stryker-ignorer-interface': file:.sfs-deps/stryker-ignorer-interface.tgz
-      '@systemfsoftware/stryker-ignorer-kit': file:.sfs-deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)
+      '@systemfsoftware/stryker-ignorer-interface': file:.deps/stryker-ignorer-interface.tgz
+      '@systemfsoftware/stryker-ignorer-kit': file:.deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-ignorer-interface@file:.sfs-deps/stryker-ignorer-interface.tgz': {}
+  '@systemfsoftware/stryker-ignorer-interface@file:.deps/stryker-ignorer-interface.tgz': {}
 
-  '@systemfsoftware/stryker-ignorer-kit@file:.sfs-deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)':
+  '@systemfsoftware/stryker-ignorer-kit@file:.deps/stryker-ignorer-kit.tgz(rolldown@1.2.8)':
     dependencies:
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/stryker-ignorer-interface': file:.sfs-deps/stryker-ignorer-interface.tgz
+      '@systemfsoftware/stryker-ignorer-interface': file:.deps/stryker-ignorer-interface.tgz
       oxc-parser: 0.150.0
       oxc-walker: 1.1.1(@oxc-project/types@0.150.0)(oxc-parser@0.150.0)(rolldown@1.2.8)
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz':
+  '@systemfsoftware/stryker-js-cli-contract@file:.deps/stryker-js-cli-contract.tgz':
     dependencies:
-      '@systemfsoftware/stryker-js-plugin-interface': file:.sfs-deps/stryker-js-plugin-interface.tgz
+      '@systemfsoftware/stryker-js-plugin-interface': file:.deps/stryker-js-plugin-interface.tgz
       effect: 4.0.0
 
-  '@systemfsoftware/stryker-js-instrumenter@file:.sfs-deps/stryker-js-instrumenter.tgz(rolldown@1.2.8)':
+  '@systemfsoftware/stryker-js-instrumenter@file:.deps/stryker-js-instrumenter.tgz(rolldown@1.2.8)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@noble/hashes': 2.4.0
       '@oxc-project/types': 0.150.0
       '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.0.0)
-      '@systemfsoftware/stryker-framework-interface': file:.sfs-deps/stryker-framework-interface.tgz
-      '@systemfsoftware/stryker-js-cli-contract': file:.sfs-deps/stryker-js-cli-contract.tgz
-      '@systemfsoftware/stryker-js-plugin-interface': file:.sfs-deps/stryker-js-plugin-interface.tgz
+      '@systemfsoftware/stryker-framework-interface': file:.deps/stryker-framework-interface.tgz
+      '@systemfsoftware/stryker-js-cli-contract': file:.deps/stryker-js-cli-contract.tgz
+      '@systemfsoftware/stryker-js-plugin-interface': file:.deps/stryker-js-plugin-interface.tgz
       effect: 4.0.0
       oxc-parser: 0.150.0
       oxc-walker: 1.1.1(@oxc-project/types@0.150.0)(oxc-parser@0.150.0)(rolldown@1.2.8)
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz':
+  '@systemfsoftware/stryker-js-plugin-interface@file:.deps/stryker-js-plugin-interface.tgz':
     dependencies:
-      '@systemfsoftware/stryker-ignorer-interface': file:.sfs-deps/stryker-ignorer-interface.tgz
+      '@systemfsoftware/stryker-ignorer-interface': file:.deps/stryker-ignorer-interface.tgz
       effect: 4.0.0
 
-  '@systemfsoftware/stryker-js-plugin-runtime@file:.sfs-deps/stryker-js-plugin-runtime.tgz':
+  '@systemfsoftware/stryker-js-plugin-runtime@file:.deps/stryker-js-plugin-runtime.tgz':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.0.0)
-      '@systemfsoftware/stryker-js-cli-contract': file:.sfs-deps/stryker-js-cli-contract.tgz
-      '@systemfsoftware/stryker-js-plugin-interface': file:.sfs-deps/stryker-js-plugin-interface.tgz
+      '@systemfsoftware/stryker-js-cli-contract': file:.deps/stryker-js-cli-contract.tgz
+      '@systemfsoftware/stryker-js-plugin-interface': file:.deps/stryker-js-plugin-interface.tgz
       effect: 4.0.0
 
-  '@systemfsoftware/stryker-js-typescript-checker@file:.sfs-deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)':
+  '@systemfsoftware/stryker-js-typescript-checker@file:.deps/stryker-js-typescript-checker.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)':
     dependencies:
       '@effect/opentelemetry': 4.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)
       '@noble/hashes': 2.4.0
@@ -5943,10 +5943,10 @@ snapshots:
       '@opentelemetry/sdk-node': 0.222.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.0.0)
-      '@systemfsoftware/stryker-js-cli-contract': file:.sfs-deps/stryker-js-cli-contract.tgz
-      '@systemfsoftware/stryker-js-instrumenter': file:.sfs-deps/stryker-js-instrumenter.tgz(rolldown@1.2.8)
-      '@systemfsoftware/stryker-js-plugin-interface': file:.sfs-deps/stryker-js-plugin-interface.tgz
-      '@systemfsoftware/stryker-js-plugin-runtime': file:.sfs-deps/stryker-js-plugin-runtime.tgz
+      '@systemfsoftware/stryker-js-cli-contract': file:.deps/stryker-js-cli-contract.tgz
+      '@systemfsoftware/stryker-js-instrumenter': file:.deps/stryker-js-instrumenter.tgz(rolldown@1.2.8)
+      '@systemfsoftware/stryker-js-plugin-interface': file:.deps/stryker-js-plugin-interface.tgz
+      '@systemfsoftware/stryker-js-plugin-runtime': file:.deps/stryker-js-plugin-runtime.tgz
       effect: 4.0.0
       typescript: 7.0.2
     transitivePeerDependencies:
@@ -5961,7 +5961,7 @@ snapshots:
       - rolldown
       - supports-color
 
-  '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)':
+  '@systemfsoftware/stryker-js-vitest-runner@file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)':
     dependencies:
       '@effect/opentelemetry': 4.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
@@ -5981,7 +5981,7 @@ snapshots:
       - effect
       - supports-color
 
-  '@systemfsoftware/stryker-js@file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)':
+  '@systemfsoftware/stryker-js@file:.deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)':
     dependencies:
       '@effect/opentelemetry': 4.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)
       '@effect/platform-node': 4.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
@@ -5993,7 +5993,7 @@ snapshots:
       '@opentelemetry/sdk-metrics': 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.0.0)
-      '@systemfsoftware/stryker-js-vm-runner': '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)'
+      '@systemfsoftware/stryker-js-vm-runner': '@systemfsoftware/stryker-js-vitest-runner@file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(supports-color@10.2.2)(vitest@5.0.1)'
       effect: 4.0.0
     transitivePeerDependencies:
       - '@opentelemetry/api-logs'
