@@ -44,25 +44,18 @@
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
-      # Every tarball the release produced, renamed to `<name without scope>.tgz`
-      # so the `file:` paths in the manifests and the lockfile keep their
-      # spelling across releases; only their integrity moves.
-      publishedOf = pkgs:
-        let
-          released = stryker-published.packages.${pkgs.stdenv.hostPlatform.system}.workspace-tarballs;
-        in
-        pkgs.runCommand "stryker-published" { nativeBuildInputs = [ pkgs.jq ]; } ''
-          mkdir -p "$out"
-          jq -r '.[] | "\(.name | split("/") | last) \(.file)"' ${released}/index.json |
-            while read -r name file; do cp ${released}/"$file" "$out/$name.tgz"; done
-        '';
+      # The tarballs of the latest release, as `<attr>.tgz` under `.deps/`.
+      producerTarballsOf = pkgs: pnpm-release-management.lib.mkProducerTarballs {
+        inherit pkgs;
+        producers = { inherit stryker-published; };
+      };
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
           inherit pkgs;
           src = self;
           pname = "stryker-js-effect";
           pnpm = pkgs.pnpm_11;
-          files.".sfs-deps" = publishedOf pkgs;
+          files.".deps" = producerTarballsOf pkgs;
         };
     in
     {
@@ -79,7 +72,7 @@
           workspace = workspaceOf pkgs;
           own = {
             inherit dprint;
-            stryker-published = publishedOf pkgs;
+            stryker-published = producerTarballsOf pkgs;
             deno = pkgs.deno;
             comment-checker = sandboxed;
             comment-checker-unwrapped = unwrapped;
@@ -121,15 +114,10 @@
               # The changeset check (`devshell: true`) runs inside it
               pnpm-release-management.packages.${system}.sandbox
             ];
-            # The lockfile names the released tarballs under `.sfs-deps/`. They
-            # are copied, not linked: the sandbox cannot read a store path
-            # outside its own closure.
-            shellHook = ''
-              sfs_deps="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.sfs-deps"
-              rm -rf "$sfs_deps" && mkdir -p "$sfs_deps"
-              cp ${self.packages.${system}.stryker-published}/*.tgz "$sfs_deps"/
-              chmod u+w "$sfs_deps"/*.tgz
-            '';
+            # The lockfile names the producer tarballs under `.deps/`. The hook copies
+            # them in as real files: the sandbox cannot read a store path outside its
+            # own closure.
+            shellHook = self.packages.${system}.stryker-published.shellHook;
           };
         });
     };
