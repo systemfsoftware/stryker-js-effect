@@ -438,7 +438,7 @@ if (import.meta.vitest !== void 0) {
   // The omitted field is dropped at runtime; the cast keeps the caller's type, which the decoder re-checks.
   const withoutEligibility = <T extends object>(value: T, absent: boolean): T =>
     Boolean.match(absent, {
-      onTrue: () => Struct.omit(value, ['probeEligibility']) as unknown as T,
+      onTrue: () => Struct.omit(value as unknown as Record<string, unknown>, ['probeEligibility']) as unknown as T,
       onFalse: () => value,
     })
   const eligibilityOf = (mutant: Mutant, absent: boolean) => {
