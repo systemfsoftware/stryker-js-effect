@@ -53,7 +53,7 @@ catalog:
   "@vitest/browser-playwright": ^5
   "@vitest/coverage-v8": ^5
   fast-check: ^4
-  effect: ^4.1.0
+  effect: ^4.1.2
   husky: ^9
   lint-staged: ^17
   microsandbox: 0.7.2
