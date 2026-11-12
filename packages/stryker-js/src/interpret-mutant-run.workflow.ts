@@ -50,15 +50,17 @@ export type MutantRunOutcome =
   | MutantRunRetry
   | MutantRunRetryExhausted
 
-export class MutantRunObservation extends S.Class<MutantRunObservation, { readonly brand: unique symbol }>('MutantRunObservation')({
-  workerReplaced: S.Boolean,
-  neverStarted: S.Boolean,
-  confirming: S.Boolean,
-  timeoutMs: Mutant.RunOptionsFields.timeout,
-  coveringTests: S.String.pipe(S.Array),
-  executedTests: S.String.pipe(S.Array, S.optionalKey),
-  attempt: S.Natural,
-}) {
+export class MutantRunObservation
+  extends S.Class<MutantRunObservation, { readonly brand: unique symbol }>('MutantRunObservation')({
+    workerReplaced: S.Boolean,
+    neverStarted: S.Boolean,
+    confirming: S.Boolean,
+    timeoutMs: Mutant.RunOptionsFields.timeout,
+    coveringTests: S.String.pipe(S.Array),
+    executedTests: S.String.pipe(S.Array, S.optionalKey),
+    attempt: S.Natural,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
