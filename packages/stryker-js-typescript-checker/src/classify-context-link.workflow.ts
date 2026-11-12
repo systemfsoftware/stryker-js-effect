@@ -40,41 +40,49 @@ export type LeftOperandMember = typeof LeftOperandMember.Type
 export const ReturnTarget = S.Literals(['none', 'annotated', 'unannotated-expression', 'unannotated-declaration'])
 export type ReturnTarget = typeof ReturnTarget.Type
 
-export class ClassifyContextLinkCommand extends S.TaggedClass<ClassifyContextLinkCommand>()(
-  'ClassifyContextLinkCommand',
-  {
-    parentKind: S.Enum(SyntaxKind),
-    slot: ContextSlot,
-    operator: S.Enum(SyntaxKind),
-    constAssertion: S.Boolean,
-    annotated: S.Boolean,
-    returnTarget: ReturnTarget,
-    leftOperand: S.Array(LeftOperandMember),
-  },
-) {
+export class ClassifyContextLinkCommand
+  extends S.TaggedClass<ClassifyContextLinkCommand, { readonly brand: unique symbol }>()(
+    'ClassifyContextLinkCommand',
+    {
+      parentKind: S.Enum(SyntaxKind),
+      slot: ContextSlot,
+      operator: S.Enum(SyntaxKind),
+      constAssertion: S.Boolean,
+      annotated: S.Boolean,
+      returnTarget: ReturnTarget,
+      leftOperand: S.Array(LeftOperandMember),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const ContextLinkTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/ContextLink')
 type ContextLinkTypeId = typeof ContextLinkTypeId
 
-export class LinkClimb extends S.TaggedClass<LinkClimb>()('LinkClimb', {}) {
+export class LinkClimb extends S.TaggedClass<LinkClimb, { readonly brand: unique symbol }>()('LinkClimb', {}) {
   readonly [ContextLinkTypeId] = ContextLinkTypeId
 }
 
-export class LinkClimbFunction extends S.TaggedClass<LinkClimbFunction>()('LinkClimbFunction', {}) {
+export class LinkClimbFunction
+  extends S.TaggedClass<LinkClimbFunction, { readonly brand: unique symbol }>()('LinkClimbFunction', {})
+{
   readonly [ContextLinkTypeId] = ContextLinkTypeId
 }
 
-export class LinkDeclared extends S.TaggedClass<LinkDeclared>()('LinkDeclared', {}) {
+export class LinkDeclared extends S.TaggedClass<LinkDeclared, { readonly brand: unique symbol }>()('LinkDeclared', {}) {
   readonly [ContextLinkTypeId] = ContextLinkTypeId
 }
 
-export class LinkCallArgument extends S.TaggedClass<LinkCallArgument>()('LinkCallArgument', {}) {
+export class LinkCallArgument
+  extends S.TaggedClass<LinkCallArgument, { readonly brand: unique symbol }>()('LinkCallArgument', {})
+{
   readonly [ContextLinkTypeId] = ContextLinkTypeId
 }
 
-export class LinkUnenforced extends S.TaggedClass<LinkUnenforced>()('LinkUnenforced', {}) {
+export class LinkUnenforced
+  extends S.TaggedClass<LinkUnenforced, { readonly brand: unique symbol }>()('LinkUnenforced', {})
+{
   readonly [ContextLinkTypeId] = ContextLinkTypeId
 }
 

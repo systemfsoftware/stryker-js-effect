@@ -28,10 +28,12 @@ export interface AnnotatedRun {
   readonly verdict: RunEvent.VerdictReached
 }
 
-export class AnnotationOracleUnreadable extends S.TaggedError<AnnotationOracleUnreadable>()(
-  'AnnotationOracleUnreadable',
-  { fixture: S.String, file: S.String, reason: S.String },
-) {
+export class AnnotationOracleUnreadable
+  extends S.TaggedError<AnnotationOracleUnreadable, { readonly brand: unique symbol }>()(
+    'AnnotationOracleUnreadable',
+    { fixture: S.String, file: S.String, reason: S.String },
+  )
+{
   override get message(): string {
     return `annotation oracle: ${this.fixture}/${this.file} could not be read: ${this.reason}`
   }

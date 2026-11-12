@@ -11,40 +11,48 @@ import { type PluginSource, PluginSourceSchema, type WorkerPluginSource } from '
 const ResolvedWorkerSpawnTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ResolvedWorkerSpawn')
 type ResolvedWorkerSpawnTypeId = typeof ResolvedWorkerSpawnTypeId
 
-export class ConfiguredPluginName extends S.TaggedClass<ConfiguredPluginName>()('ConfiguredPluginName', {
-  name: S.String,
-}) {}
+export class ConfiguredPluginName
+  extends S.TaggedClass<ConfiguredPluginName, { readonly brand: unique symbol }>()('ConfiguredPluginName', {
+    name: S.String,
+  })
+{}
 
 export class ConfiguredPluginModulePath
-  extends S.TaggedClass<ConfiguredPluginModulePath>()('ConfiguredPluginModulePath', {
+  extends S.TaggedClass<ConfiguredPluginModulePath, { readonly brand: unique symbol }>()('ConfiguredPluginModulePath', {
     modulePath: S.String,
   })
 {}
 
 export const ConfiguredPluginSchema = S.Union([ConfiguredPluginName, ConfiguredPluginModulePath])
 
-export class WorkerSpawnResolved extends S.TaggedClass<WorkerSpawnResolved>()('WorkerSpawnResolved', {
-  kind: Plugin.WorkerPluginKind,
-  name: S.String,
-  entrypoint: S.String,
-}) {
+export class WorkerSpawnResolved
+  extends S.TaggedClass<WorkerSpawnResolved, { readonly brand: unique symbol }>()('WorkerSpawnResolved', {
+    kind: Plugin.WorkerPluginKind,
+    name: S.String,
+    entrypoint: S.String,
+  })
+{
   readonly [ResolvedWorkerSpawnTypeId] = ResolvedWorkerSpawnTypeId
 }
 
-export class WorkerSpawnMissing extends S.TaggedError<WorkerSpawnMissing>()('WorkerSpawnMissing', {
-  reason: S.String,
-  descriptor: S.String,
-}) {
+export class WorkerSpawnMissing
+  extends S.TaggedError<WorkerSpawnMissing, { readonly brand: unique symbol }>()('WorkerSpawnMissing', {
+    reason: S.String,
+    descriptor: S.String,
+  })
+{
   override get message(): string {
     return `${this.reason} (${this.descriptor})`
   }
 }
 
-export class WorkerSpawnCommand extends S.TaggedClass<WorkerSpawnCommand>()('WorkerSpawnCommand', {
-  sources: S.Array(PluginSourceSchema),
-  kind: Plugin.WorkerPluginKind,
-  configured: ConfiguredPluginSchema,
-}) {
+export class WorkerSpawnCommand
+  extends S.TaggedClass<WorkerSpawnCommand, { readonly brand: unique symbol }>()('WorkerSpawnCommand', {
+    sources: S.Array(PluginSourceSchema),
+    kind: Plugin.WorkerPluginKind,
+    configured: ConfiguredPluginSchema,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { kind: 'stryker.plugin.kind' } as const
 }
 

@@ -29,9 +29,11 @@ export interface RunFilter {
   priorKillerTestIds?: string[]
 }
 
-export class CoverageDecodeFailed extends S.TaggedError<CoverageDecodeFailed>()('CoverageDecodeFailed', {
-  cause: S.Unknown,
-}) {
+export class CoverageDecodeFailed
+  extends S.TaggedError<CoverageDecodeFailed, { readonly brand: unique symbol }>()('CoverageDecodeFailed', {
+    cause: S.Unknown,
+  })
+{
   override get message(): string {
     return 'Failed to decode coverage data'
   }

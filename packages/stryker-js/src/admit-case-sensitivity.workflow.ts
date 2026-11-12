@@ -8,7 +8,7 @@ import * as S from 'effect/Schema'
 const CaseSensitivityTypeId = Symbol.for('@systemfsoftware/stryker-js/CaseSensitivityDecision')
 type CaseSensitivityTypeId = typeof CaseSensitivityTypeId
 
-const FileIdentity = S.Struct({ dev: S.Finite, ino: S.Option(S.Finite) })
+const FileIdentity = S.Struct({ dev: S.BigInt, ino: S.Option(S.BigInt) })
 type FileIdentity = typeof FileIdentity.Type
 
 const SwappedMissing = S.TaggedStruct('SwappedMissing', {})
@@ -20,17 +20,21 @@ const SwappedName = S.Union([SwappedMissing, SwappedFound])
 const CaseProbeResult = S.Struct({ own: FileIdentity, swapped: SwappedName })
 type CaseProbeResult = typeof CaseProbeResult.Type
 
-export class CaseSensitivityCommand extends S.TaggedClass<CaseSensitivityCommand>()('CaseSensitivityCommand', {
-  probes: S.Array(CaseProbeResult),
-}) {
+export class CaseSensitivityCommand
+  extends S.TaggedClass<CaseSensitivityCommand, { readonly brand: unique symbol }>()('CaseSensitivityCommand', {
+    probes: S.Array(CaseProbeResult),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class CaseToldApart extends S.TaggedClass<CaseToldApart>()('CaseToldApart', {}) {
+export class CaseToldApart
+  extends S.TaggedClass<CaseToldApart, { readonly brand: unique symbol }>()('CaseToldApart', {})
+{
   readonly [CaseSensitivityTypeId] = CaseSensitivityTypeId
 }
 
-export class CaseFolded extends S.TaggedClass<CaseFolded>()('CaseFolded', {}) {
+export class CaseFolded extends S.TaggedClass<CaseFolded, { readonly brand: unique symbol }>()('CaseFolded', {}) {
   readonly [CaseSensitivityTypeId] = CaseSensitivityTypeId
 }
 

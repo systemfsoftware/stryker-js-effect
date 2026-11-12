@@ -25,9 +25,9 @@ const MUTANT_ID = Mutant.MutantId.make('0123456789abcdef')
 const digestOf = (seed: string): string => seed.repeat(64)
 
 const unreachableBlobs: VerdictBlobs = {
-  read: (name) => Effect.fail(VerdictBlobFailed.make({ name, reason: UNAVAILABLE_REASON })),
-  write: (name) => Effect.fail(VerdictBlobFailed.make({ name, reason: UNAVAILABLE_REASON })),
-  list: (directory) => Effect.fail(VerdictBlobFailed.make({ name: directory, reason: UNAVAILABLE_REASON })),
+  read: (name) => Effect.fail(VerdictBlobFailed.make({ blob: name, reason: UNAVAILABLE_REASON })),
+  write: (name) => Effect.fail(VerdictBlobFailed.make({ blob: name, reason: UNAVAILABLE_REASON })),
+  list: (directory) => Effect.fail(VerdictBlobFailed.make({ blob: directory, reason: UNAVAILABLE_REASON })),
 }
 
 const unreachableStoreLayer: Layer.Layer<VerdictStore> = Layer.succeed(

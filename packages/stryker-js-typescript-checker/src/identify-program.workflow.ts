@@ -5,28 +5,34 @@ import * as S from 'effect/Schema'
 
 import { ProgramFile, programKeyOf } from './program-digest.schema.js'
 
-export class IdentifyProgramCommand extends S.TaggedClass<IdentifyProgramCommand>()('IdentifyProgramCommand', {
-  typescriptVersion: S.String,
-  checkerVersion: S.String,
-  checkerOptionsJson: S.String,
-  sourceFiles: S.Array(ProgramFile),
-  tsconfigs: S.Array(ProgramFile),
-}) {
+export class IdentifyProgramCommand
+  extends S.TaggedClass<IdentifyProgramCommand, { readonly brand: unique symbol }>()('IdentifyProgramCommand', {
+    typescriptVersion: S.String,
+    checkerVersion: S.String,
+    checkerOptionsJson: S.String,
+    sourceFiles: S.Array(ProgramFile),
+    tsconfigs: S.Array(ProgramFile),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const IdentifyTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/IdentifyProgram')
 type IdentifyTypeId = typeof IdentifyTypeId
 
-export class ProgramIdentified extends S.TaggedClass<ProgramIdentified>()('ProgramIdentified', {
-  key: S.String,
-}) {
+export class ProgramIdentified
+  extends S.TaggedClass<ProgramIdentified, { readonly brand: unique symbol }>()('ProgramIdentified', {
+    key: S.String,
+  })
+{
   readonly [IdentifyTypeId] = IdentifyTypeId
 }
 
-export class ProgramUnidentified extends S.TaggedClass<ProgramUnidentified>()('ProgramUnidentified', {
-  reason: S.String,
-}) {
+export class ProgramUnidentified
+  extends S.TaggedClass<ProgramUnidentified, { readonly brand: unique symbol }>()('ProgramUnidentified', {
+    reason: S.String,
+  })
+{
   readonly [IdentifyTypeId] = IdentifyTypeId
 }
 

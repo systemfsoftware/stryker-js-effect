@@ -9,25 +9,31 @@ const LocalMutationDecisionTypeId: unique symbol = Symbol.for(
 )
 type LocalMutationDecisionTypeId = typeof LocalMutationDecisionTypeId
 
-export class RefuseLocalMutationCommand extends S.TaggedClass<RefuseLocalMutationCommand>()(
-  'RefuseLocalMutationCommand',
-  {
-    dryRunOnly: S.Boolean,
-    githubActions: S.UndefinedOr(S.String),
-    allowLocalMutation: S.UndefinedOr(S.String),
-  },
-) {
+export class RefuseLocalMutationCommand
+  extends S.TaggedClass<RefuseLocalMutationCommand, { readonly brand: unique symbol }>()(
+    'RefuseLocalMutationCommand',
+    {
+      dryRunOnly: S.Boolean,
+      githubActions: S.UndefinedOr(S.String),
+      allowLocalMutation: S.UndefinedOr(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class LocalMutationAllowed extends S.TaggedClass<LocalMutationAllowed>()('LocalMutationAllowed', {}) {
+export class LocalMutationAllowed
+  extends S.TaggedClass<LocalMutationAllowed, { readonly brand: unique symbol }>()('LocalMutationAllowed', {})
+{
   readonly [LocalMutationDecisionTypeId] = LocalMutationDecisionTypeId
 }
 
-export class LocalMutationRefused extends S.TaggedError<LocalMutationRefused>()('LocalMutationRefused', {
-  rule: RunEvent.RefusalRule,
-  message: S.String,
-}) {}
+export class LocalMutationRefused
+  extends S.TaggedError<LocalMutationRefused, { readonly brand: unique symbol }>()('LocalMutationRefused', {
+    rule: RunEvent.RefusalRule,
+    message: S.String,
+  })
+{}
 
 const decide = (
   command: RefuseLocalMutationCommand,

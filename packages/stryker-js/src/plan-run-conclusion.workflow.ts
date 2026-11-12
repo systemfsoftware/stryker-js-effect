@@ -39,13 +39,15 @@ export const RunOutcomeTag = S.Literals([
 ])
 export type RunOutcomeTag = typeof RunOutcomeTag.Type
 
-export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCommand>()('PlanRunConclusionCommand', {
-  command: RunOutcomeCommand,
-  machine: S.Boolean,
-  exitCode: Plugin.ExitCode,
-  outcome: RunOutcomeTag,
-  error: S.String,
-}) {
+export class PlanRunConclusionCommand
+  extends S.TaggedClass<PlanRunConclusionCommand, { readonly brand: unique symbol }>()('PlanRunConclusionCommand', {
+    command: RunOutcomeCommand,
+    machine: S.Boolean,
+    exitCode: Plugin.ExitCode,
+    outcome: RunOutcomeTag,
+    error: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     machine: 'stryker.run_conclusion.machine',
     exitCode: 'stryker.run.exit_code',
@@ -54,31 +56,39 @@ export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCom
   } as const
 }
 
-export class RunConclusionEmittedOk extends S.TaggedClass<RunConclusionEmittedOk>()('RunConclusionEmittedOk', {
-  command: RunOutcomeCommand,
-}) {
-  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
-}
-
-export class RunConclusionEmittedFailed extends S.TaggedClass<RunConclusionEmittedFailed>()(
-  'RunConclusionEmittedFailed',
-  {
+export class RunConclusionEmittedOk
+  extends S.TaggedClass<RunConclusionEmittedOk, { readonly brand: unique symbol }>()('RunConclusionEmittedOk', {
     command: RunOutcomeCommand,
+  })
+{
+  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
+}
+
+export class RunConclusionEmittedFailed
+  extends S.TaggedClass<RunConclusionEmittedFailed, { readonly brand: unique symbol }>()(
+    'RunConclusionEmittedFailed',
+    {
+      command: RunOutcomeCommand,
+      exitCode: Plugin.ExitCode,
+    },
+  )
+{
+  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
+}
+
+export class RunConclusionQuietOk
+  extends S.TaggedClass<RunConclusionQuietOk, { readonly brand: unique symbol }>()('RunConclusionQuietOk', {})
+{
+  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
+}
+
+export class RunConclusionQuietFailed
+  extends S.TaggedClass<RunConclusionQuietFailed, { readonly brand: unique symbol }>()('RunConclusionQuietFailed', {
     exitCode: Plugin.ExitCode,
-  },
-) {
-  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
-}
-
-export class RunConclusionQuietOk extends S.TaggedClass<RunConclusionQuietOk>()('RunConclusionQuietOk', {}) {
-  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
-}
-
-export class RunConclusionQuietFailed extends S.TaggedClass<RunConclusionQuietFailed>()('RunConclusionQuietFailed', {
-  exitCode: Plugin.ExitCode,
-  exitClass: S.Union([Plugin.ExitClass, RunOutcomeTag]),
-  error: S.String,
-}) {
+    exitClass: S.Union([Plugin.ExitClass, RunOutcomeTag]),
+    error: S.String,
+  })
+{
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
 

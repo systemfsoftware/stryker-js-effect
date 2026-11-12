@@ -26,7 +26,16 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/platform-node-shared/NodeChildProcessSpawner",
+          "@effect/platform-node-shared/NodeFileSystem",
+          "@effect/platform-node-shared/NodePath",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/process/ChildProcess",
+          "effect/process/ChildProcessSpawner"
+        ]
       }
     ]
   },

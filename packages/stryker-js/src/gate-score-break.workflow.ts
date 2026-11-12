@@ -40,9 +40,11 @@ const BreakBreach = S.Struct({
 )
 export type BreakBreach = typeof BreakBreach.Type
 
-export class GateScoreBreakCommand extends S.TaggedClass<GateScoreBreakCommand>()('GateScoreBreakCommand', {
-  projects: S.Array(ProjectScore),
-}) {
+export class GateScoreBreakCommand
+  extends S.TaggedClass<GateScoreBreakCommand, { readonly brand: unique symbol }>()('GateScoreBreakCommand', {
+    projects: S.Array(ProjectScore),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -58,10 +60,12 @@ const notesOf = (unscored: ReadonlyArray<string>, unrecorded: ReadonlyArray<stri
   ),
 ]
 
-export class ScoreAtOrAboveBreak extends S.TaggedClass<ScoreAtOrAboveBreak>()('ScoreAtOrAboveBreak', {
-  unscored: S.Array(S.String),
-  unrecorded: S.Array(S.String),
-}) {
+export class ScoreAtOrAboveBreak
+  extends S.TaggedClass<ScoreAtOrAboveBreak, { readonly brand: unique symbol }>()('ScoreAtOrAboveBreak', {
+    unscored: S.Array(S.String),
+    unrecorded: S.Array(S.String),
+  })
+{
   readonly [GateScoreBreakTypeId] = GateScoreBreakTypeId
 
   get lines(): ReadonlyArray<string> {
@@ -72,12 +76,14 @@ export class ScoreAtOrAboveBreak extends S.TaggedClass<ScoreAtOrAboveBreak>()('S
 export const GateScoreBreakDecision = S.Union([ScoreAtOrAboveBreak])
 export type GateScoreBreakDecision = typeof GateScoreBreakDecision.Type
 
-export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelowBreak', {
-  breaches: S.NonEmptyArray(BreakBreach),
-  projects: S.Natural,
-  unscored: S.Array(S.String),
-  unrecorded: S.Array(S.String),
-}) {
+export class ScoreBelowBreak
+  extends S.TaggedError<ScoreBelowBreak, { readonly brand: unique symbol }>()('ScoreBelowBreak', {
+    breaches: S.NonEmptyArray(BreakBreach),
+    projects: S.Natural,
+    unscored: S.Array(S.String),
+    unrecorded: S.Array(S.String),
+  })
+{
   readonly code = SCORE_BREAK_CODE
   readonly exitClass = SCORE_BREAK_EXIT_CLASS
 

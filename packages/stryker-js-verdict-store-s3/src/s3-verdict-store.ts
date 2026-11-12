@@ -50,7 +50,7 @@ const keyPrefixOf = (prefix: string): string => prefix.replace(/\/+$/u, '')
 const keyOf = (prefix: string, name: string): string => Arr.join(Arr.filter([prefix, name], (part) => part !== ''), '/')
 
 const failedAt = (name: string) => <A = unknown>(cause: A): VerdictBlobFailed =>
-  VerdictBlobFailed.make({ name, reason: reasonOf(cause) })
+  VerdictBlobFailed.make({ blob: name, reason: reasonOf(cause) })
 
 const absentOrFailedAt = (name: string) => <A = unknown>(cause: A): EntryAbsent | VerdictBlobFailed =>
   cause instanceof NoSuchKey ? EntryAbsent.make({}) : failedAt(name)(cause)

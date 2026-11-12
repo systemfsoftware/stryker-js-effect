@@ -12,26 +12,34 @@ const STREAM_THRESHOLDS = { high: 100, low: 80, break: null }
 const ReportFromStreamTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReportFromStream')
 type ReportFromStreamTypeId = typeof ReportFromStreamTypeId
 
-export class ReportFromStreamCommand extends S.Class<ReportFromStreamCommand>('ReportFromStreamCommand')({
-  text: S.String,
-}) {
+export class ReportFromStreamCommand
+  extends S.Class<ReportFromStreamCommand, { readonly brand: unique symbol }>('ReportFromStreamCommand')({
+    text: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { text: 'stryker.report.stream.text' } as const
 }
 
-export class ReportFromStreamRebuilt extends S.TaggedClass<ReportFromStreamRebuilt>()('ReportFromStreamRebuilt', {
-  report: Report.MutationTestResult,
-}) {
+export class ReportFromStreamRebuilt
+  extends S.TaggedClass<ReportFromStreamRebuilt, { readonly brand: unique symbol }>()('ReportFromStreamRebuilt', {
+    report: Report.MutationTestResult,
+  })
+{
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
-export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent>()('ReportFromStreamAbsent', {}) {
+export class ReportFromStreamAbsent
+  extends S.TaggedClass<ReportFromStreamAbsent, { readonly brand: unique symbol }>()('ReportFromStreamAbsent', {})
+{
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
-export class StreamVersionMismatch extends S.TaggedError<StreamVersionMismatch>()('StreamVersionMismatch', {
-  expected: S.String,
-  found: S.String,
-}) {
+export class StreamVersionMismatch
+  extends S.TaggedError<StreamVersionMismatch, { readonly brand: unique symbol }>()('StreamVersionMismatch', {
+    expected: S.String,
+    found: S.String,
+  })
+{
   override get message(): string {
     return `Stream schema ${this.found} cannot be read by a reader of stream schema ${this.expected}. Re-run that shard with the same stryker release as \`stryker merge\`.`
   }

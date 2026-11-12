@@ -28,32 +28,38 @@ export const ProviderCatalogSchema = S.Struct({
 })
 export type ProviderCatalog = typeof ProviderCatalogSchema.Type
 
-export class PlanMutatorCatalogsCommand extends S.TaggedClass<PlanMutatorCatalogsCommand>()(
-  'PlanMutatorCatalogsCommand',
-  {
-    stock: MergedCatalogSchema,
-    providers: S.Array(ProviderCatalogSchema),
-  },
-) {
+export class PlanMutatorCatalogsCommand
+  extends S.TaggedClass<PlanMutatorCatalogsCommand, { readonly brand: unique symbol }>()(
+    'PlanMutatorCatalogsCommand',
+    {
+      stock: MergedCatalogSchema,
+      providers: S.Array(ProviderCatalogSchema),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const MutatorCatalogsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutatorCatalogs')
 type MutatorCatalogsTypeId = typeof MutatorCatalogsTypeId
 
-export class MutatorCatalogsPlanned extends S.TaggedClass<MutatorCatalogsPlanned>()('MutatorCatalogsPlanned', {
-  catalogs: S.Array(MergedCatalogSchema),
-}) {
+export class MutatorCatalogsPlanned
+  extends S.TaggedClass<MutatorCatalogsPlanned, { readonly brand: unique symbol }>()('MutatorCatalogsPlanned', {
+    catalogs: S.Array(MergedCatalogSchema),
+  })
+{
   readonly [MutatorCatalogsTypeId] = MutatorCatalogsTypeId
 }
 
-export class MutatorCatalogRefused extends S.TaggedError<MutatorCatalogRefused>()('MutatorCatalogRefused', {
-  reason: S.Literals(['DuplicateNamespace', 'StockName', 'UnownedName']),
-  name: S.String,
-  modules: S.Array(S.String),
-}) {
+export class MutatorCatalogRefused
+  extends S.TaggedError<MutatorCatalogRefused, { readonly brand: unique symbol }>()('MutatorCatalogRefused', {
+    reason: S.Literals(['DuplicateNamespace', 'StockName', 'UnownedName']),
+    mutatorName: S.String,
+    modules: S.Array(S.String),
+  })
+{
   override get message(): string {
-    return `Refused the mutator catalog of ${this.modules.join(', ')}: ${this.reason} "${this.name}".`
+    return `Refused the mutator catalog of ${this.modules.join(', ')}: ${this.reason} "${this.mutatorName}".`
   }
 }
 
@@ -98,7 +104,7 @@ const duplicateNamespaceOf = (providers: readonly ProviderCatalog[]): Option.Opt
     (clash) =>
       MutatorCatalogRefused.make({
         reason: 'DuplicateNamespace',
-        name: clash.namespace,
+        mutatorName: clash.namespace,
         modules: [...clash.modules],
       }),
   )
@@ -157,7 +163,7 @@ const offendingEntryRefusalOf = (
     (offending) =>
       MutatorCatalogRefused.make({
         reason: offending.reason,
-        name: offending.name,
+        mutatorName: offending.name,
         modules: [offending.moduleName],
       }),
   )

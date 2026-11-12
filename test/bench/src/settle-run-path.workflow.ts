@@ -6,13 +6,15 @@ import * as S from 'effect/Schema'
 
 import { RunPathMoveBack, RunPathRestored, RunPathRunEnd, RunPathUnrestored } from './run-path.schema.js'
 
-export class SettleRunPathCommand extends S.TaggedClass<SettleRunPathCommand>()('SettleRunPathCommand', {
-  side: BenchSide,
-  tree: S.NonEmptyString,
-  runPath: S.NonEmptyString,
-  moveBack: RunPathMoveBack,
-  run: RunPathRunEnd,
-}) {
+export class SettleRunPathCommand
+  extends S.TaggedClass<SettleRunPathCommand, { readonly brand: unique symbol }>()('SettleRunPathCommand', {
+    side: BenchSide,
+    tree: S.NonEmptyString,
+    runPath: S.NonEmptyString,
+    moveBack: RunPathMoveBack,
+    run: RunPathRunEnd,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

@@ -61,18 +61,22 @@ export type UnknownReason = typeof UnknownReason.Type
 export const TypeAnswerTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-plugin-interface/TypeAnswer')
 export type TypeAnswerTypeId = typeof TypeAnswerTypeId
 
-export class Assignable extends S.TaggedClass<Assignable>()('Assignable', { candidateType: S.String }) {
+export class Assignable
+  extends S.TaggedClass<Assignable, { readonly brand: unique symbol }>()('Assignable', { candidateType: S.String })
+{
   readonly [TypeAnswerTypeId] = TypeAnswerTypeId
 }
 
-export class NotAssignable extends S.TaggedClass<NotAssignable>()('NotAssignable', {
+export class NotAssignable extends S.TaggedClass<NotAssignable, { readonly brand: unique symbol }>()('NotAssignable', {
   candidateType: S.String,
   contextualType: S.String,
 }) {
   readonly [TypeAnswerTypeId] = TypeAnswerTypeId
 }
 
-export class Unknown extends S.TaggedClass<Unknown>()('Unknown', { reason: UnknownReason }) {
+export class Unknown
+  extends S.TaggedClass<Unknown, { readonly brand: unique symbol }>()('Unknown', { reason: UnknownReason })
+{
   readonly [TypeAnswerTypeId] = TypeAnswerTypeId
 }
 
@@ -121,11 +125,13 @@ export type TypeQueryResponse = typeof TypeQueryResponse.Type
 export const TypeQueryRefusedReason = S.Literals(['unsupported-version', 'project-open-failed'])
 export type TypeQueryRefusedReason = typeof TypeQueryRefusedReason.Type
 
-export class TypeQueryRefused extends S.TaggedError<TypeQueryRefused>()('TypeQueryRefused', {
-  version: S.Int,
-  reason: TypeQueryRefusedReason,
-  nextAction: S.String,
-}) {
+export class TypeQueryRefused
+  extends S.TaggedError<TypeQueryRefused, { readonly brand: unique symbol }>()('TypeQueryRefused', {
+    version: S.Int,
+    reason: TypeQueryRefusedReason,
+    nextAction: S.String,
+  })
+{
   override get message(): string {
     return `${this.reason}: ${this.nextAction}`
   }

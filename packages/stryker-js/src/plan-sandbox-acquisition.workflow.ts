@@ -7,36 +7,42 @@ import * as S from 'effect/Schema'
 const PlanSandboxAcquisitionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PlanSandboxAcquisition')
 type PlanSandboxAcquisitionTypeId = typeof PlanSandboxAcquisitionTypeId
 
-export class SandboxAcquisitionCommand extends S.TaggedClass<SandboxAcquisitionCommand>()('SandboxAcquisitionCommand', {
-  inPlace: S.Boolean,
-  backupDirectory: S.String,
-  symlinkNodeModules: S.Boolean,
-  buildCommand: S.UndefinedOr(S.String),
-}) {
+export class SandboxAcquisitionCommand
+  extends S.TaggedClass<SandboxAcquisitionCommand, { readonly brand: unique symbol }>()('SandboxAcquisitionCommand', {
+    inPlace: S.Boolean,
+    backupDirectory: S.String,
+    symlinkNodeModules: S.Boolean,
+    buildCommand: S.UndefinedOr(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const variantFields = { buildCommand: S.Option(S.String) }
 
-export class SandboxInPlaceRestored extends S.TaggedClass<SandboxInPlaceRestored>()(
+export class SandboxInPlaceRestored extends S.TaggedClass<SandboxInPlaceRestored, { readonly brand: unique symbol }>()(
   'SandboxInPlaceRestored',
   variantFields,
 ) {
   readonly [PlanSandboxAcquisitionTypeId] = PlanSandboxAcquisitionTypeId
 }
 
-export class SandboxInPlaceUnrestored extends S.TaggedClass<SandboxInPlaceUnrestored>()(
-  'SandboxInPlaceUnrestored',
-  variantFields,
-) {
+export class SandboxInPlaceUnrestored
+  extends S.TaggedClass<SandboxInPlaceUnrestored, { readonly brand: unique symbol }>()(
+    'SandboxInPlaceUnrestored',
+    variantFields,
+  )
+{
   readonly [PlanSandboxAcquisitionTypeId] = PlanSandboxAcquisitionTypeId
 }
 
-export class SandboxCopiedLinked extends S.TaggedClass<SandboxCopiedLinked>()('SandboxCopiedLinked', variantFields) {
+export class SandboxCopiedLinked
+  extends S.TaggedClass<SandboxCopiedLinked, { readonly brand: unique symbol }>()('SandboxCopiedLinked', variantFields)
+{
   readonly [PlanSandboxAcquisitionTypeId] = PlanSandboxAcquisitionTypeId
 }
 
-export class SandboxCopiedUnlinked extends S.TaggedClass<SandboxCopiedUnlinked>()(
+export class SandboxCopiedUnlinked extends S.TaggedClass<SandboxCopiedUnlinked, { readonly brand: unique symbol }>()(
   'SandboxCopiedUnlinked',
   variantFields,
 ) {

@@ -10,20 +10,22 @@ import { BudgetBaseline, BudgetBaselineSchemaVersion } from './BudgetBaseline.sc
 const BUDGET_EXIT_CLASS = 'VerdictFail' satisfies Plugin.ExitClass
 const BUDGET_REMEDIATION = 'accept the new cost with `stryker gate --update-budget-baseline`, or speed the run up'
 
-export class BudgetGateCommand extends S.TaggedClass<BudgetGateCommand>()('BudgetGateCommand', {
-  actualSeconds: Report.NonNegativeFinite,
-  baseline: S.NullOr(BudgetBaseline),
-  tolerance: Report.NonNegativeFinite,
-  updateBaseline: S.Boolean,
-  baselineFile: S.String,
-}) {
+export class BudgetGateCommand
+  extends S.TaggedClass<BudgetGateCommand, { readonly brand: unique symbol }>()('BudgetGateCommand', {
+    actualSeconds: Report.NonNegativeFinite,
+    baseline: S.NullOr(BudgetBaseline),
+    tolerance: Report.NonNegativeFinite,
+    updateBaseline: S.Boolean,
+    baselineFile: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const BudgetGateTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/BudgetGateDecision')
 type BudgetGateTypeId = typeof BudgetGateTypeId
 
-export class BudgetWithin extends S.TaggedClass<BudgetWithin>()('BudgetWithin', {
+export class BudgetWithin extends S.TaggedClass<BudgetWithin, { readonly brand: unique symbol }>()('BudgetWithin', {
   baseline: S.NullOr(BudgetBaseline),
 }) {
   readonly [BudgetGateTypeId] = BudgetGateTypeId
@@ -32,12 +34,14 @@ export class BudgetWithin extends S.TaggedClass<BudgetWithin>()('BudgetWithin', 
 export const BudgetGateDecision = S.Union([BudgetWithin])
 export type BudgetGateDecision = typeof BudgetGateDecision.Type
 
-export class BudgetExceeded extends S.TaggedError<BudgetExceeded>()('BudgetExceeded', {
-  baselineSeconds: Report.NonNegativeFinite,
-  allowedSeconds: Report.NonNegativeFinite,
-  actualSeconds: Report.NonNegativeFinite,
-  tolerance: Report.NonNegativeFinite,
-}) {
+export class BudgetExceeded
+  extends S.TaggedError<BudgetExceeded, { readonly brand: unique symbol }>()('BudgetExceeded', {
+    baselineSeconds: Report.NonNegativeFinite,
+    allowedSeconds: Report.NonNegativeFinite,
+    actualSeconds: Report.NonNegativeFinite,
+    tolerance: Report.NonNegativeFinite,
+  })
+{
   readonly exitClass = BUDGET_EXIT_CLASS
 
   override get message(): string {
@@ -51,9 +55,11 @@ export class BudgetExceeded extends S.TaggedError<BudgetExceeded>()('BudgetExcee
   }
 }
 
-export class BudgetInputUnusable extends S.TaggedError<BudgetInputUnusable>()('BudgetInputUnusable', {
-  reason: S.String,
-}) {
+export class BudgetInputUnusable
+  extends S.TaggedError<BudgetInputUnusable, { readonly brand: unique symbol }>()('BudgetInputUnusable', {
+    reason: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
 
   override get message(): string {

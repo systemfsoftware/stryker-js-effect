@@ -34,17 +34,19 @@ const candidateIdsAreDistinct = S.makeFilter(
 
 const DistinctCandidates = S.Array(TceCandidate).check(candidateIdsAreDistinct)
 
-export class TceDecision extends S.TaggedClass<TceDecision>()('TceDecision', {
+export class TceDecision extends S.TaggedClass<TceDecision, { readonly brand: unique symbol }>()('TceDecision', {
   id: S.String,
   classification: TceClassification,
 }) {
   readonly [TceDecisionTypeId] = TceDecisionTypeId
 }
 
-export class ClassifyTceCommand extends S.TaggedClass<ClassifyTceCommand>()('ClassifyTceCommand', {
-  originalEmit: S.String,
-  candidates: DistinctCandidates,
-}) {
+export class ClassifyTceCommand
+  extends S.TaggedClass<ClassifyTceCommand, { readonly brand: unique symbol }>()('ClassifyTceCommand', {
+    originalEmit: S.String,
+    candidates: DistinctCandidates,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

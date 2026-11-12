@@ -12,7 +12,7 @@ import { VerdictBlobFailed, VerdictStoreUnavailable } from './VerdictStore.schem
 import { VerdictStore } from './VerdictStore.service.js'
 
 const failedAt = (name: string) => (error: PlatformError): VerdictBlobFailed =>
-  VerdictBlobFailed.make({ name, reason: error.message })
+  VerdictBlobFailed.make({ blob: name, reason: error.message })
 
 const recoverWhen =
   (tag: 'NotFound' | 'AlreadyExists') => <A>(recovered: A) => (error: PlatformError): Effect.Effect<A, PlatformError> =>

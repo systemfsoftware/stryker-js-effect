@@ -648,14 +648,13 @@ const cachedRunHeaderIdentityOf = (
   deps: HeaderIdentityDeps,
   input: MutationReportingInput,
 ): Effect.Effect<RunHeaderIdentity> =>
-  Effect.flatMap(
+  Effect.flatten(
     SynchronizedRef.modifyEffect(deps.headerIdentityCache, (current) =>
       Option.match(current, {
         onSome: (memo) => Effect.succeed([memo, current] as const),
         onNone: () =>
           Effect.map(Effect.cached(runHeaderIdentityOf(deps, input)), (memo) => [memo, Option.some(memo)] as const),
       })),
-    (memo) => memo,
   )
 
 const incrementalHeaderOf = Effect.fnUntraced(function*(

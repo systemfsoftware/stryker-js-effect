@@ -7,41 +7,49 @@ import { CheckCall, ParityLine, PhaseLine, type Side } from './Parity.schema.js'
 
 const SCHEMA_VERSION = S.Literal(1)
 
-export class SlowerThanMain extends S.TaggedClass<SlowerThanMain>()('SlowerThanMain', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('slower-than-main'),
-  nextAction: S.String,
-  branchMs: S.Finite,
-  mainMs: S.Finite,
-}) {}
+export class SlowerThanMain
+  extends S.TaggedClass<SlowerThanMain, { readonly brand: unique symbol }>()('SlowerThanMain', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('slower-than-main'),
+    nextAction: S.String,
+    branchMs: S.Finite,
+    mainMs: S.Finite,
+  })
+{}
 
 const SpeedGateTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/SpeedGate')
 type SpeedGateTypeId = typeof SpeedGateTypeId
 
-export class SpeedGateUnmeasured extends S.TaggedClass<SpeedGateUnmeasured>()('SpeedGateUnmeasured', {
-  schemaVersion: SCHEMA_VERSION,
-  code: S.Literal('speed-gate-unmeasured'),
-  nextAction: S.String,
-}) {
+export class SpeedGateUnmeasured
+  extends S.TaggedClass<SpeedGateUnmeasured, { readonly brand: unique symbol }>()('SpeedGateUnmeasured', {
+    schemaVersion: SCHEMA_VERSION,
+    code: S.Literal('speed-gate-unmeasured'),
+    nextAction: S.String,
+  })
+{
   readonly [SpeedGateTypeId] = SpeedGateTypeId
 }
 
 export type Warning = SpeedGateUnmeasured
 
-export class SpeedGateCommand extends S.TaggedClass<SpeedGateCommand>()('SpeedGateCommand', {
-  lines: S.Array(ParityLine),
-  projects: S.Array(S.String),
-  speedGateEnabled: S.Boolean,
-}) {
+export class SpeedGateCommand
+  extends S.TaggedClass<SpeedGateCommand, { readonly brand: unique symbol }>()('SpeedGateCommand', {
+    lines: S.Array(ParityLine),
+    projects: S.Array(S.String),
+    speedGateEnabled: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class SpeedGateEvaluated extends S.TaggedClass<SpeedGateEvaluated>()('SpeedGateEvaluated', {
-  measuredProjects: S.Array(S.String),
-  mainMs: S.Finite,
-  branchMs: S.Finite,
-  slowerThanMain: S.Array(SlowerThanMain),
-}) {
+export class SpeedGateEvaluated
+  extends S.TaggedClass<SpeedGateEvaluated, { readonly brand: unique symbol }>()('SpeedGateEvaluated', {
+    measuredProjects: S.Array(S.String),
+    mainMs: S.Finite,
+    branchMs: S.Finite,
+    slowerThanMain: S.Array(SlowerThanMain),
+  })
+{
   readonly [SpeedGateTypeId] = SpeedGateTypeId
 }
 

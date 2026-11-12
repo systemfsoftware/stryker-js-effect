@@ -1,9 +1,9 @@
 // Use "var" instead of let, otherwise we are not expanding the `globalThis`
 declare var __stryker__:
-  | import('@systemfsoftware/stryker-js-instrumenter').Instrument.InstrumenterContext
+  | Omit<import('@systemfsoftware/stryker-js-instrumenter').Instrument.InstrumenterContext, 'brand'>
   | undefined
 declare var __stryker2__:
-  | import('@systemfsoftware/stryker-js-instrumenter').Instrument.InstrumenterContext
+  | Omit<import('@systemfsoftware/stryker-js-instrumenter').Instrument.InstrumenterContext, 'brand'>
   | undefined
 declare var strykerGlobalNamespaceName: '__stryker__' | '__stryker2__'
 declare var strykerDryRun: boolean

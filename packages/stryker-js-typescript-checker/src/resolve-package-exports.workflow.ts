@@ -14,29 +14,35 @@ const PackageExportsTypeId: unique symbol = Symbol.for(
 )
 type PackageExportsTypeId = typeof PackageExportsTypeId
 
-export class ResolvePackageExportsCommand extends S.TaggedClass<ResolvePackageExportsCommand>()(
-  'ResolvePackageExportsCommand',
-  {
-    exports: S.Json,
-    subpath: S.String,
-  },
-) {
+export class ResolvePackageExportsCommand
+  extends S.TaggedClass<ResolvePackageExportsCommand, { readonly brand: unique symbol }>()(
+    'ResolvePackageExportsCommand',
+    {
+      exports: S.Json,
+      subpath: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class PackageExportsResolved extends S.TaggedClass<PackageExportsResolved>()('PackageExportsResolved', {
-  targets: S.Array(S.String),
-  terminal: S.Boolean,
-}) {
+export class PackageExportsResolved
+  extends S.TaggedClass<PackageExportsResolved, { readonly brand: unique symbol }>()('PackageExportsResolved', {
+    targets: S.Array(S.String),
+    terminal: S.Boolean,
+  })
+{
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }
 
-export class PackageExportsExcluded extends S.TaggedClass<PackageExportsExcluded>()('PackageExportsExcluded', {}) {
+export class PackageExportsExcluded
+  extends S.TaggedClass<PackageExportsExcluded, { readonly brand: unique symbol }>()('PackageExportsExcluded', {})
+{
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }
 
 export class PackageExportsUnresolved
-  extends S.TaggedClass<PackageExportsUnresolved>()('PackageExportsUnresolved', {})
+  extends S.TaggedClass<PackageExportsUnresolved, { readonly brand: unique symbol }>()('PackageExportsUnresolved', {})
 {
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }

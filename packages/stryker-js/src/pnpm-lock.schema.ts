@@ -54,9 +54,13 @@ export type PnpmWorkspaceSettings = typeof PnpmWorkspaceSettingsSchema.Type
 export const PackageManagerManifestSchema = S.Struct({ packageManager: S.optionalKey(S.String) })
 export type PackageManagerManifest = typeof PackageManagerManifestSchema.Type
 
-export class LinkRef extends S.TaggedClass<LinkRef>()('LinkRef', { target: S.String }) {}
+export class LinkRef
+  extends S.TaggedClass<LinkRef, { readonly brand: unique symbol }>()('LinkRef', { target: S.String })
+{}
 
-export class SnapshotRef extends S.TaggedClass<SnapshotRef>()('SnapshotRef', { key: S.String }) {}
+export class SnapshotRef
+  extends S.TaggedClass<SnapshotRef, { readonly brand: unique symbol }>()('SnapshotRef', { key: S.String })
+{}
 
 export const LockRefSchema = S.Union([LinkRef, SnapshotRef])
 export type LockRef = typeof LockRefSchema.Type
@@ -112,18 +116,18 @@ if (import.meta.vitest !== void 0) {
     ['plain-alias', 'is-odd@3.0.1', SnapshotRef.make({ key: 'is-odd@3.0.1' })],
     [
       '@systemfsoftware/stryker-js-vm-runner',
-      '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api@1.9.1)',
+      '@systemfsoftware/stryker-js-vitest-runner@file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api@1.9.1)',
       SnapshotRef.make({
         key:
-          '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz(@opentelemetry/api@1.9.1)',
+          '@systemfsoftware/stryker-js-vitest-runner@file:.deps/stryker-js-vitest-runner.tgz(@opentelemetry/api@1.9.1)',
       }),
     ],
     [
       'released-stryker-js-cli-contract',
-      '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz',
-      SnapshotRef.make({ key: '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz' }),
+      '@systemfsoftware/stryker-js-cli-contract@file:.deps/stryker-js-cli-contract.tgz',
+      SnapshotRef.make({ key: '@systemfsoftware/stryker-js-cli-contract@file:.deps/stryker-js-cli-contract.tgz' }),
     ],
-    ['@s/x', 'file:.sfs-deps/x.tgz(peer@1.0.0)', SnapshotRef.make({ key: '@s/x@file:.sfs-deps/x.tgz(peer@1.0.0)' })],
+    ['@s/x', 'file:.deps/x.tgz(peer@1.0.0)', SnapshotRef.make({ key: '@s/x@file:.deps/x.tgz(peer@1.0.0)' })],
     ['local-tgz', 'file:vendor/local-tgz.tgz', SnapshotRef.make({ key: 'local-tgz@file:vendor/local-tgz.tgz' })],
     [
       'kleur',

@@ -8,13 +8,15 @@ import * as S from 'effect/Schema'
 import { packageSpecifierOf } from '../import-closure.schema.js'
 import { type PackageExportValue, PackageManifestFields } from './package-manifest.schema.js'
 
-export class SelectPackageEntryCommand extends S.TaggedClass<SelectPackageEntryCommand>()(
-  'SelectPackageEntryCommand',
-  {
-    specifier: S.String,
-    manifest: PackageManifestFields,
-  },
-) {
+export class SelectPackageEntryCommand
+  extends S.TaggedClass<SelectPackageEntryCommand, { readonly brand: unique symbol }>()(
+    'SelectPackageEntryCommand',
+    {
+      specifier: S.String,
+      manifest: PackageManifestFields,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     specifier: 'stryker.package_entry.specifier',
   } as const
@@ -23,17 +25,21 @@ export class SelectPackageEntryCommand extends S.TaggedClass<SelectPackageEntryC
 const SelectPackageEntryTypeId = Symbol.for('@systemfsoftware/stryker-js/SelectPackageEntryDecision')
 type SelectPackageEntryTypeId = typeof SelectPackageEntryTypeId
 
-export class PackageEntrySelected extends S.TaggedClass<PackageEntrySelected>()('PackageEntrySelected', {
-  specifier: S.String,
-  entry: S.String,
-}) {
+export class PackageEntrySelected
+  extends S.TaggedClass<PackageEntrySelected, { readonly brand: unique symbol }>()('PackageEntrySelected', {
+    specifier: S.String,
+    entry: S.String,
+  })
+{
   readonly [SelectPackageEntryTypeId] = SelectPackageEntryTypeId
 }
 
-export class PackageEntryUnresolved extends S.TaggedClass<PackageEntryUnresolved>()('PackageEntryUnresolved', {
-  specifier: S.String,
-  reason: S.String,
-}) {
+export class PackageEntryUnresolved
+  extends S.TaggedClass<PackageEntryUnresolved, { readonly brand: unique symbol }>()('PackageEntryUnresolved', {
+    specifier: S.String,
+    reason: S.String,
+  })
+{
   readonly [SelectPackageEntryTypeId] = SelectPackageEntryTypeId
 }
 

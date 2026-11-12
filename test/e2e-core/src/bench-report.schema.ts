@@ -81,7 +81,7 @@ export const abortedOutcomeOf: {
 const BenchReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchReport')
 type BenchReportTypeId = typeof BenchReportTypeId
 
-export class BenchReport extends S.Class<BenchReport>('BenchReport')({
+export class BenchReport extends S.Class<BenchReport, { readonly brand: unique symbol }>('BenchReport')({
   schemaVersion: S.Literal('2.0'),
   baseSha: S.String,
   headSha: S.String,
@@ -105,11 +105,15 @@ const RenderedFields = {
   exitCode: S.Literals([0, 1]),
 }
 
-export class BenchRenderedNotice extends S.TaggedClass<BenchRenderedNotice>()('notice', RenderedFields) {
+export class BenchRenderedNotice
+  extends S.TaggedClass<BenchRenderedNotice, { readonly brand: unique symbol }>()('notice', RenderedFields)
+{
   readonly [BenchRenderedTypeId] = BenchRenderedTypeId
 }
 
-export class BenchRenderedError extends S.TaggedClass<BenchRenderedError>()('error', RenderedFields) {
+export class BenchRenderedError
+  extends S.TaggedClass<BenchRenderedError, { readonly brand: unique symbol }>()('error', RenderedFields)
+{
   readonly [BenchRenderedTypeId] = BenchRenderedTypeId
 }
 

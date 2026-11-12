@@ -21,24 +21,30 @@ import {
 const EncodeVerdictKeyTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/EncodeVerdictKey')
 type EncodeVerdictKeyTypeId = typeof EncodeVerdictKeyTypeId
 
-export class EncodeVerdictKeyCommand extends S.TaggedClass<EncodeVerdictKeyCommand>()('EncodeVerdictKeyCommand', {
-  scheme: VerdictKeySchemeSchema,
-  components: VerdictComponentsSchema,
-}) {
+export class EncodeVerdictKeyCommand
+  extends S.TaggedClass<EncodeVerdictKeyCommand, { readonly brand: unique symbol }>()('EncodeVerdictKeyCommand', {
+    scheme: VerdictKeySchemeSchema,
+    components: VerdictComponentsSchema,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class TestedKeyEncoded extends S.TaggedClass<TestedKeyEncoded>()('TestedKeyEncoded', {
-  encoding: S.String,
-  directory: S.String,
-}) {
+export class TestedKeyEncoded
+  extends S.TaggedClass<TestedKeyEncoded, { readonly brand: unique symbol }>()('TestedKeyEncoded', {
+    encoding: S.String,
+    directory: S.String,
+  })
+{
   readonly [EncodeVerdictKeyTypeId] = EncodeVerdictKeyTypeId
 }
 
-export class CheckerKeyEncoded extends S.TaggedClass<CheckerKeyEncoded>()('CheckerKeyEncoded', {
-  encoding: S.String,
-  directory: S.String,
-}) {
+export class CheckerKeyEncoded
+  extends S.TaggedClass<CheckerKeyEncoded, { readonly brand: unique symbol }>()('CheckerKeyEncoded', {
+    encoding: S.String,
+    directory: S.String,
+  })
+{
   readonly [EncodeVerdictKeyTypeId] = EncodeVerdictKeyTypeId
 }
 
