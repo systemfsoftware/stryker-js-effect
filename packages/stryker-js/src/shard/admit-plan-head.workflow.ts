@@ -8,24 +8,30 @@ import * as S from 'effect/Schema'
 const AdmitPlanHeadTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/AdmitPlanHead')
 type AdmitPlanHeadTypeId = typeof AdmitPlanHeadTypeId
 
-export class AdmitPlanHeadCommand extends S.Class<AdmitPlanHeadCommand, { readonly brand: unique symbol }>('AdmitPlanHeadCommand')({
-  scope: S.Union([ShardPlanDiffScoped, ShardPlanFullScope]),
-  head: S.NonEmptyString,
-  sources: S.String,
-}) {
+export class AdmitPlanHeadCommand
+  extends S.Class<AdmitPlanHeadCommand, { readonly brand: unique symbol }>('AdmitPlanHeadCommand')({
+    scope: S.Union([ShardPlanDiffScoped, ShardPlanFullScope]),
+    head: S.NonEmptyString,
+    sources: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class PlanHeadCurrent extends S.TaggedClass<PlanHeadCurrent, { readonly brand: unique symbol }>()('PlanHeadCurrent', {
-  head: S.String,
-}) {
+export class PlanHeadCurrent
+  extends S.TaggedClass<PlanHeadCurrent, { readonly brand: unique symbol }>()('PlanHeadCurrent', {
+    head: S.String,
+  })
+{
   readonly [AdmitPlanHeadTypeId] = AdmitPlanHeadTypeId
 }
 
-export class ShardPlanStale extends S.TaggedError<ShardPlanStale, { readonly brand: unique symbol }>()('ShardPlanStale', {
-  planHead: S.String,
-  head: S.String,
-}) {
+export class ShardPlanStale
+  extends S.TaggedError<ShardPlanStale, { readonly brand: unique symbol }>()('ShardPlanStale', {
+    planHead: S.String,
+    head: S.String,
+  })
+{
   readonly [AdmitPlanHeadTypeId] = AdmitPlanHeadTypeId
   readonly exitClass = 'ConfigError' as const
 
@@ -34,11 +40,13 @@ export class ShardPlanStale extends S.TaggedError<ShardPlanStale, { readonly bra
   }
 }
 
-export class ShardPlanWorktreeStale extends S.TaggedError<ShardPlanWorktreeStale, { readonly brand: unique symbol }>()('ShardPlanWorktreeStale', {
-  planBase: S.String,
-  planSources: S.String,
-  sources: S.String,
-}) {
+export class ShardPlanWorktreeStale
+  extends S.TaggedError<ShardPlanWorktreeStale, { readonly brand: unique symbol }>()('ShardPlanWorktreeStale', {
+    planBase: S.String,
+    planSources: S.String,
+    sources: S.String,
+  })
+{
   readonly [AdmitPlanHeadTypeId] = AdmitPlanHeadTypeId
   readonly exitClass = 'ConfigError' as const
 

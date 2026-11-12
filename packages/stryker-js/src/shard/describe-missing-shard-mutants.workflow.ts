@@ -8,27 +8,33 @@ type MissingShardMutantsTypeId = typeof MissingShardMutantsTypeId
 
 const MISSING_IDS_NAMED = 5
 
-export class DescribeMissingShardMutantsCommand extends S.TaggedClass<DescribeMissingShardMutantsCommand, { readonly brand: unique symbol }>()(
-  'DescribeMissingShardMutantsCommand',
-  {
-    missingIds: S.Array(S.String),
-  },
-) {
+export class DescribeMissingShardMutantsCommand
+  extends S.TaggedClass<DescribeMissingShardMutantsCommand, { readonly brand: unique symbol }>()(
+    'DescribeMissingShardMutantsCommand',
+    {
+      missingIds: S.Array(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class MissingShardMutantsNamed extends S.TaggedClass<MissingShardMutantsNamed, { readonly brand: unique symbol }>()('MissingShardMutantsNamed', {
-  text: S.String,
-}) {
+export class MissingShardMutantsNamed
+  extends S.TaggedClass<MissingShardMutantsNamed, { readonly brand: unique symbol }>()('MissingShardMutantsNamed', {
+    text: S.String,
+  })
+{
   readonly [MissingShardMutantsTypeId] = MissingShardMutantsTypeId
 }
 
-export class MissingShardMutantsTruncated extends S.TaggedClass<MissingShardMutantsTruncated, { readonly brand: unique symbol }>()(
-  'MissingShardMutantsTruncated',
-  {
-    text: S.String,
-  },
-) {
+export class MissingShardMutantsTruncated
+  extends S.TaggedClass<MissingShardMutantsTruncated, { readonly brand: unique symbol }>()(
+    'MissingShardMutantsTruncated',
+    {
+      text: S.String,
+    },
+  )
+{
   readonly [MissingShardMutantsTypeId] = MissingShardMutantsTypeId
 }
 

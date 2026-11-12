@@ -12,24 +12,30 @@ const CONFIG_ERROR_CODE: number | undefined = Option.getOrUndefined(
   S.decodeOption(Plugin.ExitCodeFromClass)('ConfigError'),
 )
 
-export class ClassifyShardChildExitCommand extends S.TaggedClass<ClassifyShardChildExitCommand, { readonly brand: unique symbol }>()(
-  'ClassifyShardChildExitCommand',
-  {
-    exitCode: S.Int,
-  },
-) {
+export class ClassifyShardChildExitCommand
+  extends S.TaggedClass<ClassifyShardChildExitCommand, { readonly brand: unique symbol }>()(
+    'ClassifyShardChildExitCommand',
+    {
+      exitCode: S.Int,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ShardChildConfigErrored extends S.TaggedClass<ShardChildConfigErrored, { readonly brand: unique symbol }>()('ShardChildConfigErrored', {
-  exitClass: S.tag('ConfigError'),
-}) {
+export class ShardChildConfigErrored
+  extends S.TaggedClass<ShardChildConfigErrored, { readonly brand: unique symbol }>()('ShardChildConfigErrored', {
+    exitClass: S.tag('ConfigError'),
+  })
+{
   readonly [ClassifyShardChildExitTypeId] = ClassifyShardChildExitTypeId
 }
 
-export class ShardChildRuntimeErrored extends S.TaggedClass<ShardChildRuntimeErrored, { readonly brand: unique symbol }>()('ShardChildRuntimeErrored', {
-  exitClass: S.tag('RuntimeError'),
-}) {
+export class ShardChildRuntimeErrored
+  extends S.TaggedClass<ShardChildRuntimeErrored, { readonly brand: unique symbol }>()('ShardChildRuntimeErrored', {
+    exitClass: S.tag('RuntimeError'),
+  })
+{
   readonly [ClassifyShardChildExitTypeId] = ClassifyShardChildExitTypeId
 }
 

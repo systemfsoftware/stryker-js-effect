@@ -97,14 +97,16 @@ export class CliAnnotateRequested
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliPlanRequested extends S.TaggedClass<CliPlanRequested, { readonly brand: unique symbol }>()('CliPlanRequested', {
-  targetSeconds: S.Finite,
-  maxShards: S.optional(S.Int),
-  projects: S.Array(S.String).pipe(S.optional),
-  out: S.optional(S.String),
-  full: S.Boolean,
-  since: S.optional(S.String),
-}) {
+export class CliPlanRequested
+  extends S.TaggedClass<CliPlanRequested, { readonly brand: unique symbol }>()('CliPlanRequested', {
+    targetSeconds: S.Finite,
+    maxShards: S.optional(S.Int),
+    projects: S.Array(S.String).pipe(S.optional),
+    out: S.optional(S.String),
+    full: S.Boolean,
+    since: S.optional(S.String),
+  })
+{
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
@@ -146,12 +148,14 @@ export class CliMcpRequested
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class RunPlanWithoutShardRefused extends S.TaggedError<RunPlanWithoutShardRefused, { readonly brand: unique symbol }>()(
-  'RunPlanWithoutShardRefused',
-  {
-    plan: S.String,
-  },
-) {
+export class RunPlanWithoutShardRefused
+  extends S.TaggedError<RunPlanWithoutShardRefused, { readonly brand: unique symbol }>()(
+    'RunPlanWithoutShardRefused',
+    {
+      plan: S.String,
+    },
+  )
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {

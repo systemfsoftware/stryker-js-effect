@@ -24,10 +24,12 @@ export const GitDiffResult = S.Struct({
 
 export type GitDiffResult = typeof GitDiffResult.Type
 
-export class GitRefUnresolved extends S.TaggedError<GitRefUnresolved, { readonly brand: unique symbol }>()('GitRefUnresolved', {
-  ref: S.String,
-  detail: S.String,
-}) {
+export class GitRefUnresolved
+  extends S.TaggedError<GitRefUnresolved, { readonly brand: unique symbol }>()('GitRefUnresolved', {
+    ref: S.String,
+    detail: S.String,
+  })
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
@@ -35,11 +37,13 @@ export class GitRefUnresolved extends S.TaggedError<GitRefUnresolved, { readonly
   }
 }
 
-export class GitCommandFailed extends S.TaggedError<GitCommandFailed, { readonly brand: unique symbol }>()('GitCommandFailed', {
-  command: S.String,
-  detail: S.String,
-  cause: S.optional(S.Unknown),
-}) {
+export class GitCommandFailed
+  extends S.TaggedError<GitCommandFailed, { readonly brand: unique symbol }>()('GitCommandFailed', {
+    command: S.String,
+    detail: S.String,
+    cause: S.optional(S.Unknown),
+  })
+{
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
