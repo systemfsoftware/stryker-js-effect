@@ -25,19 +25,23 @@ import { type Warning } from './speed-gate.workflow.js'
 const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
 type ReportTypeId = typeof ReportTypeId
 
-export class ProjectShard extends S.Class<ProjectShard>('ProjectShard')({ project: S.String, shard: S.Int }) {}
+export class ProjectShard
+  extends S.Class<ProjectShard, { readonly brand: unique symbol }>('ProjectShard')({ project: S.String, shard: S.Int })
+{}
 
-export class CompareFinished extends S.TaggedClass<CompareFinished>()('CompareFinished', {
-  decision: ComparisonDecision,
-  lineCount: S.Int,
-  shards: S.Int,
-  summaryFile: S.String,
-  projectShards: S.Array(ProjectShard),
-  legs: S.Array(LegScope),
-}) {}
+export class CompareFinished
+  extends S.TaggedClass<CompareFinished, { readonly brand: unique symbol }>()('CompareFinished', {
+    decision: ComparisonDecision,
+    lineCount: S.Int,
+    shards: S.Int,
+    summaryFile: S.String,
+    projectShards: S.Array(ProjectShard),
+    legs: S.Array(LegScope),
+  })
+{}
 
 export class ReportParityOutcomeCommand
-  extends S.TaggedClass<ReportParityOutcomeCommand>()('ReportParityOutcomeCommand', {
+  extends S.TaggedClass<ReportParityOutcomeCommand, { readonly brand: unique symbol }>()('ReportParityOutcomeCommand', {
     outcome: S.Union([CompareFinished, DriverFailure]),
     githubActions: S.Boolean,
     runId: S.String,
@@ -53,24 +57,30 @@ const reportFields = {
   stepSummary: S.String,
 }
 
-export class ParityHeldReport extends S.TaggedClass<ParityHeldReport>()('ParityHeldReport', {
-  exitCode: S.Literal(0),
-  ...reportFields,
-}) {
+export class ParityHeldReport
+  extends S.TaggedClass<ParityHeldReport, { readonly brand: unique symbol }>()('ParityHeldReport', {
+    exitCode: S.Literal(0),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 
-export class ParityBrokenReport extends S.TaggedClass<ParityBrokenReport>()('ParityBrokenReport', {
-  exitCode: S.Literal(1),
-  ...reportFields,
-}) {
+export class ParityBrokenReport
+  extends S.TaggedClass<ParityBrokenReport, { readonly brand: unique symbol }>()('ParityBrokenReport', {
+    exitCode: S.Literal(1),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 
-export class DriverFailedReport extends S.TaggedClass<DriverFailedReport>()('DriverFailedReport', {
-  exitCode: S.Literal(2),
-  ...reportFields,
-}) {
+export class DriverFailedReport
+  extends S.TaggedClass<DriverFailedReport, { readonly brand: unique symbol }>()('DriverFailedReport', {
+    exitCode: S.Literal(2),
+    ...reportFields,
+  })
+{
   readonly [ReportTypeId] = ReportTypeId
 }
 

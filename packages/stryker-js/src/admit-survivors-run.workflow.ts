@@ -13,41 +13,45 @@ export const AdmittedSurvivorShape = S.Struct({
 const SurvivorsAdmissionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/SurvivorsAdmission')
 type SurvivorsAdmissionTypeId = typeof SurvivorsAdmissionTypeId
 
-export class PriorReportFacts extends S.Class<PriorReportFacts>('PriorReportFacts')({
+export class PriorReportFacts extends S.Class<PriorReportFacts, { readonly brand: unique symbol }>('PriorReportFacts')({
   config: S.Record(S.String, S.Unknown),
   frameworkVersion: S.UndefinedOr(S.String),
 }) {}
-export class AdmitSurvivorsRunCommand extends S.Class<AdmitSurvivorsRunCommand>('AdmitSurvivorsRunCommand')({
-  priorReport: S.UndefinedOr(PriorReportFacts),
-  currentConfig: S.Record(S.String, S.Unknown),
-  frameworkVersion: S.String,
-  sourceContentHashes: S.Record(S.String, S.String),
-  priorSourceHashes: S.Record(S.String, S.String),
-  priorSurvivors: S.Array(AdmittedSurvivorShape),
-}) {
+export class AdmitSurvivorsRunCommand
+  extends S.Class<AdmitSurvivorsRunCommand, { readonly brand: unique symbol }>('AdmitSurvivorsRunCommand')({
+    priorReport: S.UndefinedOr(PriorReportFacts),
+    currentConfig: S.Record(S.String, S.Unknown),
+    frameworkVersion: S.String,
+    sourceContentHashes: S.Record(S.String, S.String),
+    priorSourceHashes: S.Record(S.String, S.String),
+    priorSurvivors: S.Array(AdmittedSurvivorShape),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     frameworkVersion: 'stryker.survivors.framework_version',
   } as const
 }
 
-export class Admitted extends S.TaggedClass<Admitted>()('Admitted', {
+export class Admitted extends S.TaggedClass<Admitted, { readonly brand: unique symbol }>()('Admitted', {
   survivors: S.Array(Mutant.Mutant),
   mutateSpans: S.Array(S.String),
 }) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
 }
 
-export class NoSurvivors extends S.TaggedClass<NoSurvivors>()('NoSurvivors', {}) {
+export class NoSurvivors extends S.TaggedClass<NoSurvivors, { readonly brand: unique symbol }>()('NoSurvivors', {}) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
 }
 
 export const SurvivorsAdmission = S.Union([Admitted, NoSurvivors])
 export type SurvivorsAdmission = S.Schema.Type<typeof SurvivorsAdmission>
 
-export class SurvivorsRejection extends S.TaggedError<SurvivorsRejection>()('SurvivorsRejection', {
-  reason: S.Literals(['no-report', 'mismatch']),
-  remediation: S.String,
-}) {
+export class SurvivorsRejection
+  extends S.TaggedError<SurvivorsRejection, { readonly brand: unique symbol }>()('SurvivorsRejection', {
+    reason: S.Literals(['no-report', 'mismatch']),
+    remediation: S.String,
+  })
+{
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
 
   override get message(): string {

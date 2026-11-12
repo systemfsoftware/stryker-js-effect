@@ -6,10 +6,12 @@ import * as S from 'effect/Schema'
 
 import { LegClock, LegClockBehind, LegElapsed } from './leg-clock.schema.js'
 
-export class MeasureLegCommand extends S.TaggedClass<MeasureLegCommand>()('MeasureLegCommand', {
-  startedAtSeconds: S.Finite,
-  nowMs: S.Finite,
-}) {
+export class MeasureLegCommand
+  extends S.TaggedClass<MeasureLegCommand, { readonly brand: unique symbol }>()('MeasureLegCommand', {
+    startedAtSeconds: S.Finite,
+    nowMs: S.Finite,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

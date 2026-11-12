@@ -14,17 +14,19 @@ export const ImportedModuleSchema = S.Struct({
   default: S.optional(S.Unknown),
 })
 
-export class ReadConfigCommand extends S.TaggedClass<ReadConfigCommand>()('ReadConfigCommand', {
-  cliOptions: S.Record(S.String, S.Unknown),
-  basePath: S.String,
-}) {}
+export class ReadConfigCommand
+  extends S.TaggedClass<ReadConfigCommand, { readonly brand: unique symbol }>()('ReadConfigCommand', {
+    cliOptions: S.Record(S.String, S.Unknown),
+    basePath: S.String,
+  })
+{}
 
-export class MergeCommand extends S.TaggedClass<MergeCommand>()('MergeCommand', {
+export class MergeCommand extends S.TaggedClass<MergeCommand, { readonly brand: unique symbol }>()('MergeCommand', {
   base: S.Record(S.String, S.Unknown),
   overrides: S.Record(S.String, S.Unknown),
 }) {}
 
-export class MergeResult extends S.TaggedClass<MergeResult>()('MergeResult', {
+export class MergeResult extends S.TaggedClass<MergeResult, { readonly brand: unique symbol }>()('MergeResult', {
   merged: S.Record(S.String, S.Unknown),
 }) {}
 

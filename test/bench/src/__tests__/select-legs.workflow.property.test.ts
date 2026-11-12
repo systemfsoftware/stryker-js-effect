@@ -36,7 +36,6 @@ const LANE_FILES = [
   '.github/workflows/bench.yml',
   'flake.lock',
   'flake.nix',
-  '.github/actions/released-tarballs/action.yml',
 ]
 const OTHER_FILES = ['README.md', 'packages/a/src/index.ts', '.github/workflows/ci.yml', 'docs/plans/x.md']
 

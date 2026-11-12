@@ -1,5 +1,13 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 8.0.0
+
+Nothing you import changes: `Trace.layerTraceContextClient` and `Trace.layerTraceContextServer` keep their names, types and behaviour.
+
+Build on effect 4.1.0. effect 4.1.0 removed the `effect/Crypto` module, which the published stryker-js and stryker-js-vitest-runner imported, so a mutation run on effect 4.1.0 failed with ERR_MODULE_NOT_FOUND. Both packages now take random identifiers from `effect/crypto/SecureRandom` (`NodeCrypto.layerSecureRandom`), and the effect peer range is now `^4.1.0`: `effect/crypto/*` does not exist in 4.0.x. Schema classes are branded as @effect/tsgo 0.63.0 requires, the MCP server registers its toolkit through the stdio transport's `registrations` option with a middleware that provides the engine services to each request, and file identity in the case-sensitivity probe is a bigint, as effect 4.1.0 reports it.
+
+Breaking: `Worker.WorkerOptions.layer` is now `Worker.WorkerOptions.layerConfig`, and `Worker.WorkerTelemetry.layer` is now `Worker.WorkerTelemetry.layerConfig`, because both build their service from configuration. Each keeps its type and behaviour. Rename the member where your worker entry provides it.
+
 ## 7.0.4
 
 Updated dependency @systemfsoftware/stryker-js-cli-contract to 0.5.0

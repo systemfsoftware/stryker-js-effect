@@ -7,13 +7,13 @@ import * as S from 'effect/Schema'
 const FileOrderTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/FileOrder')
 type FileOrderTypeId = typeof FileOrderTypeId
 
-export class TestFileOrder extends S.TaggedClass<TestFileOrder>()('TestFileOrder', {
+export class TestFileOrder extends S.TaggedClass<TestFileOrder, { readonly brand: unique symbol }>()('TestFileOrder', {
   moduleId: S.String,
 }) {
   readonly [FileOrderTypeId] = FileOrderTypeId
 }
 
-export class SortTestFiles extends S.TaggedClass<SortTestFiles>()('SortTestFiles', {
+export class SortTestFiles extends S.TaggedClass<SortTestFiles, { readonly brand: unique symbol }>()('SortTestFiles', {
   order: S.Array(S.String),
   files: S.Array(S.String),
   priority: S.Array(S.String),

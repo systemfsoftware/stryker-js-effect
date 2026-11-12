@@ -64,7 +64,7 @@ export const PhaseVerdict = S.TaggedUnion({
 })
 export type PhaseVerdict = typeof PhaseVerdict.Type
 
-export class BenchPhaseRow extends S.Class<BenchPhaseRow>('BenchPhaseRow')({
+export class BenchPhaseRow extends S.Class<BenchPhaseRow, { readonly brand: unique symbol }>('BenchPhaseRow')({
   phase: BenchPhase,
   a: SideCell,
   b: SideCell,
@@ -80,20 +80,22 @@ export type Workload = typeof Workload.Type
 
 const CountRange = S.Struct({ min: Report.NonNegativeInt, max: Report.NonNegativeInt })
 
-export class SideCounts extends S.Class<SideCounts>('SideCounts')({
+export class SideCounts extends S.Class<SideCounts, { readonly brand: unique symbol }>('SideCounts')({
   mutants: CountRange,
   testsExecuted: CountRange,
 }) {}
 
 export const CorpusCounts = S.Struct({ a: SideCounts, b: SideCounts })
 
-export class BenchProjectSummary extends S.Class<BenchProjectSummary>('BenchProjectSummary')({
-  corpus: BenchCorpusName,
-  entry: S.NonEmptyString,
-  workload: Workload,
-  counts: CorpusCounts,
-  rows: S.Array(BenchPhaseRow),
-}) {}
+export class BenchProjectSummary
+  extends S.Class<BenchProjectSummary, { readonly brand: unique symbol }>('BenchProjectSummary')({
+    corpus: BenchCorpusName,
+    entry: S.NonEmptyString,
+    workload: Workload,
+    counts: CorpusCounts,
+    rows: S.Array(BenchPhaseRow),
+  })
+{}
 
 export const RegressedMetric = S.Struct({
   corpus: BenchCorpusName,
@@ -119,7 +121,7 @@ export type PhaseRegressed = typeof Regression.cases.PhaseRegressed.Type
 const BenchSummaryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchSummary')
 type BenchSummaryTypeId = typeof BenchSummaryTypeId
 
-export class BenchSummary extends S.TaggedClass<BenchSummary>()('BenchSummary', {
+export class BenchSummary extends S.TaggedClass<BenchSummary, { readonly brand: unique symbol }>()('BenchSummary', {
   projects: S.Array(BenchProjectSummary),
   regression: Regression,
 }) {

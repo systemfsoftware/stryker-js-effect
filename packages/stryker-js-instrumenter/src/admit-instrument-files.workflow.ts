@@ -10,19 +10,23 @@ const InstrumentFilesDecisionTypeId: unique symbol = Symbol.for(
 )
 type InstrumentFilesDecisionTypeId = typeof InstrumentFilesDecisionTypeId
 
-export class InstrumentFilesAdmitted extends S.TaggedClass<InstrumentFilesAdmitted>()('InstrumentFilesAdmitted', {
-  fileCount: S.Finite,
-  skipped: S.Array(InstrumentFileSkip),
-}) {
+export class InstrumentFilesAdmitted
+  extends S.TaggedClass<InstrumentFilesAdmitted, { readonly brand: unique symbol }>()('InstrumentFilesAdmitted', {
+    fileCount: S.Finite,
+    skipped: S.Array(InstrumentFileSkip),
+  })
+{
   readonly [InstrumentFilesDecisionTypeId] = InstrumentFilesDecisionTypeId
 }
 
-export class InstrumentFilesSkippedOnly extends S.TaggedClass<InstrumentFilesSkippedOnly>()(
-  'InstrumentFilesSkippedOnly',
-  {
-    skipped: S.Array(InstrumentFileSkip),
-  },
-) {
+export class InstrumentFilesSkippedOnly
+  extends S.TaggedClass<InstrumentFilesSkippedOnly, { readonly brand: unique symbol }>()(
+    'InstrumentFilesSkippedOnly',
+    {
+      skipped: S.Array(InstrumentFileSkip),
+    },
+  )
+{
   readonly [InstrumentFilesDecisionTypeId] = InstrumentFilesDecisionTypeId
 }
 

@@ -7,14 +7,16 @@ import * as S from 'effect/Schema'
 
 import { RunPathMoveIn, RunPathOccupied, RunPathOutsideTree, RunPathPlan } from './run-path.schema.js'
 
-export class PlanRunPathCommand extends S.TaggedClass<PlanRunPathCommand>()('PlanRunPathCommand', {
-  runnerTemp: S.NonEmptyString,
-  runnerTempEntries: S.Array(S.String),
-  side: BenchSide,
-  tree: S.NonEmptyString,
-  cwd: S.NonEmptyString,
-  cli: S.NonEmptyString,
-}) {
+export class PlanRunPathCommand
+  extends S.TaggedClass<PlanRunPathCommand, { readonly brand: unique symbol }>()('PlanRunPathCommand', {
+    runnerTemp: S.NonEmptyString,
+    runnerTempEntries: S.Array(S.String),
+    side: BenchSide,
+    tree: S.NonEmptyString,
+    cwd: S.NonEmptyString,
+    cli: S.NonEmptyString,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

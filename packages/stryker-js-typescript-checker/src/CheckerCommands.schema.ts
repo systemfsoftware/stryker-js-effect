@@ -10,90 +10,106 @@ import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
 const MutantBound = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 export type MutantBoundType = typeof MutantBound.Type
 
-export class GroupMutantsCommand extends S.TaggedClass<GroupMutantsCommand>()('GroupMutantsCommand', {
-  mutants: S.Array(Checker.CheckerMutantWire),
-  bound: MutantBound,
-}) {
+export class GroupMutantsCommand
+  extends S.TaggedClass<GroupMutantsCommand, { readonly brand: unique symbol }>()('GroupMutantsCommand', {
+    mutants: S.Array(Checker.CheckerMutantWire),
+    bound: MutantBound,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class TraceAffectedFilesCommand extends S.TaggedClass<TraceAffectedFilesCommand>()(
-  'TraceAffectedFilesCommand',
-  {
-    importsByFile: S.Record(S.String, S.Array(S.String)),
-    mutatedFileNames: S.Array(S.String),
-  },
-) {
+export class TraceAffectedFilesCommand
+  extends S.TaggedClass<TraceAffectedFilesCommand, { readonly brand: unique symbol }>()(
+    'TraceAffectedFilesCommand',
+    {
+      importsByFile: S.Record(S.String, S.Array(S.String)),
+      mutatedFileNames: S.Array(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     mutatedFileNames: 'stryker.typescript_checker.mutated_files',
   } as const
 }
 
-export class RequestAffectedFilesCommand extends S.TaggedClass<RequestAffectedFilesCommand>()(
-  'RequestAffectedFilesCommand',
-  {
-    affectedFileNames: S.Array(S.String),
-    presentFileNames: S.Array(S.String),
-  },
-) {
+export class RequestAffectedFilesCommand
+  extends S.TaggedClass<RequestAffectedFilesCommand, { readonly brand: unique symbol }>()(
+    'RequestAffectedFilesCommand',
+    {
+      affectedFileNames: S.Array(S.String),
+      presentFileNames: S.Array(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     affectedFileNames: 'stryker.typescript_checker.affected_files',
   } as const
 }
 
-export class PlanDiagnosticBatchesCommand extends S.TaggedClass<PlanDiagnosticBatchesCommand>()(
-  'PlanDiagnosticBatchesCommand',
-  {
-    fileNames: S.Array(S.String),
-  },
-) {
+export class PlanDiagnosticBatchesCommand
+  extends S.TaggedClass<PlanDiagnosticBatchesCommand, { readonly brand: unique symbol }>()(
+    'PlanDiagnosticBatchesCommand',
+    {
+      fileNames: S.Array(S.String),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     fileNames: 'stryker.typescript_checker.requested_files',
   } as const
 }
 
-export class CaptureAliasSpecifierCommand extends S.TaggedClass<CaptureAliasSpecifierCommand>()(
-  'CaptureAliasSpecifierCommand',
-  {
-    pattern: S.String,
-    specifier: S.String,
-  },
-) {
+export class CaptureAliasSpecifierCommand
+  extends S.TaggedClass<CaptureAliasSpecifierCommand, { readonly brand: unique symbol }>()(
+    'CaptureAliasSpecifierCommand',
+    {
+      pattern: S.String,
+      specifier: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     specifier: 'stryker.typescript_checker.specifier',
   } as const
 }
 
-export class PlanResolutionCandidatesCommand extends S.TaggedClass<PlanResolutionCandidatesCommand>()(
-  'PlanResolutionCandidatesCommand',
-  {
-    resolved: S.String,
-    extension: S.String,
-  },
-) {
+export class PlanResolutionCandidatesCommand
+  extends S.TaggedClass<PlanResolutionCandidatesCommand, { readonly brand: unique symbol }>()(
+    'PlanResolutionCandidatesCommand',
+    {
+      resolved: S.String,
+      extension: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     resolved: 'stryker.typescript_checker.resolved_file',
   } as const
 }
 
-export class OverrideTsconfigOptionsCommand extends S.TaggedClass<OverrideTsconfigOptionsCommand>()(
-  'OverrideTsconfigOptionsCommand',
-  {
-    document: TsConfigDocumentSchema,
-    buildMode: S.Boolean,
-  },
-) {
+export class OverrideTsconfigOptionsCommand
+  extends S.TaggedClass<OverrideTsconfigOptionsCommand, { readonly brand: unique symbol }>()(
+    'OverrideTsconfigOptionsCommand',
+    {
+      document: TsConfigDocumentSchema,
+      buildMode: S.Boolean,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     buildMode: 'stryker.typescript_checker.build_mode',
   } as const
 }
 
-export class ParseTsconfigTextCommand extends S.TaggedClass<ParseTsconfigTextCommand>()(
-  'ParseTsconfigTextCommand',
-  {
-    text: S.String,
-  },
-) {
+export class ParseTsconfigTextCommand
+  extends S.TaggedClass<ParseTsconfigTextCommand, { readonly brand: unique symbol }>()(
+    'ParseTsconfigTextCommand',
+    {
+      text: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -178,16 +194,18 @@ export type CandidateBodyText = typeof CandidateBodyText.Type
 export const CandidateFacts = S.Union([CandidateNotContextFree, CandidateMissing, CandidateTyped, CandidateBodyText])
 export type CandidateFacts = typeof CandidateFacts.Type
 
-export class ClassifyCandidateCommand extends S.TaggedClass<ClassifyCandidateCommand>()(
-  'ClassifyCandidateCommand',
-  {
-    text: S.String,
-  },
-) {
+export class ClassifyCandidateCommand
+  extends S.TaggedClass<ClassifyCandidateCommand, { readonly brand: unique symbol }>()(
+    'ClassifyCandidateCommand',
+    {
+      text: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand>()(
+export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand, { readonly brand: unique symbol }>()(
   'AnswerTypeQueryCommand',
   {
     site: SiteFacts,
@@ -197,23 +215,27 @@ export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterShortcutCommand>()(
-  'DecideImporterShortcutCommand',
-  {
-    original: EditSiteFacts,
-    mutated: EditSiteFacts,
-    compiledElsewhere: S.Boolean,
-  },
-) {
+export class DecideImporterShortcutCommand
+  extends S.TaggedClass<DecideImporterShortcutCommand, { readonly brand: unique symbol }>()(
+    'DecideImporterShortcutCommand',
+    {
+      original: EditSiteFacts,
+      mutated: EditSiteFacts,
+      compiledElsewhere: S.Boolean,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ConcludeSharedRoundCommand extends S.TaggedClass<ConcludeSharedRoundCommand>()(
-  'ConcludeSharedRoundCommand',
-  {
-    decisions: ImporterShortcutDecision.pipe(S.Option, S.Array),
-  },
-) {
+export class ConcludeSharedRoundCommand
+  extends S.TaggedClass<ConcludeSharedRoundCommand, { readonly brand: unique symbol }>()(
+    'ConcludeSharedRoundCommand',
+    {
+      decisions: ImporterShortcutDecision.pipe(S.Option, S.Array),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -235,9 +257,11 @@ const roundCandidateIdsAreDistinct = S.makeFilter(
   { arbitraryConstraint: { uniqueBy: (candidate: RoundCandidate) => candidate.id } },
 )
 
-export class PlanCheckRoundsCommand extends S.TaggedClass<PlanCheckRoundsCommand>()('PlanCheckRoundsCommand', {
-  candidates: S.Array(RoundCandidate).check(roundCandidateIdsAreDistinct),
-}) {
+export class PlanCheckRoundsCommand
+  extends S.TaggedClass<PlanCheckRoundsCommand, { readonly brand: unique symbol }>()('PlanCheckRoundsCommand', {
+    candidates: S.Array(RoundCandidate).check(roundCandidateIdsAreDistinct),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

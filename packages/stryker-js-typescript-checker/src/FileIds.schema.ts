@@ -16,7 +16,7 @@ export type FileMutant = typeof FileMutant.Type
 export const FileMutants = S.Array(FileMutant)
 export type FileMutants = typeof FileMutants.Type
 
-export class FileIds extends S.TaggedClass<FileIds>()('FileIds', {
+export class FileIds extends S.TaggedClass<FileIds, { readonly brand: unique symbol }>()('FileIds', {
   fileName: S.String,
   ids: S.NonEmptyArray(Mutant.MutantId),
 }) {
