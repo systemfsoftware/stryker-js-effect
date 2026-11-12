@@ -13,22 +13,24 @@ export const PriorMutantShape = S.Struct({
   relativeFileName: S.String,
 })
 
-export class AdmitMutantRerunCommand extends S.Class<AdmitMutantRerunCommand>('AdmitMutantRerunCommand')({
-  ids: S.Array(Mutant.MutantId),
-  priorMutants: S.Array(PriorMutantShape),
-  priorReportPath: S.String,
-}) {
+export class AdmitMutantRerunCommand
+  extends S.Class<AdmitMutantRerunCommand, { readonly brand: unique symbol }>('AdmitMutantRerunCommand')({
+    ids: S.Array(Mutant.MutantId),
+    priorMutants: S.Array(PriorMutantShape),
+    priorReportPath: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class RerunAdmitted extends S.TaggedClass<RerunAdmitted>()('RerunAdmitted', {
+export class RerunAdmitted extends S.TaggedClass<RerunAdmitted, { readonly brand: unique symbol }>()('RerunAdmitted', {
   ids: S.Array(Mutant.MutantId),
   mutateSpans: S.Array(S.String),
 }) {
   readonly [MutantRerunTypeId] = MutantRerunTypeId
 }
 
-export class RerunRefused extends S.TaggedClass<RerunRefused>()('RerunRefused', {
+export class RerunRefused extends S.TaggedClass<RerunRefused, { readonly brand: unique symbol }>()('RerunRefused', {
   exitClass: S.Literal('ConfigError'),
   unknownIds: S.Array(Mutant.MutantId),
   reason: S.String,

@@ -6,14 +6,16 @@ import * as S from 'effect/Schema'
 
 import { type FormatIdentity, FormatIdentitySchema } from './IncrementalDiff.schema.js'
 
-export class AdmitFileIdentityCommand extends S.TaggedClass<AdmitFileIdentityCommand>()(
-  'AdmitFileIdentityCommand',
-  {
-    file: S.String,
-    recorded: S.optional(FormatIdentitySchema),
-    claimed: S.optional(FormatIdentitySchema),
-  },
-) {
+export class AdmitFileIdentityCommand
+  extends S.TaggedClass<AdmitFileIdentityCommand, { readonly brand: unique symbol }>()(
+    'AdmitFileIdentityCommand',
+    {
+      file: S.String,
+      recorded: S.optional(FormatIdentitySchema),
+      claimed: S.optional(FormatIdentitySchema),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     file: 'stryker.file_identity.file',
   } as const
@@ -22,15 +24,19 @@ export class AdmitFileIdentityCommand extends S.TaggedClass<AdmitFileIdentityCom
 const FileIdentityDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/FileIdentityDecision')
 type FileIdentityDecisionTypeId = typeof FileIdentityDecisionTypeId
 
-export class FileIdentityReuse extends S.TaggedClass<FileIdentityReuse>()('FileIdentityReuse', {
-  file: S.String,
-}) {
+export class FileIdentityReuse
+  extends S.TaggedClass<FileIdentityReuse, { readonly brand: unique symbol }>()('FileIdentityReuse', {
+    file: S.String,
+  })
+{
   readonly [FileIdentityDecisionTypeId] = FileIdentityDecisionTypeId
 }
 
-export class FileIdentityRecompute extends S.TaggedClass<FileIdentityRecompute>()('FileIdentityRecompute', {
-  file: S.String,
-}) {
+export class FileIdentityRecompute
+  extends S.TaggedClass<FileIdentityRecompute, { readonly brand: unique symbol }>()('FileIdentityRecompute', {
+    file: S.String,
+  })
+{
   readonly [FileIdentityDecisionTypeId] = FileIdentityDecisionTypeId
 }
 

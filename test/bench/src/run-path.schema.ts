@@ -7,7 +7,7 @@ import * as S from 'effect/Schema'
 const RunPathPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathPlan')
 type RunPathPlanTypeId = typeof RunPathPlanTypeId
 
-export class RunPathMoveIn extends S.TaggedClass<RunPathMoveIn>()('RunPathMoveIn', {
+export class RunPathMoveIn extends S.TaggedClass<RunPathMoveIn, { readonly brand: unique symbol }>()('RunPathMoveIn', {
   side: BenchSide,
   tree: S.NonEmptyString,
   runPath: S.NonEmptyString,
@@ -17,21 +17,25 @@ export class RunPathMoveIn extends S.TaggedClass<RunPathMoveIn>()('RunPathMoveIn
   readonly [RunPathPlanTypeId] = RunPathPlanTypeId
 }
 
-export class RunPathOccupied extends S.TaggedClass<RunPathOccupied>()('RunPathOccupied', {
-  side: BenchSide,
-  runPath: S.NonEmptyString,
-}) {
+export class RunPathOccupied
+  extends S.TaggedClass<RunPathOccupied, { readonly brand: unique symbol }>()('RunPathOccupied', {
+    side: BenchSide,
+    runPath: S.NonEmptyString,
+  })
+{
   readonly [RunPathPlanTypeId] = RunPathPlanTypeId
 }
 
 export const RunPathPlan = S.Union([RunPathMoveIn, RunPathOccupied])
 export type RunPathPlan = typeof RunPathPlan.Type
 
-export class RunPathOutsideTree extends S.TaggedError<RunPathOutsideTree>()('RunPathOutsideTree', {
-  side: BenchSide,
-  tree: S.NonEmptyString,
-  path: S.NonEmptyString,
-}) {
+export class RunPathOutsideTree
+  extends S.TaggedError<RunPathOutsideTree, { readonly brand: unique symbol }>()('RunPathOutsideTree', {
+    side: BenchSide,
+    tree: S.NonEmptyString,
+    path: S.NonEmptyString,
+  })
+{
   override get message(): string {
     return `side ${this.side}: ${this.path} is not inside the side's tree ${this.tree}, so it cannot run from the run path`
   }
@@ -40,10 +44,12 @@ export class RunPathOutsideTree extends S.TaggedError<RunPathOutsideTree>()('Run
 const RunPathRestoredTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathRestored')
 type RunPathRestoredTypeId = typeof RunPathRestoredTypeId
 
-export class RunPathRestored extends S.TaggedClass<RunPathRestored>()('RunPathRestored', {
-  side: BenchSide,
-  tree: S.NonEmptyString,
-}) {
+export class RunPathRestored
+  extends S.TaggedClass<RunPathRestored, { readonly brand: unique symbol }>()('RunPathRestored', {
+    side: BenchSide,
+    tree: S.NonEmptyString,
+  })
+{
   readonly [RunPathRestoredTypeId] = RunPathRestoredTypeId
 }
 
@@ -61,13 +67,15 @@ export type RunPathRunEnd = typeof RunPathRunEnd.Type
 
 const causeText = <C>(cause: C): string => Cause.pretty(Cause.isCause(cause) ? cause : Cause.die(cause))
 
-export class RunPathUnrestored extends S.TaggedError<RunPathUnrestored>()('RunPathUnrestored', {
-  side: BenchSide,
-  tree: S.NonEmptyString,
-  runPath: S.NonEmptyString,
-  cause: S.optional(S.Unknown),
-  run: RunPathRunEnd,
-}) {
+export class RunPathUnrestored
+  extends S.TaggedError<RunPathUnrestored, { readonly brand: unique symbol }>()('RunPathUnrestored', {
+    side: BenchSide,
+    tree: S.NonEmptyString,
+    runPath: S.NonEmptyString,
+    cause: S.optional(S.Unknown),
+    run: RunPathRunEnd,
+  })
+{
   override get message(): string {
     const run = RunPathRunEnd.match(this.run, {
       RunSucceeded: () => 'the run itself succeeded',
@@ -79,11 +87,13 @@ export class RunPathUnrestored extends S.TaggedError<RunPathUnrestored>()('RunPa
   }
 }
 
-export class RunPathUnlisted extends S.TaggedError<RunPathUnlisted>()('RunPathUnlisted', {
-  side: BenchSide,
-  runnerTemp: S.NonEmptyString,
-  cause: S.optional(S.Unknown),
-}) {
+export class RunPathUnlisted
+  extends S.TaggedError<RunPathUnlisted, { readonly brand: unique symbol }>()('RunPathUnlisted', {
+    side: BenchSide,
+    runnerTemp: S.NonEmptyString,
+    cause: S.optional(S.Unknown),
+  })
+{
   override get message(): string {
     return `side ${this.side}: ${this.runnerTemp} could not be listed to check the run path is absent: ${
       causeText(this.cause)
@@ -91,12 +101,14 @@ export class RunPathUnlisted extends S.TaggedError<RunPathUnlisted>()('RunPathUn
   }
 }
 
-export class RunPathMoveInFailed extends S.TaggedError<RunPathMoveInFailed>()('RunPathMoveInFailed', {
-  side: BenchSide,
-  tree: S.NonEmptyString,
-  runPath: S.NonEmptyString,
-  cause: S.optional(S.Unknown),
-}) {
+export class RunPathMoveInFailed
+  extends S.TaggedError<RunPathMoveInFailed, { readonly brand: unique symbol }>()('RunPathMoveInFailed', {
+    side: BenchSide,
+    tree: S.NonEmptyString,
+    runPath: S.NonEmptyString,
+    cause: S.optional(S.Unknown),
+  })
+{
   override get message(): string {
     return `side ${this.side}: ${this.tree} could not be moved to the run path ${this.runPath}: ${
       causeText(this.cause)
@@ -116,24 +128,30 @@ export type RunPathFailure = typeof RunPathFailure.Type
 const RunPathAbortTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-bench/RunPathAbort')
 type RunPathAbortTypeId = typeof RunPathAbortTypeId
 
-export class RunPathOccupiedAbort extends S.TaggedClass<RunPathOccupiedAbort>()('RunPathOccupiedAbort', {
-  code: S.Literal('run-path-occupied'),
-  reason: S.String,
-}) {
+export class RunPathOccupiedAbort
+  extends S.TaggedClass<RunPathOccupiedAbort, { readonly brand: unique symbol }>()('RunPathOccupiedAbort', {
+    code: S.Literal('run-path-occupied'),
+    reason: S.String,
+  })
+{
   readonly [RunPathAbortTypeId] = RunPathAbortTypeId
 }
 
-export class RunPathMoveFailedAbort extends S.TaggedClass<RunPathMoveFailedAbort>()('RunPathMoveFailedAbort', {
-  code: S.Literal('run-path-move-failed'),
-  reason: S.String,
-}) {
+export class RunPathMoveFailedAbort
+  extends S.TaggedClass<RunPathMoveFailedAbort, { readonly brand: unique symbol }>()('RunPathMoveFailedAbort', {
+    code: S.Literal('run-path-move-failed'),
+    reason: S.String,
+  })
+{
   readonly [RunPathAbortTypeId] = RunPathAbortTypeId
 }
 
-export class RunPathUnrestoredAbort extends S.TaggedClass<RunPathUnrestoredAbort>()('RunPathUnrestoredAbort', {
-  code: S.Literal('run-path-unrestored'),
-  reason: S.String,
-}) {
+export class RunPathUnrestoredAbort
+  extends S.TaggedClass<RunPathUnrestoredAbort, { readonly brand: unique symbol }>()('RunPathUnrestoredAbort', {
+    code: S.Literal('run-path-unrestored'),
+    reason: S.String,
+  })
+{
   readonly [RunPathAbortTypeId] = RunPathAbortTypeId
 }
 

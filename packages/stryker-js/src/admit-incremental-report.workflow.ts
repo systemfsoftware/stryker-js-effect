@@ -6,16 +6,18 @@ import * as S from 'effect/Schema'
 
 import { IncrementalReportSchema } from './IncrementalReport.schema.js'
 
-export class AdmitIncrementalReportCommand extends S.TaggedClass<AdmitIncrementalReportCommand>()(
-  'AdmitIncrementalReportCommand',
-  {
-    report: S.optional(IncrementalReportSchema),
-    expectedIncrementalVersion: S.String,
-    engineDigest: S.String,
-    mutantSetPolicy: Options.MutantSetPolicy,
-    runInputsDigest: S.String,
-  },
-) {
+export class AdmitIncrementalReportCommand
+  extends S.TaggedClass<AdmitIncrementalReportCommand, { readonly brand: unique symbol }>()(
+    'AdmitIncrementalReportCommand',
+    {
+      report: S.optional(IncrementalReportSchema),
+      expectedIncrementalVersion: S.String,
+      engineDigest: S.String,
+      mutantSetPolicy: Options.MutantSetPolicy,
+      runInputsDigest: S.String,
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {
     expectedIncrementalVersion: 'stryker.incremental_report.expected_version',
     engineDigest: 'stryker.incremental_report.engine_digest',
@@ -28,7 +30,7 @@ const IncrementalReportDecisionTypeId: unique symbol = Symbol.for(
 )
 type IncrementalReportDecisionTypeId = typeof IncrementalReportDecisionTypeId
 
-export class IncrementalReportKeep extends S.TaggedClass<IncrementalReportKeep>()(
+export class IncrementalReportKeep extends S.TaggedClass<IncrementalReportKeep, { readonly brand: unique symbol }>()(
   'IncrementalReportKeep',
   {
     report: IncrementalReportSchema,
@@ -46,14 +48,16 @@ const IncrementalDiscardReason = S.Literals([
 ])
 type IncrementalDiscardReason = typeof IncrementalDiscardReason.Type
 
-export class IncrementalReportDiscard extends S.TaggedClass<IncrementalReportDiscard>()(
-  'IncrementalReportDiscard',
-  {
-    reason: IncrementalDiscardReason,
-    actual: S.optional(S.String),
-    expected: S.String,
-  },
-) {
+export class IncrementalReportDiscard
+  extends S.TaggedClass<IncrementalReportDiscard, { readonly brand: unique symbol }>()(
+    'IncrementalReportDiscard',
+    {
+      reason: IncrementalDiscardReason,
+      actual: S.optional(S.String),
+      expected: S.String,
+    },
+  )
+{
   readonly [IncrementalReportDecisionTypeId] = IncrementalReportDecisionTypeId
 }
 

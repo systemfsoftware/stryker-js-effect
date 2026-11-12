@@ -10,24 +10,30 @@ const DIRECTIVE_PATTERN = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA
 const DEFAULT_REASON = 'Ignored using a comment'
 const NEXT_LINE = 'next-line'
 
-export class DecodeDirectiveCommand extends S.TaggedClass<DecodeDirectiveCommand>()('DecodeDirectiveCommand', {
-  commentText: S.String,
-}) {
+export class DecodeDirectiveCommand
+  extends S.TaggedClass<DecodeDirectiveCommand, { readonly brand: unique symbol }>()('DecodeDirectiveCommand', {
+    commentText: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const DirectiveDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/DirectiveDecision')
 type DirectiveDecisionTypeId = typeof DirectiveDecisionTypeId
 
-export class DirectiveDecoded extends S.TaggedClass<DirectiveDecoded>()('DirectiveDecoded', {
-  directive: DirectiveSchema,
-}) {
+export class DirectiveDecoded
+  extends S.TaggedClass<DirectiveDecoded, { readonly brand: unique symbol }>()('DirectiveDecoded', {
+    directive: DirectiveSchema,
+  })
+{
   readonly [DirectiveDecisionTypeId] = DirectiveDecisionTypeId
 }
 
-export class DirectiveMalformed extends S.TaggedClass<DirectiveMalformed>()('DirectiveMalformed', {
-  commentText: S.String,
-}) {
+export class DirectiveMalformed
+  extends S.TaggedClass<DirectiveMalformed, { readonly brand: unique symbol }>()('DirectiveMalformed', {
+    commentText: S.String,
+  })
+{
   readonly [DirectiveDecisionTypeId] = DirectiveDecisionTypeId
 }
 

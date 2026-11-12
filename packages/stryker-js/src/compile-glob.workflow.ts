@@ -55,23 +55,27 @@ const globSegmentToRegex = (segment: string): string =>
     ),
   )
 
-export class GlobMatcher extends S.TaggedClass<GlobMatcher>()('GlobMatcher', {
+export class GlobMatcher extends S.TaggedClass<GlobMatcher, { readonly brand: unique symbol }>()('GlobMatcher', {
   source: S.String,
   flags: S.String,
 }) {
   readonly [CompileGlobTypeId] = CompileGlobTypeId
 }
 
-export class GlobUnmatchable extends S.TaggedClass<GlobUnmatchable>()('GlobUnmatchable', {
-  pattern: S.Union([S.Boolean, S.String]),
-}) {
+export class GlobUnmatchable
+  extends S.TaggedClass<GlobUnmatchable, { readonly brand: unique symbol }>()('GlobUnmatchable', {
+    pattern: S.Union([S.Boolean, S.String]),
+  })
+{
   readonly [CompileGlobTypeId] = CompileGlobTypeId
 }
 
-export class CompileGlobCommand extends S.TaggedClass<CompileGlobCommand>()('CompileGlobCommand', {
-  pattern: S.Union([S.Boolean, S.String]),
-  caseInsensitive: S.Boolean,
-}) {
+export class CompileGlobCommand
+  extends S.TaggedClass<CompileGlobCommand, { readonly brand: unique symbol }>()('CompileGlobCommand', {
+    pattern: S.Union([S.Boolean, S.String]),
+    caseInsensitive: S.Boolean,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

@@ -97,7 +97,7 @@ describe('planMutatorCatalogs', () => {
       const result = subject(PlanMutatorCatalogsCommand.make({ stock, providers: [provider] }))
       return Result.isFailure(result) && S.is(MutatorCatalogRefused)(result.failure) &&
         result.failure.reason === 'UnownedName' &&
-        result.failure.name === `${foreign}/Probe` &&
+        result.failure.mutatorName === `${foreign}/Probe` &&
         JSON.stringify(result.failure.modules) === JSON.stringify(['module-a'])
     },
   )
@@ -110,7 +110,7 @@ describe('planMutatorCatalogs', () => {
       const result = subject(PlanMutatorCatalogsCommand.make({ stock, providers: [provider] }))
       return Result.isFailure(result) && S.is(MutatorCatalogRefused)(result.failure) &&
         result.failure.reason === 'StockName' &&
-        result.failure.name === stockName
+        result.failure.mutatorName === stockName
     },
   )
 })

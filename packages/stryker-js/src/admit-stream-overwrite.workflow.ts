@@ -234,26 +234,32 @@ const isTornRecord = (command: StreamOverwriteCommand) =>
     RunEventRecordOpening.literals.some(sharesAPrefix(command.leadingText)),
   ])
 
-export class StreamOverwriteCommand extends S.TaggedClass<StreamOverwriteCommand>()('StreamOverwriteCommand', {
-  file: S.String,
-  regularFile: S.Boolean,
-  empty: S.Boolean,
-  wholeFileRead: S.Boolean,
-  leadingText: S.String,
-}) {
+export class StreamOverwriteCommand
+  extends S.TaggedClass<StreamOverwriteCommand, { readonly brand: unique symbol }>()('StreamOverwriteCommand', {
+    file: S.String,
+    regularFile: S.Boolean,
+    empty: S.Boolean,
+    wholeFileRead: S.Boolean,
+    leadingText: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class OverwriteAllowed extends S.TaggedClass<OverwriteAllowed>()('OverwriteAllowed', {
-  file: S.String,
-}) {
+export class OverwriteAllowed
+  extends S.TaggedClass<OverwriteAllowed, { readonly brand: unique symbol }>()('OverwriteAllowed', {
+    file: S.String,
+  })
+{
   readonly [StreamOverwriteTypeId] = StreamOverwriteTypeId
 }
 
-export class OverwriteRefused extends S.TaggedClass<OverwriteRefused>()('OverwriteRefused', {
-  file: S.String,
-  reason: S.String,
-}) {
+export class OverwriteRefused
+  extends S.TaggedClass<OverwriteRefused, { readonly brand: unique symbol }>()('OverwriteRefused', {
+    file: S.String,
+    reason: S.String,
+  })
+{
   readonly [StreamOverwriteTypeId] = StreamOverwriteTypeId
 }
 
