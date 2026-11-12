@@ -14,13 +14,17 @@ export const NeverStartedReason = S.Literal('a fresh test runner did not start t
 
 const CONFIRMATION_DEADLINE_FACTOR = 2
 
-export class MutantRunSettled extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {}) {
+export class MutantRunSettled
+  extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm, { readonly brand: unique symbol }>()('MutantRunConfirm', {
-  timeoutMs: Mutant.RunOptionsFields.timeout,
-}) {
+export class MutantRunConfirm
+  extends S.TaggedClass<MutantRunConfirm, { readonly brand: unique symbol }>()('MutantRunConfirm', {
+    timeoutMs: Mutant.RunOptionsFields.timeout,
+  })
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
@@ -30,15 +34,21 @@ export class MutantRunTimeoutConfirmed
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunNeverStarted extends S.TaggedClass<MutantRunNeverStarted, { readonly brand: unique symbol }>()('MutantRunNeverStarted', {}) {
+export class MutantRunNeverStarted
+  extends S.TaggedClass<MutantRunNeverStarted, { readonly brand: unique symbol }>()('MutantRunNeverStarted', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetry extends S.TaggedClass<MutantRunRetry, { readonly brand: unique symbol }>()('MutantRunRetry', {}) {
+export class MutantRunRetry
+  extends S.TaggedClass<MutantRunRetry, { readonly brand: unique symbol }>()('MutantRunRetry', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunRetryExhausted extends S.TaggedClass<MutantRunRetryExhausted, { readonly brand: unique symbol }>()('MutantRunRetryExhausted', {}) {
+export class MutantRunRetryExhausted
+  extends S.TaggedClass<MutantRunRetryExhausted, { readonly brand: unique symbol }>()('MutantRunRetryExhausted', {})
+{
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
