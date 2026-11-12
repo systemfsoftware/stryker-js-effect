@@ -68,7 +68,7 @@ const ProbedMutatorName = S.Literals([
 type ProbedMutatorName = typeof ProbedMutatorName.Type
 
 export class AssessProbeEligibilityCommand
-  extends S.TaggedClass<AssessProbeEligibilityCommand>()('AssessProbeEligibilityCommand', {
+  extends S.TaggedClass<AssessProbeEligibilityCommand, { readonly brand: unique symbol }>()('AssessProbeEligibilityCommand', {
     mutatorName: S.Union([ProbedMutatorName, S.String]),
     site: ProbeSite,
   })
@@ -81,13 +81,13 @@ const ProbeDecisionTypeId: unique symbol = Symbol.for(
 )
 type ProbeDecisionTypeId = typeof ProbeDecisionTypeId
 
-export class MutantProbed extends S.TaggedClass<MutantProbed>()('MutantProbed', {
+export class MutantProbed extends S.TaggedClass<MutantProbed, { readonly brand: unique symbol }>()('MutantProbed', {
   kind: Mutant.ProbeKind,
 }) {
   readonly [ProbeDecisionTypeId] = ProbeDecisionTypeId
 }
 
-export class MutantUnprobed extends S.TaggedClass<MutantUnprobed>()('MutantUnprobed', {
+export class MutantUnprobed extends S.TaggedClass<MutantUnprobed, { readonly brand: unique symbol }>()('MutantUnprobed', {
   reason: Mutant.UnprobedReason,
 }) {
   readonly [ProbeDecisionTypeId] = ProbeDecisionTypeId

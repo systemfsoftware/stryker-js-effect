@@ -447,6 +447,22 @@ if (import.meta.vitest !== void 0) {
   const isNotDecided = (eligibility: ProbeEligibility): boolean =>
     S.is(Unprobed)(eligibility) && eligibility.reason === 'not-decided'
 
+  const decodedEligibility = (mutant: Mutant) =>
+    Option.map(
+      Option.flatMap(S.encodeOption(Mutant)(mutant), (encoded) => S.decodeOption(Mutant)(encoded)),
+      (decoded) => decoded.probeEligibility,
+    )
+  const encodeEligibility = S.encodeSync(ProbeEligibility)
+  const sameEligibility = (a: ProbeEligibility, b: ProbeEligibility): boolean =>
+    JSON.stringify(encodeEligibility(a)) === JSON.stringify(encodeEligibility(b))
+
+  it.prop(
+    '∀m_MutantWithEligibility_≡ItsOwnEligibility',
+    { of: [Mutant], subject: decodedEligibility },
+    (subject, [mutant]) =>
+      Option.exists(subject(mutant), (eligibility) => sameEligibility(eligibility, mutant.probeEligibility)),
+  )
+
   it.prop(
     '∀m_MutantWithoutEligibility_≡UnprobedNotDecided',
     { of: [Mutant], subject: eligibilityWhenAbsent },
