@@ -39,18 +39,22 @@ export class PlannedEarlyResultMutant
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
 
-export class CoveredMutantHitCountMissing extends S.TaggedError<CoveredMutantHitCountMissing>()(
-  'CoveredMutantHitCountMissing',
-  { missingIds: S.Array(S.String) },
-) {
+export class CoveredMutantHitCountMissing
+  extends S.TaggedError<CoveredMutantHitCountMissing, { readonly brand: unique symbol }>()(
+    'CoveredMutantHitCountMissing',
+    { missingIds: S.Array(S.String) },
+  )
+{
   override get message(): string {
     return `Hit count missing for covered mutants: ${this.missingIds.join(', ')}`
   }
 }
 
-export class MutantTimeoutNotFinite extends S.TaggedError<MutantTimeoutNotFinite>()('MutantTimeoutNotFinite', {
-  mutantId: Mutant.MutantId,
-}) {
+export class MutantTimeoutNotFinite
+  extends S.TaggedError<MutantTimeoutNotFinite, { readonly brand: unique symbol }>()('MutantTimeoutNotFinite', {
+    mutantId: Mutant.MutantId,
+  })
+{
   override get message(): string {
     return `Computed test timeout for mutant ${this.mutantId} is not finite`
   }
