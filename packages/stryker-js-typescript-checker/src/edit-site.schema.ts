@@ -327,8 +327,11 @@ if (import.meta.vitest !== void 0) {
       const site = siteOf(shape, 0)
       const span = spanOf(site, from, to)
       return Option.exists(
-        readSite(site.text, (sourceFile) => admits(subject(sourceFile, span, false))),
-        (admitted) => admitted === (span.end <= site.closingBrace),
+        readSite(site.text, (sourceFile) => subject(sourceFile, span, false)),
+        (facts) =>
+          admits(facts) === (span.end <= site.closingBrace) &&
+          facts.span.start === span.start &&
+          facts.span.length === span.end - span.start,
       )
     },
   )
