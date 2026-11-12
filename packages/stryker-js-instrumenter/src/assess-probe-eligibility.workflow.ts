@@ -90,9 +90,11 @@ export class MutantProbed extends S.TaggedClass<MutantProbed, { readonly brand: 
   readonly [ProbeDecisionTypeId] = ProbeDecisionTypeId
 }
 
-export class MutantUnprobed extends S.TaggedClass<MutantUnprobed, { readonly brand: unique symbol }>()('MutantUnprobed', {
-  reason: Mutant.UnprobedReason,
-}) {
+export class MutantUnprobed
+  extends S.TaggedClass<MutantUnprobed, { readonly brand: unique symbol }>()('MutantUnprobed', {
+    reason: Mutant.UnprobedReason,
+  })
+{
   readonly [ProbeDecisionTypeId] = ProbeDecisionTypeId
 }
 
