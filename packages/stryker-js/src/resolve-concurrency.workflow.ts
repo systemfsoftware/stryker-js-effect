@@ -11,16 +11,18 @@ type ConcurrencyDecisionTypeId = typeof ConcurrencyDecisionTypeId
 
 const PERCENTAGE_OPTION = /^(100|[1-9]?[0-9])%$/
 
-export class TestRunnersOnly extends S.TaggedClass<TestRunnersOnly>()('TestRunnersOnly', {
-  testRunners: S.Finite,
-  total: S.Finite,
-  isPercentage: S.Boolean,
-  announcement: S.Option(S.String),
-}) {
+export class TestRunnersOnly
+  extends S.TaggedClass<TestRunnersOnly, { readonly brand: unique symbol }>()('TestRunnersOnly', {
+    testRunners: S.Finite,
+    total: S.Finite,
+    isPercentage: S.Boolean,
+    announcement: S.Option(S.String),
+  })
+{
   readonly [ConcurrencyDecisionTypeId] = ConcurrencyDecisionTypeId
 }
 
-export class TestRunnersAndCheckers extends S.TaggedClass<TestRunnersAndCheckers>()(
+export class TestRunnersAndCheckers extends S.TaggedClass<TestRunnersAndCheckers, { readonly brand: unique symbol }>()(
   'TestRunnersAndCheckers',
   {
     testRunners: S.Finite,
@@ -36,11 +38,13 @@ export class TestRunnersAndCheckers extends S.TaggedClass<TestRunnersAndCheckers
 export const ConcurrencySplit = S.Union([TestRunnersOnly, TestRunnersAndCheckers])
 export type ConcurrencySplit = typeof ConcurrencySplit.Type
 
-export class ResolveConcurrency extends S.TaggedClass<ResolveConcurrency>()('ResolveConcurrency', {
-  concurrency: S.optional(S.Union([S.Finite, S.String])),
-  checkerCount: S.Natural,
-  availableParallelism: S.Natural,
-}) {
+export class ResolveConcurrency
+  extends S.TaggedClass<ResolveConcurrency, { readonly brand: unique symbol }>()('ResolveConcurrency', {
+    concurrency: S.optional(S.Union([S.Finite, S.String])),
+    checkerCount: S.Natural,
+    availableParallelism: S.Natural,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     checkerCount: 'stryker.concurrency.checker_count',
   } as const

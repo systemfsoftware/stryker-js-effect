@@ -71,10 +71,14 @@ export const MutantRunResultSchema = S.Union([
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
 
-export class MutantRunStarted extends S.TaggedClass<MutantRunStarted>()('MutantRunStarted', {}) {}
+export class MutantRunStarted
+  extends S.TaggedClass<MutantRunStarted, { readonly brand: unique symbol }>()('MutantRunStarted', {})
+{}
 
 export class MutantRunSettled
-  extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', { result: MutantRunResultSchema })
+  extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {
+    result: MutantRunResultSchema,
+  })
 {}
 
 export const MutantRunEventSchema = S.Union([MutantRunStarted, MutantRunSettled])
@@ -93,11 +97,13 @@ export const TestRunnerCapabilitiesSchema = S.Struct({
   reloadEnvironment: S.Boolean,
 })
 
-export class TestRunnerFailed extends S.TaggedError<TestRunnerFailed>()('TestRunnerFailed', {
-  cause: S.String,
-  phase: S.Literals(['capabilities', 'dispose', 'dryRun', 'init', 'mutantRun']),
-  runnerName: S.String,
-}) {
+export class TestRunnerFailed
+  extends S.TaggedError<TestRunnerFailed, { readonly brand: unique symbol }>()('TestRunnerFailed', {
+    cause: S.String,
+    phase: S.Literals(['capabilities', 'dispose', 'dryRun', 'init', 'mutantRun']),
+    runnerName: S.String,
+  })
+{
   override get message(): string {
     return `Test runner "${this.runnerName}" failed during ${this.phase}: ${this.cause}`
   }

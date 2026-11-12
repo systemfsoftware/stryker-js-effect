@@ -8,25 +8,29 @@ import { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 
 const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
 
-export class ResolveModeCommand extends S.TaggedClass<ResolveModeCommand>()('ResolveModeCommand', {
-  stdoutIsTTY: S.Boolean,
-  text: S.optional(S.Boolean),
-  json: S.optional(S.Boolean),
-  envMode: S.optional(S.String),
-  agent: S.optional(S.String),
-  toolVars: S.optional(S.Record(S.String, S.String)),
-}) {
+export class ResolveModeCommand
+  extends S.TaggedClass<ResolveModeCommand, { readonly brand: unique symbol }>()('ResolveModeCommand', {
+    stdoutIsTTY: S.Boolean,
+    text: S.optional(S.Boolean),
+    json: S.optional(S.Boolean),
+    envMode: S.optional(S.String),
+    agent: S.optional(S.String),
+    toolVars: S.optional(S.Record(S.String, S.String)),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = { stdoutIsTTY: 'stryker.output_mode.stdout_is_tty' } as const
 }
 
 const ResolveModeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ResolveMode')
 type ResolveModeTypeId = typeof ResolveModeTypeId
 
-export class ModeConflictError extends S.TaggedError<ModeConflictError>()('ModeConflictError', {
-  option: S.String,
-  value: S.String,
-  expected: S.String,
-}) {
+export class ModeConflictError
+  extends S.TaggedError<ModeConflictError, { readonly brand: unique symbol }>()('ModeConflictError', {
+    option: S.String,
+    value: S.String,
+    expected: S.String,
+  })
+{
   readonly [ResolveModeTypeId] = ResolveModeTypeId
 
   override get message(): string {
@@ -34,14 +38,14 @@ export class ModeConflictError extends S.TaggedError<ModeConflictError>()('ModeC
   }
 }
 
-export class HumanOutput extends S.TaggedClass<HumanOutput>()('HumanOutput', {
+export class HumanOutput extends S.TaggedClass<HumanOutput, { readonly brand: unique symbol }>()('HumanOutput', {
   signal: OutputMode.ModeSignal,
   stdoutIsTTY: S.Boolean,
 }) {
   readonly [ResolveModeTypeId] = ResolveModeTypeId
 }
 
-export class MachineOutput extends S.TaggedClass<MachineOutput>()('MachineOutput', {
+export class MachineOutput extends S.TaggedClass<MachineOutput, { readonly brand: unique symbol }>()('MachineOutput', {
   signal: OutputMode.ModeSignal,
   stdoutIsTTY: S.Boolean,
 }) {

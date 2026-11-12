@@ -17,20 +17,26 @@ const COMPLEMENT_ROWS: Readonly<
   '>=': { complement: '<', dominator: '>' },
 }
 
-export class RelationalSite extends S.TaggedClass<RelationalSite>()('RelationalSite', {
-  operator: RelationalOperator,
-}) {}
+export class RelationalSite
+  extends S.TaggedClass<RelationalSite, { readonly brand: unique symbol }>()('RelationalSite', {
+    operator: RelationalOperator,
+  })
+{}
 
-export class OtherSite extends S.TaggedClass<OtherSite>()('OtherSite', {}) {}
+export class OtherSite extends S.TaggedClass<OtherSite, { readonly brand: unique symbol }>()('OtherSite', {}) {}
 
 export const SubsumptionSite = S.Union([RelationalSite, OtherSite])
 export type SubsumptionSite = typeof SubsumptionSite.Type
 
-export class OrderingOperator extends S.TaggedClass<OrderingOperator>()('OrderingOperator', {
-  operator: RelationalOperator,
-}) {}
+export class OrderingOperator
+  extends S.TaggedClass<OrderingOperator, { readonly brand: unique symbol }>()('OrderingOperator', {
+    operator: RelationalOperator,
+  })
+{}
 
-export class OtherReplacement extends S.TaggedClass<OtherReplacement>()('OtherReplacement', {}) {}
+export class OtherReplacement
+  extends S.TaggedClass<OtherReplacement, { readonly brand: unique symbol }>()('OtherReplacement', {})
+{}
 
 export const SubsumptionReplacement = S.Union([OrderingOperator, OtherReplacement])
 export type SubsumptionReplacement = typeof SubsumptionReplacement.Type
@@ -45,11 +51,13 @@ export const SubsumptionCandidateSchema = S.Struct({
 })
 export type SubsumptionCandidate = typeof SubsumptionCandidateSchema.Type
 
-export class SubsumeMutantsCommand extends S.TaggedClass<SubsumeMutantsCommand>()('SubsumeMutantsCommand', {
-  policy: Options.MutantSetPolicy,
-  site: SubsumptionSite,
-  candidates: S.Array(SubsumptionCandidateSchema),
-}) {
+export class SubsumeMutantsCommand
+  extends S.TaggedClass<SubsumeMutantsCommand, { readonly brand: unique symbol }>()('SubsumeMutantsCommand', {
+    policy: Options.MutantSetPolicy,
+    site: SubsumptionSite,
+    candidates: S.Array(SubsumptionCandidateSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
@@ -58,11 +66,11 @@ const SubsumptionDecisionTypeId: unique symbol = Symbol.for(
 )
 type SubsumptionDecisionTypeId = typeof SubsumptionDecisionTypeId
 
-export class Unaffected extends S.TaggedClass<Unaffected>()('Unaffected', {}) {
+export class Unaffected extends S.TaggedClass<Unaffected, { readonly brand: unique symbol }>()('Unaffected', {}) {
   readonly [SubsumptionDecisionTypeId] = SubsumptionDecisionTypeId
 }
 
-export class Subsumed extends S.TaggedClass<Subsumed>()('Subsumed', {
+export class Subsumed extends S.TaggedClass<Subsumed, { readonly brand: unique symbol }>()('Subsumed', {
   rule: S.Literal('complement'),
   dominators: S.NonEmptyArray(Mutant.MutantId),
 }) {

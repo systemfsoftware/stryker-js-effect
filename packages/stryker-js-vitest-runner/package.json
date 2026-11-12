@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-vitest-runner",
-  "version": "9.0.2",
+  "version": "10.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
@@ -62,15 +62,15 @@
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
-    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz",
-    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz",
-    "@systemfsoftware/stryker-js": "file:../../.sfs-deps/stryker-js.tgz",
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "file:../../.deps/stryker-ignorer-effect-schema-declarations.tgz",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "file:../../.deps/stryker-ignorer-in-source-vitest-block.tgz",
+    "@systemfsoftware/stryker-js": "file:../../.deps/stryker-js.tgz",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
-    "@systemfsoftware/stryker-js-typescript-checker": "file:../../.sfs-deps/stryker-js-typescript-checker.tgz",
-    "@systemfsoftware/stryker-js-vitest-runner": "file:../../.sfs-deps/stryker-js-vitest-runner.tgz",
+    "@systemfsoftware/stryker-js-typescript-checker": "file:../../.deps/stryker-js-typescript-checker.tgz",
+    "@systemfsoftware/stryker-js-vitest-runner": "file:../../.deps/stryker-js-vitest-runner.tgz",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest": "catalog:",
@@ -97,9 +97,9 @@
     }
   },
   "inlinedDependencies": {
-    "@effect/opentelemetry": "4.0.0",
-    "@effect/platform-node": "4.0.0",
-    "@effect/platform-node-shared": "4.0.0",
+    "@effect/opentelemetry": "4.1.0",
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@eslint-community/regexpp": "4.12.2",
     "@noble/hashes": "2.4.0",
     "@opentelemetry/api": "1.9.1",
@@ -117,8 +117,7 @@
     "@opentelemetry/sdk-trace-node": "2.11.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@systemfsoftware/effect-cell-types": "12.0.0",
-    "effect": "4.0.0",
-    "oxc-parser": "0.150.0",
-    "ws": "8.22.0"
+    "effect": "4.1.0",
+    "oxc-parser": "0.150.0"
   }
 }

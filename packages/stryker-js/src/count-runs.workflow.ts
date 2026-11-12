@@ -18,9 +18,11 @@ import {
   type StatusCounts,
 } from './audit.schema.js'
 
-export class CountRunsCommand extends S.TaggedClass<CountRunsCommand>()('CountRunsCommand', {
-  reports: S.Array(CountedProject),
-}) {
+export class CountRunsCommand
+  extends S.TaggedClass<CountRunsCommand, { readonly brand: unique symbol }>()('CountRunsCommand', {
+    reports: S.Array(CountedProject),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

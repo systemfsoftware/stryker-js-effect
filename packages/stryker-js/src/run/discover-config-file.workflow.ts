@@ -13,42 +13,52 @@ export type ConfigFileKindValue = S.Schema.Type<typeof ConfigFileKind>
 const ConfigDiscoveryDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ConfigDiscoveryDecision')
 type ConfigDiscoveryDecisionTypeId = typeof ConfigDiscoveryDecisionTypeId
 
-export class ConfigFileRequest extends S.Class<ConfigFileRequest>('ConfigFileRequest')({
-  file: S.String,
-  kind: ConfigFileKind,
-  exists: S.Boolean,
-}) {}
+export class ConfigFileRequest
+  extends S.Class<ConfigFileRequest, { readonly brand: unique symbol }>('ConfigFileRequest')({
+    file: S.String,
+    kind: ConfigFileKind,
+    exists: S.Boolean,
+  })
+{}
 
-export class ConfigDiscoveryCommand extends S.TaggedClass<ConfigDiscoveryCommand>()('ConfigDiscoveryCommand', {
-  context: S.Literals(['cli', 'extends']),
-  requested: S.optional(ConfigFileRequest),
-  discovered: S.optional(S.String),
-  legacyPresent: S.optional(S.String),
-}) {
+export class ConfigDiscoveryCommand
+  extends S.TaggedClass<ConfigDiscoveryCommand, { readonly brand: unique symbol }>()('ConfigDiscoveryCommand', {
+    context: S.Literals(['cli', 'extends']),
+    requested: S.optional(ConfigFileRequest),
+    discovered: S.optional(S.String),
+    legacyPresent: S.optional(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ConfigFileRead extends S.TaggedClass<ConfigFileRead>()('ConfigFileRead', {
-  file: S.String,
-  shadowedLegacyWarning: S.optional(S.String),
-}) {
+export class ConfigFileRead
+  extends S.TaggedClass<ConfigFileRead, { readonly brand: unique symbol }>()('ConfigFileRead', {
+    file: S.String,
+    shadowedLegacyWarning: S.optional(S.String),
+  })
+{
   readonly [ConfigDiscoveryDecisionTypeId] = ConfigDiscoveryDecisionTypeId
 }
 
-export class ConfigFileRefused extends S.TaggedClass<ConfigFileRefused>()('ConfigFileRefused', {
-  file: S.String,
-  hint: S.String,
-}) {
+export class ConfigFileRefused
+  extends S.TaggedClass<ConfigFileRefused, { readonly brand: unique symbol }>()('ConfigFileRefused', {
+    file: S.String,
+    hint: S.String,
+  })
+{
   readonly [ConfigDiscoveryDecisionTypeId] = ConfigDiscoveryDecisionTypeId
 }
 
-export class ConfigFileMissing extends S.TaggedClass<ConfigFileMissing>()('ConfigFileMissing', {
-  file: S.String,
-}) {
+export class ConfigFileMissing
+  extends S.TaggedClass<ConfigFileMissing, { readonly brand: unique symbol }>()('ConfigFileMissing', {
+    file: S.String,
+  })
+{
   readonly [ConfigDiscoveryDecisionTypeId] = ConfigDiscoveryDecisionTypeId
 }
 
-export class NoConfigFile extends S.TaggedClass<NoConfigFile>()('NoConfigFile', {}) {
+export class NoConfigFile extends S.TaggedClass<NoConfigFile, { readonly brand: unique symbol }>()('NoConfigFile', {}) {
   readonly [ConfigDiscoveryDecisionTypeId] = ConfigDiscoveryDecisionTypeId
 }
 

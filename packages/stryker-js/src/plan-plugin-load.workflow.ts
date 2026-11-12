@@ -25,25 +25,31 @@ export const PluginShadowingSchema = S.Struct({
 })
 export type PluginShadowing = typeof PluginShadowingSchema.Type
 
-export class PluginLoadCommand extends S.TaggedClass<PluginLoadCommand>()('PluginLoadCommand', {
-  declarations: S.Array(PluginDeclarationSchema),
-}) {
+export class PluginLoadCommand
+  extends S.TaggedClass<PluginLoadCommand, { readonly brand: unique symbol }>()('PluginLoadCommand', {
+    declarations: S.Array(PluginDeclarationSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     declarations: 'stryker.plugin_load.declarations',
   } as const
 }
 
-export class PluginDeclarationsPlanned extends S.TaggedClass<PluginDeclarationsPlanned>()(
-  'PluginDeclarationsPlanned',
-  {
-    winners: S.Array(PluginDeclarationSchema),
-    shadowings: S.Array(PluginShadowingSchema),
-  },
-) {
+export class PluginDeclarationsPlanned
+  extends S.TaggedClass<PluginDeclarationsPlanned, { readonly brand: unique symbol }>()(
+    'PluginDeclarationsPlanned',
+    {
+      winners: S.Array(PluginDeclarationSchema),
+      shadowings: S.Array(PluginShadowingSchema),
+    },
+  )
+{
   readonly [PluginLoadTypeId] = PluginLoadTypeId
 }
 
-export class NoPluginDeclarations extends S.TaggedClass<NoPluginDeclarations>()('NoPluginDeclarations', {}) {
+export class NoPluginDeclarations
+  extends S.TaggedClass<NoPluginDeclarations, { readonly brand: unique symbol }>()('NoPluginDeclarations', {})
+{
   readonly [PluginLoadTypeId] = PluginLoadTypeId
 }
 

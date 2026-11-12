@@ -39,6 +39,10 @@ jobs:
       # same package.json scripts, without an install.
       - if: steps.lane.outputs.docs-only == 'true'
         uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
       - if: steps.lane.outputs.docs-only == 'true'
         uses: pnpm/action-setup@v6
       - if: steps.lane.outputs.docs-only == 'true'
@@ -69,9 +73,16 @@ jobs:
         run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
       - name: dprint from the flake
         run: echo "$(nix build --no-link --print-out-paths .#dprint)/bin" >> "$GITHUB_PATH"
-      - uses: ./.github/actions/released-tarballs
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -340,7 +351,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - uses: cachix/install-nix-action@v31
-      - uses: ./.github/actions/released-tarballs
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build --filter @systemfsoftware/stryker-checker-parity
       - id: changes
@@ -479,7 +497,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - uses: cachix/install-nix-action@v31
-      - uses: ./.github/actions/released-tarballs
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+      - name: Producer tarballs into .deps
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - name: Build the branch checker, instrumenter and driver
         run: >-
@@ -491,11 +516,11 @@ jobs:
           git worktree add "$RUNNER_TEMP/main-side" "$BASE"
           cd "$RUNNER_TEMP/main-side"
           if cmp -s flake.lock "$GITHUB_WORKSPACE/flake.lock"; then
-            cp -r "$GITHUB_WORKSPACE/.sfs-deps" .sfs-deps
+            cp -r "$GITHUB_WORKSPACE/.deps" .deps
           else
-            mkdir .sfs-deps
-            cp "$(nix build --no-link --print-out-paths .#stryker-published)"/*.tgz .sfs-deps/
-            chmod u+w .sfs-deps/*.tgz
+            mkdir .deps
+            cp "$(nix build --no-link --print-out-paths .#stryker-published)"/*.tgz .deps/
+            chmod u+w .deps/*.tgz
           fi
           pnpm install --frozen-lockfile
           pnpm turbo build --filter @systemfsoftware/stryker-js-typescript-checker
@@ -617,9 +642,16 @@ jobs:
           node-version: 24
           cache: pnpm
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.systemfsoftware.com
+            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
         if: needs.checker-parity-changes.outputs.run == 'true'
-      - uses: ./.github/actions/released-tarballs
+      - name: Producer tarballs into .deps
         if: needs.checker-parity-changes.outputs.run == 'true'
+        run: |
+          rm -rf .deps && mkdir .deps
+          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - if: needs.checker-parity-changes.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: needs.checker-parity-changes.outputs.run == 'true'
@@ -689,7 +721,6 @@ jobs:
           --shards ${{ needs.checker-parity-changes.outputs.shards }}
           --summary checker-parity-summary.json
           --shortcut-gate
-          --speed-gate
           checker-parity-shards
       - name: Upload summary
         if: always() && needs.checker-parity-changes.outputs.run == 'true'

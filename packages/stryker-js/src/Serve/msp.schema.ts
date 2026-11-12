@@ -26,7 +26,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class ServeError extends S.TaggedError<ServeError>()('ServeError', {
+export class ServeError extends S.TaggedError<ServeError, { readonly brand: unique symbol }>()('ServeError', {
   reason: S.String,
   cause: S.optionalKey(S.Unknown),
 }) {

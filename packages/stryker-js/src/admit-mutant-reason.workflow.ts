@@ -18,21 +18,25 @@ const StreamableStatus = Mutant.MutantStatusSchema.pick([
 ])
 type StreamableStatus = typeof StreamableStatus.Type
 
-export class MutantReasonCommand extends S.TaggedClass<MutantReasonCommand>()('MutantReasonCommand', {
-  status: Mutant.MutantStatusSchema,
-  statusReason: S.UndefinedOr(S.String),
-}) {
+export class MutantReasonCommand
+  extends S.TaggedClass<MutantReasonCommand, { readonly brand: unique symbol }>()('MutantReasonCommand', {
+    status: Mutant.MutantStatusSchema,
+    statusReason: S.UndefinedOr(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ReasonAdmitted extends S.TaggedClass<ReasonAdmitted>()('ReasonAdmitted', {
-  status: StreamableStatus,
-  statusReason: S.String,
-}) {
+export class ReasonAdmitted
+  extends S.TaggedClass<ReasonAdmitted, { readonly brand: unique symbol }>()('ReasonAdmitted', {
+    status: StreamableStatus,
+    statusReason: S.String,
+  })
+{
   readonly [MutantReasonTypeId] = MutantReasonTypeId
 }
 
-export class ReasonRefused extends S.TaggedClass<ReasonRefused>()('ReasonRefused', {
+export class ReasonRefused extends S.TaggedClass<ReasonRefused, { readonly brand: unique symbol }>()('ReasonRefused', {
   detail: S.String,
 }) {
   readonly [MutantReasonTypeId] = MutantReasonTypeId

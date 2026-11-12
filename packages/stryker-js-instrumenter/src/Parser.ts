@@ -35,7 +35,7 @@ export type { Oxc }
 
 const oxcModule = Effect.cached(Effect.promise(() => import('oxc-parser')))
 
-export const loadOxc: Effect.Effect<Oxc> = Effect.flatMap(oxcModule, (load) => load)
+export const loadOxc: Effect.Effect<Oxc> = Effect.flatten(oxcModule)
 
 const parseWithOxcDataFirst = Effect.fn(SpanTaxonomy.Spans.instrumentParserParseWithOxc.name)(
   function*(text: string, fileName: string, lang: 'js' | 'jsx' | 'ts' | 'tsx') {

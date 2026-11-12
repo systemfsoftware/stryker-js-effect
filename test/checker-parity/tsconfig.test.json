@@ -22,7 +22,34 @@
     ],
     "plugins": [
       {
-        "name": "@effect/language-service"
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "@effect/opentelemetry/NodeSdk",
+          "@effect/platform-node-shared/NodeChildProcessSpawner",
+          "@effect/platform-node/NodeFileSystem",
+          "@effect/platform-node/NodeHttpServer",
+          "@effect/platform-node/NodePath",
+          "@effect/platform-node/NodeRuntime",
+          "@effect/platform-node/NodeServices",
+          "effect/Arbitrary",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/Stdio",
+          "effect/Terminal",
+          "effect/cli/Argument",
+          "effect/cli/CliError",
+          "effect/cli/Command",
+          "effect/cli/Flag",
+          "effect/http/HttpServer",
+          "effect/http/HttpServerRequest",
+          "effect/http/HttpServerResponse",
+          "effect/net/NetAddress",
+          "effect/process/ChildProcess",
+          "effect/process/ChildProcessSpawner",
+          "effect/rpc/RpcClient",
+          "effect/rpc/RpcClientError",
+          "effect/rpc/RpcGroup"
+        ]
       }
     ]
   },

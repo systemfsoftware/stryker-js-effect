@@ -12,7 +12,7 @@ import {
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
 import * as Clock from 'effect/Clock'
-import * as Crypto from 'effect/Crypto'
+import type * as Digest from 'effect/crypto/Digest'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -63,7 +63,7 @@ type BenchPlatform =
   | FileSystem.FileSystem
   | Path.Path
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
 
 const slug = (value: string): string => value.replace(/[^A-Za-z0-9._-]+/g, '-')
 

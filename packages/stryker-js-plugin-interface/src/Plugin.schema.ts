@@ -43,27 +43,31 @@ export type ReporterEventBatch = typeof ReporterEventBatch.Type
 export const ReporterAck = S.Void
 export const ReporterDrained = S.Void
 
-export class BoundaryPayloadRejected extends S.TaggedError<BoundaryPayloadRejected>()(
-  'BoundaryPayloadRejected',
-  {
-    pluginName: S.String,
-    method: S.String,
-    cause: S.String,
-  },
-) {
+export class BoundaryPayloadRejected
+  extends S.TaggedError<BoundaryPayloadRejected, { readonly brand: unique symbol }>()(
+    'BoundaryPayloadRejected',
+    {
+      pluginName: S.String,
+      method: S.String,
+      cause: S.String,
+    },
+  )
+{
   override get message(): string {
     return `Plugin "${this.pluginName}" rejected the payload for ${this.method}: ${this.cause}`
   }
 }
 
-export class BoundaryUnrecognizedSignal extends S.TaggedError<BoundaryUnrecognizedSignal>()(
-  'BoundaryUnrecognizedSignal',
-  {
-    pluginName: S.String,
-    method: S.String,
-    signal: S.String,
-  },
-) {
+export class BoundaryUnrecognizedSignal
+  extends S.TaggedError<BoundaryUnrecognizedSignal, { readonly brand: unique symbol }>()(
+    'BoundaryUnrecognizedSignal',
+    {
+      pluginName: S.String,
+      method: S.String,
+      signal: S.String,
+    },
+  )
+{
   override get message(): string {
     return `Plugin "${this.pluginName}" sent an unrecognized signal "${this.signal}" for ${this.method}`
   }

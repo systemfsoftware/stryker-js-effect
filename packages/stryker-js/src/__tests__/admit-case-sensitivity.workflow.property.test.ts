@@ -12,7 +12,7 @@ type Probe = CaseSensitivityCommand['probes'][number]
 const tagOf = (subject: typeof admitCaseSensitivity, probes: ReadonlyArray<Probe>) =>
   Result.getOrUndefined(subject(CaseSensitivityCommand.make({ probes })))?._tag
 
-const another = (value: number) => value === 1 ? 2 : 1
+const another = (value: bigint) => value === 1n ? 2n : 1n
 
 const reachingItself = (probe: Probe): Probe => ({
   own: probe.own,
@@ -69,7 +69,7 @@ describe('admitCaseSensitivity', () => {
     { of: [commandArb], subject: admitCaseSensitivity },
     (subject, [command]) =>
       foldedPlus(subject, command, (first) => {
-        const ino = Option.getOrElse(first.own.ino, () => 0)
+        const ino = Option.getOrElse(first.own.ino, () => 0n)
         return {
           own: { dev: first.own.dev, ino: Option.some(ino) },
           swapped: { _tag: 'SwappedFound', identity: { dev: first.own.dev, ino: Option.some(another(ino)) } },

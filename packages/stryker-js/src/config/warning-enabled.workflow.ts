@@ -7,23 +7,29 @@ import * as S from 'effect/Schema'
 const WarningDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/WarningDecision')
 type WarningDecisionTypeId = typeof WarningDecisionTypeId
 
-export class WarningEnabled extends S.TaggedClass<WarningEnabled>()('WarningEnabled', {}) {
+export class WarningEnabled
+  extends S.TaggedClass<WarningEnabled, { readonly brand: unique symbol }>()('WarningEnabled', {})
+{
   readonly [WarningDecisionTypeId] = WarningDecisionTypeId
 }
 
-export class WarningDisabled extends S.TaggedClass<WarningDisabled>()('WarningDisabled', {}) {
+export class WarningDisabled
+  extends S.TaggedClass<WarningDisabled, { readonly brand: unique symbol }>()('WarningDisabled', {})
+{
   readonly [WarningDecisionTypeId] = WarningDecisionTypeId
 }
 
 export type WarningDecision = WarningEnabled | WarningDisabled
 
-export class ResolveWarningEnabledCommand extends S.TaggedClass<ResolveWarningEnabledCommand>()(
-  'ResolveWarningEnabledCommand',
-  {
-    warning: S.Literals(['unknownOptions', 'preprocessorErrors', 'unserializableOptions', 'slow']),
-    warnings: S.Union([S.Boolean, S.Record(S.String, S.Unknown)]),
-  },
-) {
+export class ResolveWarningEnabledCommand
+  extends S.TaggedClass<ResolveWarningEnabledCommand, { readonly brand: unique symbol }>()(
+    'ResolveWarningEnabledCommand',
+    {
+      warning: S.Literals(['unknownOptions', 'preprocessorErrors', 'unserializableOptions', 'slow']),
+      warnings: S.Union([S.Boolean, S.Record(S.String, S.Unknown)]),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

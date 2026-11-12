@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platfor
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -48,7 +48,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
   Layer.effect(
     WorkerLauncher,
     Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* SecureRandom.SecureRandom
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -57,7 +57,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
         spawn: Effect.fn(SpanTaxonomy.Spans.workerSpawn.name)(
           function*(params: WorkerSpawnParams) {
             const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
-            const workerId = yield* crypto.randomUUIDv4
+            const workerId = yield* crypto.uuidV4()
             const socketPath = Match.value(globalThis.process.platform).pipe(
               Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
               Match.orElse(() => path.join(workerDir, 'worker.sock')),
@@ -204,7 +204,7 @@ export const makeNodePlatformLayer = (options: {
   readonly childEnv: Readonly<Record<string, string>>
 }): Layer.Layer<EnginePorts> =>
   Layer.mergeAll(
-    nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
+    nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layerSecureRandom))),
     nodeBase,
     GitDiff.layer,
     oxcSourceParserLayer,

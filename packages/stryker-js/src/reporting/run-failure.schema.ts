@@ -2,7 +2,7 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
+export class ErrorEnvelope extends S.Class<ErrorEnvelope, { readonly brand: unique symbol }>('ErrorEnvelope')({
   schemaVersion: RunEvent.StreamSchemaVersion,
   code: Plugin.ExitCode,
   error: S.NonEmptyString,
@@ -13,6 +13,6 @@ export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
   }
 }
 
-export class RunExitCode extends S.Class<RunExitCode>('RunExitCode')({
+export class RunExitCode extends S.Class<RunExitCode, { readonly brand: unique symbol }>('RunExitCode')({
   code: Plugin.ExitCode,
 }) {}
