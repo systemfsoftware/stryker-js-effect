@@ -27,7 +27,7 @@ export const GuardMutantSchema = S.Struct({
 })
 export type GuardMutant = typeof GuardMutantSchema.Type
 
-export class GuardRelationCommand extends S.TaggedClass<GuardRelationCommand>()('GuardRelationCommand', {
+export class GuardRelationCommand extends S.TaggedClass<GuardRelationCommand, { readonly brand: unique symbol }>()('GuardRelationCommand', {
   policy: Options.MutantSetPolicy,
   sites: S.Array(GuardSiteSchema),
   mutants: S.Array(GuardMutantSchema),
@@ -40,14 +40,14 @@ const GuardRelationDecisionTypeId: unique symbol = Symbol.for(
 )
 type GuardRelationDecisionTypeId = typeof GuardRelationDecisionTypeId
 
-export class GuardedByBlock extends S.TaggedClass<GuardedByBlock>()('GuardedByBlock', {
+export class GuardedByBlock extends S.TaggedClass<GuardedByBlock, { readonly brand: unique symbol }>()('GuardedByBlock', {
   id: Mutant.MutantId,
   guard: Mutant.Guard,
 }) {
   readonly [GuardRelationDecisionTypeId] = GuardRelationDecisionTypeId
 }
 
-export class Guardless extends S.TaggedClass<Guardless>()('Guardless', {
+export class Guardless extends S.TaggedClass<Guardless, { readonly brand: unique symbol }>()('Guardless', {
   id: Mutant.MutantId,
 }) {
   readonly [GuardRelationDecisionTypeId] = GuardRelationDecisionTypeId

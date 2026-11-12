@@ -14,7 +14,7 @@ export const AnchoredMutantSchema = S.Struct({
 })
 export type AnchoredMutant = typeof AnchoredMutantSchema.Type
 
-export class PlacementAnchorsCommand extends S.Class<PlacementAnchorsCommand>('PlacementAnchorsCommand')({
+export class PlacementAnchorsCommand extends S.Class<PlacementAnchorsCommand, { readonly brand: unique symbol }>('PlacementAnchorsCommand')({
   mutants: S.Array(AnchoredMutantSchema),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -25,14 +25,14 @@ const PlacementAnchorDecisionTypeId: unique symbol = Symbol.for(
 )
 type PlacementAnchorDecisionTypeId = typeof PlacementAnchorDecisionTypeId
 
-export class Anchored extends S.TaggedClass<Anchored>()('Anchored', {
+export class Anchored extends S.TaggedClass<Anchored, { readonly brand: unique symbol }>()('Anchored', {
   id: Mutant.MutantId,
   anchors: S.NonEmptyArray(Mutant.MutantId),
 }) {
   readonly [PlacementAnchorDecisionTypeId] = PlacementAnchorDecisionTypeId
 }
 
-export class Unanchored extends S.TaggedClass<Unanchored>()('Unanchored', {
+export class Unanchored extends S.TaggedClass<Unanchored, { readonly brand: unique symbol }>()('Unanchored', {
   id: Mutant.MutantId,
 }) {
   readonly [PlacementAnchorDecisionTypeId] = PlacementAnchorDecisionTypeId

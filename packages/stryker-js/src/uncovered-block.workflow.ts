@@ -21,21 +21,21 @@ export const BlockSettlement = S.Struct({
 })
 export type BlockSettlement = typeof BlockSettlement.Type
 
-export class UncoveredBlockCommand extends S.TaggedClass<UncoveredBlockCommand>()('UncoveredBlockCommand', {
+export class UncoveredBlockCommand extends S.TaggedClass<UncoveredBlockCommand, { readonly brand: unique symbol }>()('UncoveredBlockCommand', {
   held: S.Array(HeldGuard),
   settlements: S.Array(BlockSettlement),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class BlockUncovered extends S.TaggedClass<BlockUncovered>()('BlockUncovered', {
+export class BlockUncovered extends S.TaggedClass<BlockUncovered, { readonly brand: unique symbol }>()('BlockUncovered', {
   id: Mutant.MutantId,
   noCoverage: Mutant.MutantId,
 }) {
   readonly [UncoveredBlockTypeId] = UncoveredBlockTypeId
 }
 
-export class GuardKept extends S.TaggedClass<GuardKept>()('GuardKept', {
+export class GuardKept extends S.TaggedClass<GuardKept, { readonly brand: unique symbol }>()('GuardKept', {
   id: Mutant.MutantId,
 }) {
   readonly [UncoveredBlockTypeId] = UncoveredBlockTypeId
