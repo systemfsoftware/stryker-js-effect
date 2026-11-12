@@ -10,7 +10,7 @@ export const FrameworkClaimant = S.Struct({
 })
 export type FrameworkClaimant = S.Schema.Type<typeof FrameworkClaimant>
 
-export class ExplainFileSkipCommand extends S.TaggedClass<ExplainFileSkipCommand>()(
+export class ExplainFileSkipCommand extends S.TaggedClass<ExplainFileSkipCommand, { readonly brand: unique symbol }>()(
   'ExplainFileSkipCommand',
   {
     extension: S.String,
@@ -25,26 +25,32 @@ export class ExplainFileSkipCommand extends S.TaggedClass<ExplainFileSkipCommand
 const ExplainFileSkipTypeId = Symbol.for('@systemfsoftware/stryker-js/ExplainFileSkipDecision')
 type ExplainFileSkipTypeId = typeof ExplainFileSkipTypeId
 
-export class FileSkipExplained extends S.TaggedClass<FileSkipExplained>()('FileSkipExplained', {
-  extension: S.String,
-  reason: S.String,
-  ownerPackage: S.NullOr(S.String),
-}) {
+export class FileSkipExplained
+  extends S.TaggedClass<FileSkipExplained, { readonly brand: unique symbol }>()('FileSkipExplained', {
+    extension: S.String,
+    reason: S.String,
+    ownerPackage: S.NullOr(S.String),
+  })
+{
   readonly [ExplainFileSkipTypeId] = ExplainFileSkipTypeId
 }
 
-export class SkipKnownExplained extends S.TaggedClass<SkipKnownExplained>()('SkipKnownExplained', {
-  extension: S.String,
-  reason: S.String,
-  ownerPackage: S.String,
-}) {
+export class SkipKnownExplained
+  extends S.TaggedClass<SkipKnownExplained, { readonly brand: unique symbol }>()('SkipKnownExplained', {
+    extension: S.String,
+    reason: S.String,
+    ownerPackage: S.String,
+  })
+{
   readonly [ExplainFileSkipTypeId] = ExplainFileSkipTypeId
 }
 
-export class SkipUnknownExplained extends S.TaggedClass<SkipUnknownExplained>()('SkipUnknownExplained', {
-  extension: S.String,
-  reason: S.String,
-}) {
+export class SkipUnknownExplained
+  extends S.TaggedClass<SkipUnknownExplained, { readonly brand: unique symbol }>()('SkipUnknownExplained', {
+    extension: S.String,
+    reason: S.String,
+  })
+{
   readonly [ExplainFileSkipTypeId] = ExplainFileSkipTypeId
 }
 

@@ -8,15 +8,17 @@ import * as S from 'effect/Schema'
 const RunOrderTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/RunOrder')
 type RunOrderTypeId = typeof RunOrderTypeId
 
-export class OrderedRunPlan extends S.TaggedClass<OrderedRunPlan>()('OrderedRunPlan', {
-  id: Mutant.MutantId,
-  netTime: Report.NonNegativeFinite,
-  reloadEnvironment: S.Boolean,
-}) {
+export class OrderedRunPlan
+  extends S.TaggedClass<OrderedRunPlan, { readonly brand: unique symbol }>()('OrderedRunPlan', {
+    id: Mutant.MutantId,
+    netTime: Report.NonNegativeFinite,
+    reloadEnvironment: S.Boolean,
+  })
+{
   readonly [RunOrderTypeId] = RunOrderTypeId
 }
 
-export class SortRunPlans extends S.TaggedClass<SortRunPlans>()('SortRunPlans', {
+export class SortRunPlans extends S.TaggedClass<SortRunPlans, { readonly brand: unique symbol }>()('SortRunPlans', {
   plans: S.Array(OrderedRunPlan),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

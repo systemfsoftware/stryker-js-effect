@@ -8,16 +8,18 @@ import { type ReuseTestFile, type ReuseTestFiles, ReuseTestFilesSchema } from '.
 const ReportTestIdTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReportTestId')
 type ReportTestIdTypeId = typeof ReportTestIdTypeId
 
-export class ReportTestId extends S.TaggedClass<ReportTestId>()('ReportTestId', {
+export class ReportTestId extends S.TaggedClass<ReportTestId, { readonly brand: unique symbol }>()('ReportTestId', {
   positionalId: S.String,
   runnerTestId: S.String,
 }) {
   readonly [ReportTestIdTypeId] = ReportTestIdTypeId
 }
 
-export class ResolveReportTestIds extends S.TaggedClass<ResolveReportTestIds>()('ResolveReportTestIds', {
-  testFiles: S.optional(ReuseTestFilesSchema),
-}) {
+export class ResolveReportTestIds
+  extends S.TaggedClass<ResolveReportTestIds, { readonly brand: unique symbol }>()('ResolveReportTestIds', {
+    testFiles: S.optional(ReuseTestFilesSchema),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

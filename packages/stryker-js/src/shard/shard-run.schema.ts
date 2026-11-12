@@ -1,7 +1,7 @@
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class ShardChildFailed extends S.TaggedError<ShardChildFailed>()('ShardChildFailed', {
+export class ShardChildFailed extends S.TaggedError<ShardChildFailed, { readonly brand: unique symbol }>()('ShardChildFailed', {
   project: S.String,
   exitCode: S.Int,
   exitClass: Plugin.ExitClass,

@@ -88,20 +88,24 @@ export const CatalogMode = S.TaggedUnion({
 })
 export type CatalogMode = typeof CatalogMode.Type
 
-export class MalformedFixtureManifest extends S.TaggedError<MalformedFixtureManifest>()('MalformedFixtureManifest', {
-  manifest: S.String,
-  detail: S.String,
-}) {
+export class MalformedFixtureManifest
+  extends S.TaggedError<MalformedFixtureManifest, { readonly brand: unique symbol }>()('MalformedFixtureManifest', {
+    manifest: S.String,
+    detail: S.String,
+  })
+{
   override get message(): string {
     return `${this.manifest}: ${this.detail}`
   }
 }
 
-export class UnresolvedCatalogSpec extends S.TaggedError<UnresolvedCatalogSpec>()('UnresolvedCatalogSpec', {
-  manifest: S.String,
-  packageName: S.String,
-  catalog: S.String,
-}) {
+export class UnresolvedCatalogSpec
+  extends S.TaggedError<UnresolvedCatalogSpec, { readonly brand: unique symbol }>()('UnresolvedCatalogSpec', {
+    manifest: S.String,
+    packageName: S.String,
+    catalog: S.String,
+  })
+{
   override get message(): string {
     return `${this.manifest}: "${this.packageName}" is missing from the ${this.catalog} catalog in pnpm-workspace.yaml`
   }

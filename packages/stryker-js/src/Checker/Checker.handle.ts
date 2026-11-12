@@ -107,7 +107,7 @@ const recordCheckerCall = <A>(
         Match.exhaustive,
       )
     ),
-    Effect.tap(([duration]) => Metric.update(checkerDuration, duration)),
+    Effect.trackSuccesses(checkerDuration, ([duration]) => duration),
     Effect.map(([, result]) => result),
     Effect.mapError((error) =>
       Match.value(error).pipe(

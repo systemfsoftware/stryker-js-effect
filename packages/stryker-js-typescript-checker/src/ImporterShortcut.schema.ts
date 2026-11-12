@@ -24,14 +24,18 @@ const ImporterShortcutTypeId: unique symbol = Symbol.for(
 )
 type ImporterShortcutTypeId = typeof ImporterShortcutTypeId
 
-export class ShortcutTaken extends S.TaggedClass<ShortcutTaken>()('ShortcutTaken', {}) {
+export class ShortcutTaken
+  extends S.TaggedClass<ShortcutTaken, { readonly brand: unique symbol }>()('ShortcutTaken', {})
+{
   readonly [ImporterShortcutTypeId] = ImporterShortcutTypeId
 }
 
-export class ImportersRechecked extends S.TaggedClass<ImportersRechecked>()('ImportersRechecked', {
-  clause: ShortcutClause,
-  tree: ShortcutTree,
-}) {
+export class ImportersRechecked
+  extends S.TaggedClass<ImportersRechecked, { readonly brand: unique symbol }>()('ImportersRechecked', {
+    clause: ShortcutClause,
+    tree: ShortcutTree,
+  })
+{
   readonly [ImporterShortcutTypeId] = ImporterShortcutTypeId
 }
 

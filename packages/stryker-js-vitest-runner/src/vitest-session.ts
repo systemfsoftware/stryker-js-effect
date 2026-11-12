@@ -1,7 +1,7 @@
 import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
-import * as Crypto from 'effect/Crypto'
+import * as SecureRandom from 'effect/crypto/SecureRandom'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -71,7 +71,7 @@ const buildRuntime = (
   input: VitestSessionInput,
   created: Ref.Ref<VitestRuntime | undefined>,
   platform: {
-    readonly crypto: Crypto.Crypto
+    readonly crypto: SecureRandom.SecureRandom['Service']
     readonly fileSystem: FileSystem.FileSystem
     readonly path: Path.Path
     readonly lifetime: Scope.Scope
@@ -100,9 +100,13 @@ const namespaceOf = (input: VitestSessionInput): StrykerNamespace =>
 
 export const make = (
   input: VitestSessionInput,
-): Effect.Effect<VitestSessionShape, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path | Scope.Scope> =>
+): Effect.Effect<
+  VitestSessionShape,
+  never,
+  SecureRandom.SecureRandom | FileSystem.FileSystem | Path.Path | Scope.Scope
+> =>
   Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* SecureRandom.SecureRandom
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const lifetime = yield* Scope.Scope
@@ -118,5 +122,5 @@ export const make = (
 
 export const layer = (
   input: VitestSessionInput,
-): Layer.Layer<VitestSession, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
+): Layer.Layer<VitestSession, never, SecureRandom.SecureRandom | FileSystem.FileSystem | Path.Path> =>
   Layer.effect(VitestSession, make(input))

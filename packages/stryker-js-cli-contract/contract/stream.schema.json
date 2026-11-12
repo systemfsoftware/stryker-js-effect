@@ -142,7 +142,8 @@
         },
         "total": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "shardPlan": {
           "anyOf": [
@@ -260,10 +261,14 @@
                     "type": "object",
                     "properties": {
                       "index": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
                       },
                       "count": {
-                        "type": "integer"
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
                       },
                       "predictedSeconds": {
                         "type": "number"
@@ -353,54 +358,66 @@
               },
               "reused": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "ran": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "refused": {
                 "type": "object",
                 "properties": {
                   "semanticsChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "policyChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "runInputsChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "closureChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "closureAnalysisFailed": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "programChanged": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "timeoutUnreproduced": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "flakyDependency": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "noPriorRecord": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "decidedPerRun": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -482,7 +499,8 @@
         },
         "index": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "startupMs": {
           "type": "number",
@@ -523,11 +541,13 @@
               "properties": {
                 "line": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 },
                 "column": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -541,11 +561,13 @@
               "properties": {
                 "line": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 },
                 "column": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -577,11 +599,13 @@
         },
         "completed": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "total": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "static": {
           "type": "boolean"
@@ -601,7 +625,8 @@
                 },
                 "testsExecuted": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "shared": {
                   "type": "boolean"
@@ -623,138 +648,134 @@
         "subsumption": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "Subsumed"
+                  ]
+                },
+                "rule": {
+                  "anyOf": [
+                    {
                       "type": "string",
                       "enum": [
-                        "Subsumed"
+                        "complement"
                       ]
-                    },
-                    "rule": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "complement"
-                          ]
-                        }
+                    }
+                  ]
+                },
+                "dominators": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{16}$"
+                    }
+                  ],
+                  "additionalItems": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                }
+              },
+              "required": [
+                "_tag",
+                "rule",
+                "dominators"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "Readmitted"
+                  ]
+                },
+                "rule": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "complement"
                       ]
-                    },
-                    "dominators": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": [
-                        {
+                    }
+                  ]
+                },
+                "causes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "dominator": {
                           "type": "string",
                           "pattern": "^[0-9a-f]{16}$"
-                        }
-                      ],
-                      "additionalItems": {
-                        "type": "string",
-                        "pattern": "^[0-9a-f]{16}$"
-                      }
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "rule",
-                    "dominators"
-                  ],
-                  "additionalProperties": true
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "Readmitted"
-                      ]
-                    },
-                    "rule": {
-                      "anyOf": [
-                        {
+                        },
+                        "code": {
                           "type": "string",
                           "enum": [
-                            "complement"
+                            "dominator-ignored-at-check",
+                            "dominator-compile-error",
+                            "dominator-ignored-at-plan",
+                            "dominator-remembered-without-running",
+                            "dominator-unsettled"
                           ]
-                        }
-                      ]
-                    },
-                    "causes": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "dominator": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{16}$"
-                            },
-                            "code": {
-                              "type": "string",
-                              "enum": [
-                                "dominator-ignored-at-check",
-                                "dominator-compile-error",
-                                "dominator-ignored-at-plan",
-                                "dominator-remembered-without-running",
-                                "dominator-unsettled"
-                              ]
-                            },
-                            "detail": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "dominator",
-                            "code",
-                            "detail"
-                          ],
-                          "additionalProperties": true
-                        }
-                      ],
-                      "additionalItems": {
-                        "type": "object",
-                        "properties": {
-                          "dominator": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{16}$"
-                          },
-                          "code": {
-                            "type": "string",
-                            "enum": [
-                              "dominator-ignored-at-check",
-                              "dominator-compile-error",
-                              "dominator-ignored-at-plan",
-                              "dominator-remembered-without-running",
-                              "dominator-unsettled"
-                            ]
-                          },
-                          "detail": {
-                            "type": "string"
-                          }
                         },
-                        "required": [
-                          "dominator",
-                          "code",
-                          "detail"
-                        ],
-                        "additionalProperties": true
-                      }
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "dominator",
+                        "code",
+                        "detail"
+                      ],
+                      "additionalProperties": true
                     }
-                  },
-                  "required": [
-                    "_tag",
-                    "rule",
-                    "causes"
                   ],
-                  "additionalProperties": true
+                  "additionalItems": {
+                    "type": "object",
+                    "properties": {
+                      "dominator": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      },
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "dominator-ignored-at-check",
+                          "dominator-compile-error",
+                          "dominator-ignored-at-plan",
+                          "dominator-remembered-without-running",
+                          "dominator-unsettled"
+                        ]
+                      },
+                      "detail": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "dominator",
+                      "code",
+                      "detail"
+                    ],
+                    "additionalProperties": true
+                  }
                 }
-              ]
+              },
+              "required": [
+                "_tag",
+                "rule",
+                "causes"
+              ],
+              "additionalProperties": true
             },
             {
               "type": "null"
@@ -817,13 +838,15 @@
         },
         "completed": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "total": {
           "anyOf": [
             {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             {
               "type": "null"
@@ -1014,54 +1037,66 @@
         },
         "reused": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "ran": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "refused": {
           "type": "object",
           "properties": {
             "semanticsChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "policyChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "runInputsChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "closureChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "closureAnalysisFailed": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "programChanged": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "timeoutUnreproduced": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "flakyDependency": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "noPriorRecord": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "decidedPerRun": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             }
           },
           "required": [
@@ -1095,11 +1130,13 @@
         },
         "equivalentToOriginal": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "duplicateAtSite": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1216,35 +1253,43 @@
       "properties": {
         "pending": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "killed": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "timeout": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "survived": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "noCoverage": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "runtimeErrors": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "compileErrors": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "ignored": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -1372,11 +1417,13 @@
                     "properties": {
                       "line": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "column": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [
@@ -1390,11 +1437,13 @@
                     "properties": {
                       "line": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       },
                       "column": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [
@@ -1604,7 +1653,8 @@
               "properties": {
                 "count": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "costMs": {
                   "type": "number",
@@ -1689,105 +1739,101 @@
         "reason": {
           "anyOf": [
             {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "PeerMissing"
-                      ]
-                    },
-                    "peer": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "peer"
-                  ],
-                  "additionalProperties": true
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "PeerMissing"
+                  ]
                 },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "PeerVersionUnsupported"
-                      ]
-                    },
-                    "peer": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "peer",
-                    "detail"
-                  ],
-                  "additionalProperties": true
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "PeerUnrecognized"
-                      ]
-                    },
-                    "peer": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "peer"
-                  ],
-                  "additionalProperties": true
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "InvalidContribution"
-                      ]
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "detail"
-                  ],
-                  "additionalProperties": true
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "ImportFailed"
-                      ]
-                    },
-                    "cause": {}
-                  },
-                  "required": [
-                    "_tag",
-                    "cause"
-                  ],
-                  "additionalProperties": true
+                "peer": {
+                  "type": "string"
                 }
-              ]
+              },
+              "required": [
+                "_tag",
+                "peer"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "PeerVersionUnsupported"
+                  ]
+                },
+                "peer": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "_tag",
+                "peer",
+                "detail"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "PeerUnrecognized"
+                  ]
+                },
+                "peer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "_tag",
+                "peer"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "InvalidContribution"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "_tag",
+                "detail"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "ImportFailed"
+                  ]
+                },
+                "cause": {}
+              },
+              "required": [
+                "_tag",
+                "cause"
+              ],
+              "additionalProperties": true
             },
             {
               "type": "null"

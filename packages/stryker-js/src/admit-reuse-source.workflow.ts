@@ -6,10 +6,12 @@ import * as S from 'effect/Schema'
 
 import { ReuseReportSchema } from './IncrementalDiff.schema.js'
 
-export class AdmitReuseSourceCommand extends S.TaggedClass<AdmitReuseSourceCommand>()('AdmitReuseSourceCommand', {
-  text: S.String,
-  expectedIncrementalVersion: S.String,
-}) {
+export class AdmitReuseSourceCommand
+  extends S.TaggedClass<AdmitReuseSourceCommand, { readonly brand: unique symbol }>()('AdmitReuseSourceCommand', {
+    text: S.String,
+    expectedIncrementalVersion: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     expectedIncrementalVersion: 'stryker.incremental_source.expected_version',
   } as const
@@ -18,25 +20,31 @@ export class AdmitReuseSourceCommand extends S.TaggedClass<AdmitReuseSourceComma
 const AdmitReuseSourceTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/AdmitReuseSourceDecision')
 type AdmitReuseSourceTypeId = typeof AdmitReuseSourceTypeId
 
-export class ReuseSourceKept extends S.TaggedClass<ReuseSourceKept>()('ReuseSourceKept', {
-  report: ReuseReportSchema,
-}) {
+export class ReuseSourceKept
+  extends S.TaggedClass<ReuseSourceKept, { readonly brand: unique symbol }>()('ReuseSourceKept', {
+    report: ReuseReportSchema,
+  })
+{
   readonly [AdmitReuseSourceTypeId] = AdmitReuseSourceTypeId
 }
 
-export class ReuseSourceAbsent extends S.TaggedClass<ReuseSourceAbsent>()('ReuseSourceAbsent', {}) {
+export class ReuseSourceAbsent
+  extends S.TaggedClass<ReuseSourceAbsent, { readonly brand: unique symbol }>()('ReuseSourceAbsent', {})
+{
   readonly [AdmitReuseSourceTypeId] = AdmitReuseSourceTypeId
 }
 
 const ReuseSourceDiscardReason = S.Literals(['cacheLayoutChanged', 'undecodable'])
 type ReuseSourceDiscardReason = typeof ReuseSourceDiscardReason.Type
 
-export class ReuseSourceDiscarded extends S.TaggedClass<ReuseSourceDiscarded>()('ReuseSourceDiscarded', {
-  reason: ReuseSourceDiscardReason,
-  actual: S.optional(S.String),
-  expected: S.String,
-  issue: S.optional(S.String),
-}) {
+export class ReuseSourceDiscarded
+  extends S.TaggedClass<ReuseSourceDiscarded, { readonly brand: unique symbol }>()('ReuseSourceDiscarded', {
+    reason: ReuseSourceDiscardReason,
+    actual: S.optional(S.String),
+    expected: S.String,
+    issue: S.optional(S.String),
+  })
+{
   readonly [AdmitReuseSourceTypeId] = AdmitReuseSourceTypeId
 }
 

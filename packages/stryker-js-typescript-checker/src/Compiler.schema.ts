@@ -10,35 +10,41 @@ import * as Match from 'effect/Match'
 import { TsConfigNotFoundError, TsConfigParseError } from './Tsconfig.schema.js'
 
 /** The installed TypeScript version is below the supported floor. */
-export class UnsupportedTypeScriptVersionError extends S.TaggedError<UnsupportedTypeScriptVersionError>()(
-  'UnsupportedTypeScriptVersionError',
-  {
-    version: S.String,
-  },
-) {
+export class UnsupportedTypeScriptVersionError
+  extends S.TaggedError<UnsupportedTypeScriptVersionError, { readonly brand: unique symbol }>()(
+    'UnsupportedTypeScriptVersionError',
+    {
+      version: S.String,
+    },
+  )
+{
   override get message(): string {
     return `@systemfsoftware/stryker-js-typescript-checker only supports typescript@7.0.0 or higher. Found typescript@${this.version}`
   }
 }
 
 /** Requested file is not present in the hybrid in-memory file map. */
-export class HybridFileNotFoundError extends S.TaggedError<HybridFileNotFoundError>()(
-  'HybridFileNotFoundError',
-  {
-    fileName: S.String,
-  },
-) {
+export class HybridFileNotFoundError
+  extends S.TaggedError<HybridFileNotFoundError, { readonly brand: unique symbol }>()(
+    'HybridFileNotFoundError',
+    {
+      fileName: S.String,
+    },
+  )
+{
   override get message(): string {
     return `'${this.fileName}' is part of your TypeScript project but could not be found on disk`
   }
 }
 
-export class HybridMutantOutsideFileError extends S.TaggedError<HybridMutantOutsideFileError>()(
-  'HybridMutantOutsideFileError',
-  {
-    fileName: S.String,
-  },
-) {
+export class HybridMutantOutsideFileError
+  extends S.TaggedError<HybridMutantOutsideFileError, { readonly brand: unique symbol }>()(
+    'HybridMutantOutsideFileError',
+    {
+      fileName: S.String,
+    },
+  )
+{
   override get message(): string {
     return `A mutant's location falls outside '${this.fileName}'`
   }
@@ -49,17 +55,19 @@ export class HybridMutantOutsideFileError extends S.TaggedError<HybridMutantOuts
  * One tagged error — callers branch only on failure itself; `reason` keeps
  * cases distinguishable in reports.
  */
-export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFailed', {
-  reason: S.Literals([
-    'not-initialized',
-    'no-projects',
-    'unknown-file-node',
-    'file-not-in-project',
-    'mutant-outside-file',
-    'program-digest-unavailable',
-  ]),
-  subject: S.optional(S.String),
-}) {
+export class CompilerFailed
+  extends S.TaggedError<CompilerFailed, { readonly brand: unique symbol }>()('CompilerFailed', {
+    reason: S.Literals([
+      'not-initialized',
+      'no-projects',
+      'unknown-file-node',
+      'file-not-in-project',
+      'mutant-outside-file',
+      'program-digest-unavailable',
+    ]),
+    subject: S.optional(S.String),
+  })
+{
   override get message(): string {
     return Match.value(this.reason).pipe(
       Match.when('not-initialized', () => 'The TypeScript compiler was used before it was initialized'),
@@ -85,9 +93,11 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
   }
 }
 
-export class InvalidCheckerOptions extends S.TaggedError<InvalidCheckerOptions>()('InvalidCheckerOptions', {
-  detail: S.String,
-}) {
+export class InvalidCheckerOptions
+  extends S.TaggedError<InvalidCheckerOptions, { readonly brand: unique symbol }>()('InvalidCheckerOptions', {
+    detail: S.String,
+  })
+{
   readonly code = 'invalid-checker-options' as const
   readonly nextAction =
     "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it, and remove every other key from the typescriptChecker block"
@@ -97,9 +107,11 @@ export class InvalidCheckerOptions extends S.TaggedError<InvalidCheckerOptions>(
   }
 }
 
-export class DuplicateMutantIds extends S.TaggedError<DuplicateMutantIds>()('DuplicateMutantIds', {
-  detail: S.String,
-}) {
+export class DuplicateMutantIds
+  extends S.TaggedError<DuplicateMutantIds, { readonly brand: unique symbol }>()('DuplicateMutantIds', {
+    detail: S.String,
+  })
+{
   readonly code = 'duplicate-mutant-ids' as const
   readonly nextAction = 'Send each mutant id once per check call'
 
@@ -108,9 +120,11 @@ export class DuplicateMutantIds extends S.TaggedError<DuplicateMutantIds>()('Dup
   }
 }
 
-export class DryRunCompileErrors extends S.TaggedError<DryRunCompileErrors>()('DryRunCompileErrors', {
-  text: S.String,
-}) {
+export class DryRunCompileErrors
+  extends S.TaggedError<DryRunCompileErrors, { readonly brand: unique symbol }>()('DryRunCompileErrors', {
+    text: S.String,
+  })
+{
   override get message(): string {
     return `Typescript error(s) found in dry run compilation: ${this.text}`
   }

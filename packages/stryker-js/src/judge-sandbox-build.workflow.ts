@@ -8,15 +8,17 @@ import { StrykerError } from './stryker-error.schema.js'
 const JudgeSandboxBuildTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/JudgeSandboxBuild')
 type JudgeSandboxBuildTypeId = typeof JudgeSandboxBuildTypeId
 
-export class SandboxBuildCommand extends S.TaggedClass<SandboxBuildCommand>()('SandboxBuildCommand', {
-  command: S.String,
-  exitCode: S.Int,
-  stderr: S.String,
-}) {
+export class SandboxBuildCommand
+  extends S.TaggedClass<SandboxBuildCommand, { readonly brand: unique symbol }>()('SandboxBuildCommand', {
+    command: S.String,
+    exitCode: S.Int,
+    stderr: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class SandboxBuilt extends S.TaggedClass<SandboxBuilt>()('SandboxBuilt', {}) {
+export class SandboxBuilt extends S.TaggedClass<SandboxBuilt, { readonly brand: unique symbol }>()('SandboxBuilt', {}) {
   readonly [JudgeSandboxBuildTypeId] = JudgeSandboxBuildTypeId
 }
 

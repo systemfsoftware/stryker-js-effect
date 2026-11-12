@@ -3,7 +3,7 @@ import * as S from 'effect/Schema'
 export const ShardPlanInvalidCode = S.Literals(['plan-unreadable', 'plan-undecodable'])
 export type ShardPlanInvalidCode = typeof ShardPlanInvalidCode.Type
 
-export class ShardPlanInvalid extends S.TaggedError<ShardPlanInvalid>()('ShardPlanInvalid', {
+export class ShardPlanInvalid extends S.TaggedError<ShardPlanInvalid, { readonly brand: unique symbol }>()('ShardPlanInvalid', {
   file: S.String,
   detail: S.String,
   code: ShardPlanInvalidCode,
@@ -16,7 +16,7 @@ export class ShardPlanInvalid extends S.TaggedError<ShardPlanInvalid>()('ShardPl
   }
 }
 
-export class ShardPlanMutantsMissing extends S.TaggedError<ShardPlanMutantsMissing>()('ShardPlanMutantsMissing', {
+export class ShardPlanMutantsMissing extends S.TaggedError<ShardPlanMutantsMissing, { readonly brand: unique symbol }>()('ShardPlanMutantsMissing', {
   planFile: S.String,
   missingIds: S.Array(S.String),
   missingIdsText: S.String,
