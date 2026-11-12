@@ -51,7 +51,14 @@ env:
   PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
-  INCREMENTAL_REPORTS: packages/**/reports/stryker-incremental.json
+  INCREMENTAL_REPORTS: |
+    packages/**/reports/stryker-incremental.json
+    test/e2e-core/reports/stryker-incremental.json
+  VERDICT_STORES: |
+    packages/stryker-js/reports/stryker-verdicts
+    packages/stryker-js-typescript-checker/reports/stryker-verdicts
+    packages/stryker-js-vitest-runner/reports/stryker-verdicts
+    test/e2e-core/reports/stryker-verdicts
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
@@ -204,6 +211,16 @@ jobs:
           restore-keys: |
             mutation-incremental-
 
+      # Saved keys are content digests (`mutation-verdicts-<sha256>`), so this key never matches
+      # and the prefix restores the newest store.
+      - name: Restore the verdict store of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: mutation-verdicts-latest
+          restore-keys: |
+            mutation-verdicts-
+
       - id: plan
         name: Plan
         env:
@@ -341,6 +358,14 @@ jobs:
           restore-keys: |
             mutation-incremental-
 
+      - name: Restore the verdict store of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: mutation-verdicts-latest
+          restore-keys: |
+            mutation-verdicts-
+
       - id: shard
         name: Name the shard output
         env:
@@ -355,6 +380,25 @@ jobs:
             --plan "$PLAN" \
             --shard "$SHARD" \
             --out "reports/shards/${{ steps.shard.outputs.slug }}"
+
+      # The plan assigns every mutant to one shard, so a part holds exactly the store entries of
+      # this shard's mutants: the verdicts it put this run and the ones it reused.
+      - id: verdicts
+        name: Stage the verdict store entries of this shard's mutants
+        if: ${{ !cancelled() }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: node scripts/verdict-store-parts.ts stage --plan "$PLAN" --shard "$SHARD" --projects "$PROJECTS" --out verdict-part
+      - name: Upload the verdict store part
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: verdict-part-${{ steps.shard.outputs.slug }}
+          path: verdict-part
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
 
       - id: upload
         name: Upload the shard report
@@ -518,6 +562,44 @@ jobs:
           retention-days: 14
           overwrite: true
 
+      - name: Restore the verdict store of the last run
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: mutation-verdicts-latest
+          restore-keys: |
+            mutation-verdicts-
+      - name: Download every shard's verdict store part into verdict-parts/<name>
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: verdict-part-*
+          path: verdict-parts
+      - id: verdicts
+        name: Lay the shards' verdict store parts over the store
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node scripts/verdict-store-parts.ts merge --plan "$PLAN" --parts verdict-parts --projects "$PROJECTS"
+      - id: verdicts-cached
+        name: Is this store already cached
+        if: ${{ !cancelled() && steps.verdicts.outputs.key != '' }}
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: ${{ steps.verdicts.outputs.key }}
+          lookup-only: true
+      - name: Save the verdict store
+        if: ${{ !cancelled() && steps.verdicts.outputs.key != '' && steps.verdicts-cached.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: ${{ steps.verdicts.outputs.key }}
+
       - name: Delete per-shard artifacts once the report merged
         if: success()
         continue-on-error: true
@@ -525,7 +607,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
-            --jq '.artifacts[] | select(.name | startswith("mutation-shard-")) | .id' \
+            --jq '.artifacts[] | select(.name | startswith("mutation-shard-") or startswith("verdict-part-")) | .id' \
           | while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done
 
   kill-matrix:
