@@ -12,6 +12,7 @@ import {
   type InstrumenterOptions,
   InstrumentError,
   InstrumentFilesCommand,
+  InstrumentFileSkip,
   InstrumentResult,
 } from './Instrument.schema.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
@@ -33,6 +34,9 @@ type InstrumentFilesRaw = typeof InstrumentFilesCommand.Encoded & {
   readonly parsed: readonly ParsedFile[]
   readonly mutants: readonly Mutant.Mutant[]
 }
+
+const skippedOf = (raw: InstrumentFilesRaw): readonly InstrumentFileSkip[] =>
+  raw.skipped.map(({ extension, file, reason }) => InstrumentFileSkip.make({ extension, file, reason }))
 
 const printedFile = (
   raw: InstrumentFilesRaw,
@@ -60,12 +64,12 @@ const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentRe
       InstrumentResult.make({
         files: [...files],
         mutants: [...raw.mutants],
-        skipped: [...raw.skipped],
+        skipped: skippedOf(raw),
       }),
   )
 
 const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
-  InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] })
+  InstrumentResult.make({ files: [], mutants: [], skipped: skippedOf(raw) })
 
 const readInstrumentFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReadFiles.name)(function*(
   input: InstrumentFilesInput,

@@ -30,13 +30,17 @@ export type VerdictMismatch = typeof VerdictMismatch.Type
 const CompareVerdictsDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CompareVerdictsDecision')
 type CompareVerdictsDecisionTypeId = typeof CompareVerdictsDecisionTypeId
 
-export class VerdictsMatch extends S.TaggedClass<VerdictsMatch>()('VerdictsMatch', {}) {
+export class VerdictsMatch
+  extends S.TaggedClass<VerdictsMatch, { readonly brand: unique symbol }>()('VerdictsMatch', {})
+{
   readonly [CompareVerdictsDecisionTypeId] = CompareVerdictsDecisionTypeId
 }
 
-export class VerdictsDiffer extends S.TaggedError<VerdictsDiffer>()('VerdictsDiffer', {
-  mismatches: S.Array(VerdictMismatch),
-}) {
+export class VerdictsDiffer
+  extends S.TaggedError<VerdictsDiffer, { readonly brand: unique symbol }>()('VerdictsDiffer', {
+    mismatches: S.Array(VerdictMismatch),
+  })
+{
   override get message(): string {
     return [
       `${this.mismatches.length} mutant status(es) differ from the baseline:`,
@@ -45,15 +49,17 @@ export class VerdictsDiffer extends S.TaggedError<VerdictsDiffer>()('VerdictsDif
   }
 }
 
-export class CompareVerdictsCommand extends S.Class<CompareVerdictsCommand>('CompareVerdictsCommand')({
-  baseline: VerdictSchema,
-  fresh: VerdictSchema,
-  noise: S.Array(S.String),
-}) {
+export class CompareVerdictsCommand
+  extends S.Class<CompareVerdictsCommand, { readonly brand: unique symbol }>('CompareVerdictsCommand')({
+    baseline: VerdictSchema,
+    fresh: VerdictSchema,
+    noise: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class CompareFailed extends S.TaggedError<CompareFailed>()('CompareFailed', {
+export class CompareFailed extends S.TaggedError<CompareFailed, { readonly brand: unique symbol }>()('CompareFailed', {
   reason: S.String,
 }) {
   override get message(): string {

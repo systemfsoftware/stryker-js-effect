@@ -602,6 +602,7 @@ const usageReasonsOf = (cause: CliError.CliError): ReadonlyArray<string> =>
     UnknownSubcommand: (error) => [error.message],
     UnrecognizedOption: (error) => [error.message],
     UserError: (error) => [error.message],
+    ValidationError: (error) => [error.message],
   })
 
 const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, DriverFailure> =>

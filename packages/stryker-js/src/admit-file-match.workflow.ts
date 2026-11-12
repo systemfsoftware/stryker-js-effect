@@ -43,25 +43,29 @@ const matcherMatchesResolved = (
 
 const hasHiddenSegment = (fileName: string) => fileName.split('/').some((entry) => entry.startsWith('.'))
 
-export class FileMatchCommand extends S.TaggedClass<FileMatchCommand>()('FileMatchCommand', {
-  resolvedPattern: S.Union([S.Boolean, S.String]),
-  allowHiddenFiles: S.Boolean,
-  resolvedFileName: S.String,
-}) {
+export class FileMatchCommand
+  extends S.TaggedClass<FileMatchCommand, { readonly brand: unique symbol }>()('FileMatchCommand', {
+    resolvedPattern: S.Union([S.Boolean, S.String]),
+    allowHiddenFiles: S.Boolean,
+    resolvedFileName: S.String,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     allowHiddenFiles: 'stryker.file_match.allow_hidden_files',
   } as const
 }
 
-export class FileMatched extends S.TaggedClass<FileMatched>()('FileMatched', {
+export class FileMatched extends S.TaggedClass<FileMatched, { readonly brand: unique symbol }>()('FileMatched', {
   resolvedFileName: S.String,
 }) {
   readonly [FileMatchTypeId] = FileMatchTypeId
 }
 
-export class FileNotMatched extends S.TaggedClass<FileNotMatched>()('FileNotMatched', {
-  resolvedFileName: S.String,
-}) {
+export class FileNotMatched
+  extends S.TaggedClass<FileNotMatched, { readonly brand: unique symbol }>()('FileNotMatched', {
+    resolvedFileName: S.String,
+  })
+{
   readonly [FileMatchTypeId] = FileMatchTypeId
 }
 

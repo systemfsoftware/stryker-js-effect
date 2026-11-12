@@ -39,7 +39,7 @@ const isNamedTrap = (command: VitestMutantRunCommand): boolean =>
 const VitestMutantRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestMutantRun')
 type VitestMutantRunTypeId = typeof VitestMutantRunTypeId
 
-export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
+export class MutantKilled extends S.TaggedClass<MutantKilled, { readonly brand: unique symbol }>()('Killed', {
   tests: S.Array(TestRunner.TestResultSchema),
   killerIds: S.String.pipe(S.Array, S.optional),
   failureMessage: S.optional(S.String),
@@ -48,21 +48,21 @@ export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
-export class MutantSurvived extends S.TaggedClass<MutantSurvived>()('Survived', {
+export class MutantSurvived extends S.TaggedClass<MutantSurvived, { readonly brand: unique symbol }>()('Survived', {
   tests: S.Array(TestRunner.TestResultSchema),
   executedTests: S.Array(TestRunner.ExecutedTestSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
-export class MutantTimeout extends S.TaggedClass<MutantTimeout>()('Timeout', {
+export class MutantTimeout extends S.TaggedClass<MutantTimeout, { readonly brand: unique symbol }>()('Timeout', {
   tests: S.Array(TestRunner.TestResultSchema),
   reason: S.optional(S.String),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
-export class MutantDryError extends S.TaggedClass<MutantDryError>()('Error', {
+export class MutantDryError extends S.TaggedClass<MutantDryError, { readonly brand: unique symbol }>()('Error', {
   tests: S.Array(TestRunner.TestResultSchema),
   errorMessage: S.optional(S.String),
 }) {

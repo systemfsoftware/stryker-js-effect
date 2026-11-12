@@ -15,12 +15,14 @@ import {
   NoBenchBase,
 } from './bench-plan.schema.js'
 
-export class ChooseBaseCommand extends S.TaggedClass<ChooseBaseCommand>()('ChooseBaseCommand', {
-  event: S.Literals(['push', 'workflow_dispatch']),
-  head: S.NonEmptyString,
-  greenRuns: S.Array(GreenRun),
-  firstParent: S.Option(S.NonEmptyString),
-}) {
+export class ChooseBaseCommand
+  extends S.TaggedClass<ChooseBaseCommand, { readonly brand: unique symbol }>()('ChooseBaseCommand', {
+    event: S.Literals(['push', 'workflow_dispatch']),
+    head: S.NonEmptyString,
+    greenRuns: S.Array(GreenRun),
+    firstParent: S.Option(S.NonEmptyString),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

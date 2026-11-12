@@ -11,13 +11,17 @@ const DiagnosticBatchSize = 64
 const BatchesTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/DiagnosticBatches')
 type BatchesTypeId = typeof BatchesTypeId
 
-export class DiagnosticBatchesPlanned extends S.TaggedClass<DiagnosticBatchesPlanned>()('DiagnosticBatchesPlanned', {
-  batches: S.String.pipe(S.Array, S.Array),
-}) {
+export class DiagnosticBatchesPlanned
+  extends S.TaggedClass<DiagnosticBatchesPlanned, { readonly brand: unique symbol }>()('DiagnosticBatchesPlanned', {
+    batches: S.String.pipe(S.Array, S.Array),
+  })
+{
   readonly [BatchesTypeId] = BatchesTypeId
 }
 
-export class NoDiagnosticBatches extends S.TaggedClass<NoDiagnosticBatches>()('NoDiagnosticBatches', {}) {
+export class NoDiagnosticBatches
+  extends S.TaggedClass<NoDiagnosticBatches, { readonly brand: unique symbol }>()('NoDiagnosticBatches', {})
+{
   readonly [BatchesTypeId] = BatchesTypeId
 }
 

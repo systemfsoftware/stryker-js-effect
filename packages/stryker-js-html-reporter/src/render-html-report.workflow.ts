@@ -7,22 +7,28 @@ const RenderHtmlReportTypeId: unique symbol = Symbol.for(
 )
 type RenderHtmlReportTypeId = typeof RenderHtmlReportTypeId
 
-export class RenderHtmlReport extends Schema.TaggedClass<RenderHtmlReport>()('RenderHtmlReport', {
-  fileName: Schema.String,
-  inlinedBundle: Schema.UndefinedOr(Schema.String),
-}) {
+export class RenderHtmlReport
+  extends Schema.TaggedClass<RenderHtmlReport, { readonly brand: unique symbol }>()('RenderHtmlReport', {
+    fileName: Schema.String,
+    inlinedBundle: Schema.UndefinedOr(Schema.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {
     fileName: 'stryker.html_report.file_name',
   } as const
 }
 
-export class BundleInlined extends Schema.TaggedClass<BundleInlined>()('BundleInlined', {
-  bundle: Schema.String,
-}) {
+export class BundleInlined
+  extends Schema.TaggedClass<BundleInlined, { readonly brand: unique symbol }>()('BundleInlined', {
+    bundle: Schema.String,
+  })
+{
   readonly [RenderHtmlReportTypeId] = RenderHtmlReportTypeId
 }
 
-export class BundleFromDisk extends Schema.TaggedClass<BundleFromDisk>()('BundleFromDisk', {}) {
+export class BundleFromDisk
+  extends Schema.TaggedClass<BundleFromDisk, { readonly brand: unique symbol }>()('BundleFromDisk', {})
+{
   readonly [RenderHtmlReportTypeId] = RenderHtmlReportTypeId
 }
 

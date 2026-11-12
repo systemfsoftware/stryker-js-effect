@@ -17,14 +17,14 @@ export const RunId = S.String.pipe(
 )
 export type RunId = typeof RunId.Type
 
-export class RunStarted extends S.TaggedClass<RunStarted>()('stream', {
+export class RunStarted extends S.TaggedClass<RunStarted, { readonly brand: unique symbol }>()('stream', {
   schemaVersion: StreamSchemaVersion,
   runId: RunId,
   mode: OutputMode,
   signal: ModeSignal,
 }) {}
 
-export class PhaseEntered extends S.TaggedClass<PhaseEntered>()('phase', {
+export class PhaseEntered extends S.TaggedClass<PhaseEntered, { readonly brand: unique symbol }>()('phase', {
   phase: RunPhase,
   elapsedMs: Report.NonNegativeFinite,
 }) {}
@@ -73,7 +73,7 @@ export const PlanProjectReuse = S.Struct({
 })
 export type PlanProjectReuse = typeof PlanProjectReuse.Type
 
-export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
+export class PlanKnown extends S.TaggedClass<PlanKnown, { readonly brand: unique symbol }>()('plan', {
   total: Report.NonNegativeInt,
   shardPlan: S.NullOr(ShardPlanDocument),
   projects: PlanProjectReuse.pipe(S.Array, S.optionalKey),
@@ -82,7 +82,7 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
 export const WorkerRole = S.Literals(['testRunner', 'checker'])
 export type WorkerRole = typeof WorkerRole.Type
 
-export class WorkerReported extends S.TaggedClass<WorkerReported>()('worker', {
+export class WorkerReported extends S.TaggedClass<WorkerReported, { readonly brand: unique symbol }>()('worker', {
   schemaVersion: StreamSchemaVersion,
   role: WorkerRole,
   index: Report.NonNegativeInt,
@@ -127,7 +127,7 @@ const subsumptionCheck = S.makeFilter(
   },
 )
 
-export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
+export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent, { readonly brand: unique symbol }>()(
   'mutantTested',
   S.Struct({
     ...mutantTestedFields,
@@ -203,7 +203,7 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
     }),
   )
 
-export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
+export class Heartbeat extends S.TaggedClass<Heartbeat, { readonly brand: unique symbol }>()('tick', {
   elapsedMs: Report.NonNegativeFinite,
   completed: Report.NonNegativeInt,
   total: S.NullOr(Report.NonNegativeInt),
@@ -275,7 +275,7 @@ export const Budget = S.Struct({
 })
 export type Budget = typeof Budget.Type
 
-export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
+export class VerdictReached extends S.TaggedClass<VerdictReached, { readonly brand: unique symbol }>()('verdict', {
   schemaVersion: StreamSchemaVersion,
   runId: RunId,
   mode: OutputMode,
@@ -313,7 +313,7 @@ export const FormatClaimShadowingRow = S.Struct({
 })
 export type FormatClaimShadowingRow = typeof FormatClaimShadowingRow.Type
 
-export class PluginsReported extends S.TaggedClass<PluginsReported>()('plugins', {
+export class PluginsReported extends S.TaggedClass<PluginsReported, { readonly brand: unique symbol }>()('plugins', {
   modules: S.Array(FrameworkModuleRow),
   shadowings: S.Array(FormatClaimShadowingRow),
 }) {}
@@ -326,9 +326,11 @@ export const FormatRegistryRow = S.Struct({
 })
 export type FormatRegistryRow = typeof FormatRegistryRow.Type
 
-export class FormatRegistryResolved extends S.TaggedClass<FormatRegistryResolved>()('formats', {
-  rows: S.Array(FormatRegistryRow),
-}) {}
+export class FormatRegistryResolved
+  extends S.TaggedClass<FormatRegistryResolved, { readonly brand: unique symbol }>()('formats', {
+    rows: S.Array(FormatRegistryRow),
+  })
+{}
 
 export const SkippedFileRow = S.Struct({
   file: S.String,
@@ -337,39 +339,41 @@ export const SkippedFileRow = S.Struct({
 })
 export type SkippedFileRow = typeof SkippedFileRow.Type
 
-export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped', {
+export class SkippedReported extends S.TaggedClass<SkippedReported, { readonly brand: unique symbol }>()('skipped', {
   files: S.Array(SkippedFileRow),
 }) {}
 
-export class ReuseReported extends S.TaggedClass<ReuseReported>()('reuse', {
+export class ReuseReported extends S.TaggedClass<ReuseReported, { readonly brand: unique symbol }>()('reuse', {
   reused: Report.NonNegativeInt,
   ran: Report.NonNegativeInt,
   refused: ReuseRefusals,
 }) {}
 
-export class TceReported extends S.TaggedClass<TceReported>()('tce', {
+export class TceReported extends S.TaggedClass<TceReported, { readonly brand: unique symbol }>()('tce', {
   equivalentToOriginal: Report.NonNegativeInt,
   duplicateAtSite: Report.NonNegativeInt,
 }) {}
 
-export class MutantDetailReported extends S.TaggedClass<MutantDetailReported>()('mutant-detail', {
-  id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  coveringTests: S.Array(S.String),
-  killedBy: S.NullOr(S.String),
-  reproducer: S.NullOr(S.String),
-}) {}
+export class MutantDetailReported
+  extends S.TaggedClass<MutantDetailReported, { readonly brand: unique symbol }>()('mutant-detail', {
+    id: Mutant.MutantId,
+    status: Mutant.MutantStatusSchema,
+    coveringTests: S.Array(S.String),
+    killedBy: S.NullOr(S.String),
+    reproducer: S.NullOr(S.String),
+  })
+{}
 
 export const FeedbackJudgment = S.Literals(['useful', 'not-useful'])
 export type FeedbackJudgment = typeof FeedbackJudgment.Type
 
-export class FeedbackReported extends S.TaggedClass<FeedbackReported>()('feedback', {
+export class FeedbackReported extends S.TaggedClass<FeedbackReported, { readonly brand: unique symbol }>()('feedback', {
   id: Mutant.MutantId,
   judgment: FeedbackJudgment,
   reason: S.NullOr(S.String),
 }) {}
 
-export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
+export class RunFailed extends S.TaggedClass<RunFailed, { readonly brand: unique symbol }>()('error', {
   schemaVersion: StreamSchemaVersion,
   code: Plugin.ExitCode,
   error: S.String,
@@ -377,7 +381,7 @@ export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
   reason: S.NullOr(PluginLoadFailureReason),
 }) {}
 
-export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
+export class HelpRendered extends S.TaggedClass<HelpRendered, { readonly brand: unique symbol }>()('help', {
   schemaVersion: StreamSchemaVersion,
   code: S.Literals([0]),
   help: S.String,
@@ -386,7 +390,7 @@ export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
 export const RefusalRule = S.Literal('mutation-runs-on-main-ci')
 export type RefusalRule = typeof RefusalRule.Type
 
-export class Refused extends S.TaggedClass<Refused>()('refused', {
+export class Refused extends S.TaggedClass<Refused, { readonly brand: unique symbol }>()('refused', {
   schemaVersion: StreamSchemaVersion,
   rule: RefusalRule,
   message: S.String,

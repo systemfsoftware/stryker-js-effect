@@ -3,7 +3,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>()('MutantTestPlanCommand', {
+export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand, { readonly brand: unique symbol }>()('MutantTestPlanCommand', {
   mutants: S.Array(Mutant.Mutant),
   timeOverheadMS: Report.NonNegativeFinite,
   timeSpentAllTests: Report.NonNegativeFinite,

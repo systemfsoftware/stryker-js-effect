@@ -206,16 +206,23 @@ const handlers = (basePath: string) =>
       recordFeedbackCell({ basePath, id, judgment, reason: reason ?? null }),
   })
 
+const provideEngineToRequests = McpServer.middleware<{ provides: EnginePorts }>()(
+  Effect.map(
+    Effect.context<EnginePorts>(),
+    (context) => (effect) => Effect.provideContext(effect, context),
+  ),
+)
+
 export const mcpServerLayer = ({ basePath }: McpServerOptions) =>
-  Layer.merge(
-    McpServer.layerStdio({
-      name: 'stryker',
-      version: StrykerPackage.version,
-      instructions: MCP_SERVER_INSTRUCTIONS,
-      protocols: [McpProtocol.v2025_06_18],
-    }),
-    McpServer.toolkit(mcpToolkit),
-  ).pipe(
-    Layer.provide(handlers(basePath)),
+  McpServer.layerStdio({
+    name: 'stryker',
+    version: StrykerPackage.version,
+    instructions: MCP_SERVER_INSTRUCTIONS,
+    protocols: [McpProtocol.v2025_06_18],
+    registrations: McpServer.toolkit(mcpToolkit).pipe(
+      Layer.provide(provideEngineToRequests.layer),
+      Layer.provide(handlers(basePath)),
+    ),
+  }).pipe(
     Layer.provide(MachineConsole.layer),
   )

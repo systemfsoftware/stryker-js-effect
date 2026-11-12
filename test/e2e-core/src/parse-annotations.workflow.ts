@@ -21,10 +21,12 @@ import {
   SourceLine,
 } from './annotation.schema.js'
 
-export class ParseAnnotationsCommand extends S.TaggedClass<ParseAnnotationsCommand>()('ParseAnnotationsCommand', {
-  file: S.String,
-  lines: S.Array(SourceLine),
-}) {
+export class ParseAnnotationsCommand
+  extends S.TaggedClass<ParseAnnotationsCommand, { readonly brand: unique symbol }>()('ParseAnnotationsCommand', {
+    file: S.String,
+    lines: S.Array(SourceLine),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 

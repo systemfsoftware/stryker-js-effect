@@ -1,5 +1,19 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 14.0.0
+
+Arid rules now resolve the callee through the file's `effect` imports instead of matching its text. `E.logInfo('x')` after `import * as E from 'effect/Effect'` or `import * as E from 'effect'` (as `E.Effect.logInfo`) is Ignored as `arid-logging: Effect.logInfo`. A bare named import from `effect/Logger`, `effect/Metric`, `effect/Schedule` or `effect/Duration` now counts like the namespace form: `counter('requests')` after `import { counter } from 'effect/Metric'` is Ignored as `arid-telemetry: Metric.counter`. A local or imported `Effect`, `console` or `Date`, or an `Effect` that is never imported, is no longer arid, so its arguments are mutated again.
+
+A mutant inside a function is no longer arid because of a call around that function. `Logger.make((options) => ...)` and the body of `Effect.withSpan(Effect.gen(function* () { ... }), 'span')` are mutated again; the `'span'` name is still Ignored. Every non-function argument of `Effect.fn` is Ignored as `arid-telemetry: Effect.fn`, whatever form the span name takes (string, template literal or member expression); the function body is mutated. The `arid-time` entry for `Date.now` is removed: `Date.now()` takes no arguments, so it never matched a mutant. Set `mutator.mutantSetPolicy: 'full'` to keep every arid mutant.
+
+Build on effect 4.1.0. effect 4.1.0 removed the `effect/Crypto` module, which the published stryker-js and stryker-js-vitest-runner imported, so a mutation run on effect 4.1.0 failed with ERR_MODULE_NOT_FOUND. Both packages now take random identifiers from `effect/crypto/SecureRandom` (`NodeCrypto.layerSecureRandom`), and the effect peer range is now `^4.1.0`: `effect/crypto/*` does not exist in 4.0.x. Schema classes are branded as @effect/tsgo 0.63.0 requires, the MCP server registers its toolkit through the stdio transport's `registrations` option with a middleware that provides the engine services to each request, and file identity in the case-sensitivity probe is a bigint, as effect 4.1.0 reports it.
+
+`ErrorText.errorTextOf` uses the errno format (`<name>: <code> (<syscall>) <stack>`) only when the error carries both a string `code` and a string `syscall`. An error that has a `code` but no `syscall` now renders as `<name>: <message>` followed by its stack, instead of `<name>: <code> (undefined) <stack>`. This covers Node's `ERR_*` errors and tagged errors that expose a reason `code`.
+
+The nightly mutation run now also grades the instrumenter and the HTML reporter, so their workflow files are mutated alongside the other shipped packages.
+
+Nothing you import changes: the instrumenter API, its options and its output stay the same.
+
 ## 13.0.0
 
 Under the default `mutator.mutantSetPolicy`, a relational comparison in an `if`, loop, or ternary test no longer has its mutants Ignored by the sufficient-set table. That table dropped the complementary operator and one boolean literal at every such site, but its proof assumes numeric operands, which JavaScript does not guarantee. In `if (a < b)` with `a` null and `b` undefined, the dropped `true` mutant enters the branch and no kept mutant does, so a test that killed only that mutant went uncounted. Operands whose `valueOf` has side effects defeat the dropped operators the same way. Those mutants now run.

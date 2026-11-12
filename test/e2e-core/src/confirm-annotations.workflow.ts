@@ -8,19 +8,21 @@ import * as S from 'effect/Schema'
 import { type Outcome } from './annotation.schema.js'
 import { MatchedAnnotation } from './match-annotations.workflow.js'
 
-export class ConfirmAnnotationsCommand extends S.TaggedClass<ConfirmAnnotationsCommand>()(
-  'ConfirmAnnotationsCommand',
-  {
-    matched: S.Array(MatchedAnnotation),
-  },
-) {
+export class ConfirmAnnotationsCommand
+  extends S.TaggedClass<ConfirmAnnotationsCommand, { readonly brand: unique symbol }>()(
+    'ConfirmAnnotationsCommand',
+    {
+      matched: S.Array(MatchedAnnotation),
+    },
+  )
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const OutcomeTallyTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/OutcomeTally')
 type OutcomeTallyTypeId = typeof OutcomeTallyTypeId
 
-export class OutcomeTally extends S.TaggedClass<OutcomeTally>()('OutcomeTally', {
+export class OutcomeTally extends S.TaggedClass<OutcomeTally, { readonly brand: unique symbol }>()('OutcomeTally', {
   matched: S.Int,
   byStatus: S.Record(S.String, S.Int),
   byMutator: S.Record(S.String, S.Int),
@@ -30,30 +32,34 @@ export class OutcomeTally extends S.TaggedClass<OutcomeTally>()('OutcomeTally', 
 
 const KILLED_OR_TIMEOUT_STATUSES: ReadonlyArray<string> = ['Killed', 'Timeout']
 
-export class AnnotationStatusMismatch extends S.TaggedError<AnnotationStatusMismatch>()(
-  'AnnotationStatusMismatch',
-  {
-    file: S.String,
-    line: S.Int,
-    column: S.Int,
-    mutator: S.String,
-    expected: S.String,
-    actual: S.String,
-  },
-) {
+export class AnnotationStatusMismatch
+  extends S.TaggedError<AnnotationStatusMismatch, { readonly brand: unique symbol }>()(
+    'AnnotationStatusMismatch',
+    {
+      file: S.String,
+      line: S.Int,
+      column: S.Int,
+      mutator: S.String,
+      expected: S.String,
+      actual: S.String,
+    },
+  )
+{
   override get message(): string {
     return `${this.file}:${this.line}:${this.column}: the ${this.mutator} mutant was annotated ${this.expected} but the run reported ${this.actual}`
   }
 }
 
-export class AnnotationCauseMismatch extends S.TaggedError<AnnotationCauseMismatch>()('AnnotationCauseMismatch', {
-  file: S.String,
-  line: S.Int,
-  column: S.Int,
-  mutator: S.String,
-  expectedCause: S.String,
-  actualReason: S.String,
-}) {
+export class AnnotationCauseMismatch
+  extends S.TaggedError<AnnotationCauseMismatch, { readonly brand: unique symbol }>()('AnnotationCauseMismatch', {
+    file: S.String,
+    line: S.Int,
+    column: S.Int,
+    mutator: S.String,
+    expectedCause: S.String,
+    actualReason: S.String,
+  })
+{
   override get message(): string {
     return `${this.file}:${this.line}:${this.column}: the ${this.mutator} mutant was annotated ${this.expectedCause}, but the reported reason names no such cause: ${this.actualReason}`
   }

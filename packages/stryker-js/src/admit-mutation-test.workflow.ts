@@ -5,10 +5,12 @@ import * as S from 'effect/Schema'
 
 import { MutationTestCommand } from './MutationTest.schema.js'
 
-export class MutationTestError extends S.TaggedError<MutationTestError>()('MutationTestError', {
-  stage: S.Literal('mutationTest'),
-  reason: S.String,
-}) {
+export class MutationTestError
+  extends S.TaggedError<MutationTestError, { readonly brand: unique symbol }>()('MutationTestError', {
+    stage: S.Literal('mutationTest'),
+    reason: S.String,
+  })
+{
   override get message(): string {
     return this.reason
   }
@@ -17,15 +19,21 @@ export class MutationTestError extends S.TaggedError<MutationTestError>()('Mutat
 const MutationTestDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutationTestDecision')
 type MutationTestDecisionTypeId = typeof MutationTestDecisionTypeId
 
-export class MutationTestProceed extends S.TaggedClass<MutationTestProceed>()('MutationTestProceed', {}) {
+export class MutationTestProceed
+  extends S.TaggedClass<MutationTestProceed, { readonly brand: unique symbol }>()('MutationTestProceed', {})
+{
   readonly [MutationTestDecisionTypeId] = MutationTestDecisionTypeId
 }
 
-export class MutationTestDryRunOnly extends S.TaggedClass<MutationTestDryRunOnly>()('MutationTestDryRunOnly', {}) {
+export class MutationTestDryRunOnly
+  extends S.TaggedClass<MutationTestDryRunOnly, { readonly brand: unique symbol }>()('MutationTestDryRunOnly', {})
+{
   readonly [MutationTestDecisionTypeId] = MutationTestDecisionTypeId
 }
 
-export class MutationTestNoTests extends S.TaggedClass<MutationTestNoTests>()('MutationTestNoTests', {}) {
+export class MutationTestNoTests
+  extends S.TaggedClass<MutationTestNoTests, { readonly brand: unique symbol }>()('MutationTestNoTests', {})
+{
   readonly [MutationTestDecisionTypeId] = MutationTestDecisionTypeId
 }
 

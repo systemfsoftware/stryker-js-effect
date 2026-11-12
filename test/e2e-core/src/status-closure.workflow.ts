@@ -8,32 +8,36 @@ import * as S from 'effect/Schema'
 
 import { JourneyAvailability, type StatusWaiver, StatusWitness, WitnessRegistry } from './closure.schema.js'
 
-export class StatusClosureCommand extends S.TaggedClass<StatusClosureCommand>()('StatusClosureCommand', {
-  statuses: S.Array(Mutant.MutantStatusSchema),
-  registry: WitnessRegistry,
-  journeys: S.Array(JourneyAvailability),
-}) {
+export class StatusClosureCommand
+  extends S.TaggedClass<StatusClosureCommand, { readonly brand: unique symbol }>()('StatusClosureCommand', {
+    statuses: S.Array(Mutant.MutantStatusSchema),
+    registry: WitnessRegistry,
+    journeys: S.Array(JourneyAvailability),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const StatusClosureTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/StatusClosure')
 type StatusClosureTypeId = typeof StatusClosureTypeId
 
-export class StatusClosure extends S.TaggedClass<StatusClosure>()('StatusClosure', {
+export class StatusClosure extends S.TaggedClass<StatusClosure, { readonly brand: unique symbol }>()('StatusClosure', {
   witnesses: S.Array(StatusWitness),
 }) {
   readonly [StatusClosureTypeId] = StatusClosureTypeId
 }
 
-export class StatusUnwitnessed extends S.TaggedError<StatusUnwitnessed>()('StatusUnwitnessed', {
-  status: S.String,
-}) {
+export class StatusUnwitnessed
+  extends S.TaggedError<StatusUnwitnessed, { readonly brand: unique symbol }>()('StatusUnwitnessed', {
+    status: S.String,
+  })
+{
   override get message(): string {
     return `status closure: the ${this.status} status has neither a witnessing journey nor a waiver`
   }
 }
 
-export class StatusUnknown extends S.TaggedError<StatusUnknown>()('StatusUnknown', {
+export class StatusUnknown extends S.TaggedError<StatusUnknown, { readonly brand: unique symbol }>()('StatusUnknown', {
   status: S.String,
 }) {
   override get message(): string {
@@ -41,35 +45,43 @@ export class StatusUnknown extends S.TaggedError<StatusUnknown>()('StatusUnknown
   }
 }
 
-export class StatusWitnessDuplicated extends S.TaggedError<StatusWitnessDuplicated>()('StatusWitnessDuplicated', {
-  status: S.String,
-}) {
+export class StatusWitnessDuplicated
+  extends S.TaggedError<StatusWitnessDuplicated, { readonly brand: unique symbol }>()('StatusWitnessDuplicated', {
+    status: S.String,
+  })
+{
   override get message(): string {
     return `status closure: more than one journey witnesses the ${this.status} status`
   }
 }
 
-export class StatusWaiverStale extends S.TaggedError<StatusWaiverStale>()('StatusWaiverStale', {
-  status: S.String,
-}) {
+export class StatusWaiverStale
+  extends S.TaggedError<StatusWaiverStale, { readonly brand: unique symbol }>()('StatusWaiverStale', {
+    status: S.String,
+  })
+{
   override get message(): string {
     return `status closure: the waiver for the ${this.status} status is stale, because a journey already witnesses it`
   }
 }
 
-export class StatusWaiverForProducedStatus extends S.TaggedError<StatusWaiverForProducedStatus>()(
-  'StatusWaiverForProducedStatus',
-  { status: S.String },
-) {
+export class StatusWaiverForProducedStatus
+  extends S.TaggedError<StatusWaiverForProducedStatus, { readonly brand: unique symbol }>()(
+    'StatusWaiverForProducedStatus',
+    { status: S.String },
+  )
+{
   override get message(): string {
     return `status closure: the ${this.status} status is produced by this wave, so no waiver may cover it`
   }
 }
 
-export class StatusJourneyUnusable extends S.TaggedError<StatusJourneyUnusable>()('StatusJourneyUnusable', {
-  status: S.String,
-  journey: S.String,
-}) {
+export class StatusJourneyUnusable
+  extends S.TaggedError<StatusJourneyUnusable, { readonly brand: unique symbol }>()('StatusJourneyUnusable', {
+    status: S.String,
+    journey: S.String,
+  })
+{
   override get message(): string {
     return `status closure: the witness for the ${this.status} status names the journey ${this.journey}, which the lane does not run`
   }

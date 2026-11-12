@@ -75,58 +75,68 @@ const PlannedMutantSchema = S.Struct({
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
 
-export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('PlanMutantsCommand', {
-  fileName: S.String,
-  offset: ScriptOrigin,
-  line: Mutant.Line,
-  mutatorNames: S.Array(MutatorNameSchema),
-  excludedMutations: S.Array(MutatorNameSchema),
-  rule: S.Array(LocatedDirectiveSchema),
-  directives: S.Array(LocatedDirectiveSchema),
-  candidates: S.Array(MutantCandidateSchema),
-  site: SubsumptionSite,
-  mutantSetPolicy: Options.MutantSetPolicy,
-}) {
+export class PlanMutantsCommand
+  extends S.TaggedClass<PlanMutantsCommand, { readonly brand: unique symbol }>()('PlanMutantsCommand', {
+    fileName: S.String,
+    offset: ScriptOrigin,
+    line: Mutant.Line,
+    mutatorNames: S.Array(MutatorNameSchema),
+    excludedMutations: S.Array(MutatorNameSchema),
+    rule: S.Array(LocatedDirectiveSchema),
+    directives: S.Array(LocatedDirectiveSchema),
+    candidates: S.Array(MutantCandidateSchema),
+    site: SubsumptionSite,
+    mutantSetPolicy: Options.MutantSetPolicy,
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/MutantPlan')
 type MutantPlanTypeId = typeof MutantPlanTypeId
 
-export class MutantsPlanned extends S.TaggedClass<MutantsPlanned>()('MutantsPlanned', {
-  mutants: S.Array(PlannedMutantSchema),
-  placeableIds: S.Array(Mutant.MutantId),
-  warnings: S.Array(S.String),
-}) {
+export class MutantsPlanned
+  extends S.TaggedClass<MutantsPlanned, { readonly brand: unique symbol }>()('MutantsPlanned', {
+    mutants: S.Array(PlannedMutantSchema),
+    placeableIds: S.Array(Mutant.MutantId),
+    warnings: S.Array(S.String),
+  })
+{
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
 
-export class MutantsFullyIgnored extends S.TaggedClass<MutantsFullyIgnored>()('MutantsFullyIgnored', {
-  mutants: S.Array(PlannedMutantSchema),
-  warnings: S.Array(S.String),
-}) {
+export class MutantsFullyIgnored
+  extends S.TaggedClass<MutantsFullyIgnored, { readonly brand: unique symbol }>()('MutantsFullyIgnored', {
+    mutants: S.Array(PlannedMutantSchema),
+    warnings: S.Array(S.String),
+  })
+{
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
 
 export type MutantPlan = MutantsPlanned | MutantsFullyIgnored
 
-export class MutantWithoutLocation extends S.TaggedError<MutantWithoutLocation>()('MutantWithoutLocation', {
-  fileName: S.String,
-  mutatorName: MutatorNameSchema,
-}) {
+export class MutantWithoutLocation
+  extends S.TaggedError<MutantWithoutLocation, { readonly brand: unique symbol }>()('MutantWithoutLocation', {
+    fileName: S.String,
+    mutatorName: MutatorNameSchema,
+  })
+{
   override get message(): string {
     return `Mutant without a source location: ${this.mutatorName} in ${this.fileName}`
   }
 }
 
-export class IgnorerAnsweredWithoutReason extends S.TaggedError<IgnorerAnsweredWithoutReason>()(
-  'IgnorerAnsweredWithoutReason',
-  {
-    fileName: S.String,
-    mutantId: Mutant.MutantId,
-    ignorerName: S.String,
-  },
-) {
+export class IgnorerAnsweredWithoutReason
+  extends S.TaggedError<IgnorerAnsweredWithoutReason, { readonly brand: unique symbol }>()(
+    'IgnorerAnsweredWithoutReason',
+    {
+      fileName: S.String,
+      mutantId: Mutant.MutantId,
+      ignorerName: S.String,
+    },
+  )
+{
   override get message(): string {
     return `Ignorer "${this.ignorerName}" ignored mutant ${this.mutantId} in ${this.fileName} without a reason. Make its \`shouldIgnore\` return a non-empty reason string, or \`undefined\` to keep the mutant.`
   }

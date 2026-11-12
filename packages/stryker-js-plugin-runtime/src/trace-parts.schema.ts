@@ -5,9 +5,11 @@ import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
-export class TraceContextUnavailable extends S.TaggedError<TraceContextUnavailable>()('TraceContextUnavailable', {
-  reason: S.Literals(['invalid-span-context', 'undecodable-parts']),
-}) {
+export class TraceContextUnavailable
+  extends S.TaggedError<TraceContextUnavailable, { readonly brand: unique symbol }>()('TraceContextUnavailable', {
+    reason: S.Literals(['invalid-span-context', 'undecodable-parts']),
+  })
+{
   override get message(): string {
     return Match.value(this.reason).pipe(
       Match.when('invalid-span-context', () => 'Cannot read trace context: the span context is invalid'),

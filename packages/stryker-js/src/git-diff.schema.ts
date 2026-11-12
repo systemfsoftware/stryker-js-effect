@@ -23,19 +23,23 @@ export const GitDiffResult = S.Struct({
 
 export type GitDiffResult = typeof GitDiffResult.Type
 
-export class GitRefUnresolved extends S.TaggedError<GitRefUnresolved>()('GitRefUnresolved', {
-  ref: S.String,
-  detail: S.String,
-}) {
+export class GitRefUnresolved
+  extends S.TaggedError<GitRefUnresolved, { readonly brand: unique symbol }>()('GitRefUnresolved', {
+    ref: S.String,
+    detail: S.String,
+  })
+{
   override get message(): string {
     return `Cannot resolve git ref "${this.ref}": ${this.detail}`
   }
 }
 
-export class GitCommandFailed extends S.TaggedError<GitCommandFailed>()('GitCommandFailed', {
-  command: S.String,
-  detail: S.String,
-}) {
+export class GitCommandFailed
+  extends S.TaggedError<GitCommandFailed, { readonly brand: unique symbol }>()('GitCommandFailed', {
+    command: S.String,
+    detail: S.String,
+  })
+{
   override get message(): string {
     return `git ${this.command} failed: ${this.detail}`
   }
@@ -43,20 +47,22 @@ export class GitCommandFailed extends S.TaggedError<GitCommandFailed>()('GitComm
 
 export type GitDiffError = GitRefUnresolved | GitCommandFailed
 
-export class DiffScopeCommand extends S.TaggedClass<DiffScopeCommand>()('DiffScopeCommand', {
-  hunks: S.Array(DiffHunk),
-  untrackedFiles: S.Array(S.String),
-}) {
+export class DiffScopeCommand
+  extends S.TaggedClass<DiffScopeCommand, { readonly brand: unique symbol }>()('DiffScopeCommand', {
+    hunks: S.Array(DiffHunk),
+    untrackedFiles: S.Array(S.String),
+  })
+{
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class DiffScoped extends S.TaggedClass<DiffScoped>()('DiffScoped', {
+export class DiffScoped extends S.TaggedClass<DiffScoped, { readonly brand: unique symbol }>()('DiffScoped', {
   ranges: S.Array(S.String),
 }) {
   readonly [DiffScopeTypeId] = DiffScopeTypeId
 }
 
-export class FullScope extends S.TaggedClass<FullScope>()('FullScope', {
+export class FullScope extends S.TaggedClass<FullScope, { readonly brand: unique symbol }>()('FullScope', {
   reason: S.String,
 }) {
   readonly [DiffScopeTypeId] = DiffScopeTypeId

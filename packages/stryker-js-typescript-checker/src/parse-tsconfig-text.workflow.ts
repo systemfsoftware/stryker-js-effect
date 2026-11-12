@@ -15,15 +15,19 @@ const TsconfigTextTypeId: unique symbol = Symbol.for(
 )
 type TsconfigTextTypeId = typeof TsconfigTextTypeId
 
-export class TsconfigParsed extends S.TaggedClass<TsconfigParsed>()('TsconfigParsed', {
-  document: TsConfigDocumentSchema,
-}) {
+export class TsconfigParsed
+  extends S.TaggedClass<TsconfigParsed, { readonly brand: unique symbol }>()('TsconfigParsed', {
+    document: TsConfigDocumentSchema,
+  })
+{
   readonly [TsconfigTextTypeId] = TsconfigTextTypeId
 }
 
-export class TsconfigRefused extends S.TaggedClass<TsconfigRefused>()('TsconfigRefused', {
-  reason: S.String,
-}) {
+export class TsconfigRefused
+  extends S.TaggedClass<TsconfigRefused, { readonly brand: unique symbol }>()('TsconfigRefused', {
+    reason: S.String,
+  })
+{
   readonly [TsconfigTextTypeId] = TsconfigTextTypeId
 }
 

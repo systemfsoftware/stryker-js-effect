@@ -1,10 +1,12 @@
 import * as S from 'effect/Schema'
 
-export class ShardChildFailed extends S.TaggedError<ShardChildFailed>()('ShardChildFailed', {
-  project: S.String,
-  exitCode: S.Int,
-  childOutput: S.String,
-}) {
+export class ShardChildFailed
+  extends S.TaggedError<ShardChildFailed, { readonly brand: unique symbol }>()('ShardChildFailed', {
+    project: S.String,
+    exitCode: S.Int,
+    childOutput: S.String,
+  })
+{
   readonly exitClass = 'RuntimeError' as const
 
   override get message(): string {
