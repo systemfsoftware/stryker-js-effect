@@ -2,7 +2,7 @@
   "name": "@systemfsoftware/stryker-e2e",
   "private": true,
   "version": "0.1.0",
-  "description": "End-to-end lane for the shipped stryker artifact: the packed workspace tarball installed with npm and run in one-shot microVMs",
+  "description": "End-to-end lane for the shipped stryker artifact: the flake's stryker package run in one-shot microVMs",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

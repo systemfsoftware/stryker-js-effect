@@ -7,19 +7,21 @@ typed `./config` authoring surface.
 
 ## Install
 
+The CLI ships as the flake's `stryker` package, with the vitest runner, the TypeScript checker, the instrumenter, the svelte framework and both Effect ignorers beside it. Pin a release commit:
+
 ```bash
-pnpm add -D @systemfsoftware/stryker-js
+nix run github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -- run
 ```
+
+A bare plugin name in a config resolves from that install, so the project installs none of the plugins. To type `stryker.config.ts`, link the CLI package from the flake's output (`nix build github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -o .stryker`):
+
+```json
+{ "devDependencies": { "@systemfsoftware/stryker-js": "link:.stryker/lib/node_modules/@systemfsoftware/stryker-js" } }
+```
+
+A plugin the package does not ship is named by its `file:` URL, for example `import.meta.resolve('my-ignorer')`.
 
 ## Quick Start: Vitest Runner
-
-For TypeScript codebases using Vitest:
-
-```bash
-pnpm add -D @systemfsoftware/stryker-js \
-  @systemfsoftware/stryker-js-vitest-runner \
-  @systemfsoftware/stryker-js-typescript-checker
-```
 
 Create `stryker.config.ts` in your project root:
 
@@ -49,7 +51,7 @@ export default defineConfig({
 Run mutation testing:
 
 ```bash
-pnpm exec stryker run
+stryker run
 ```
 
 ## Zero-Plugin Built-in Runners
@@ -139,47 +141,47 @@ export default mergeConfig(baseConfig, {
 
 ```bash
 # Run mutation testing
-pnpm exec stryker run [options]
+stryker run [options]
 
 # Mutate specific files only
-pnpm exec stryker run --mutate "src/auth/*.ts"
+stryker run --mutate "src/auth/*.ts"
 
 # Scope the run to lines changed since a git ref
-pnpm exec stryker run --since origin/main
+stryker run --since origin/main
 
 # Re-run named mutants from the previous report
-pnpm exec stryker run --mutant <id,...>
+stryker run --mutant <id,...>
 
 # Re-test only surviving mutants from prior run
-pnpm exec stryker run --survivors
+stryker run --survivors
 
 # Incremental caching is on by default; re-verify every mutant instead
-pnpm exec stryker run --full
+stryker run --full
 
 # Run with specific concurrency
-pnpm exec stryker run --concurrency 4
+stryker run --concurrency 4
 
 # Merge partial mutation reports from parallel CI shards
-pnpm exec stryker merge --plan plan.json reports/shards/1 reports/shards/2 --out reports/mutation
+stryker merge --plan plan.json reports/shards/1 reports/shards/2 --out reports/mutation
 
 # Fail on survivors absent from a committed baseline
-pnpm exec stryker gate --baseline .stryker-baseline.json
+stryker gate --baseline .stryker-baseline.json
 
 # Name every mutant whose status differs between two reports
-pnpm exec stryker compare --baseline reports/mutation-report.json --fresh reports/fresh.json
+stryker compare --baseline reports/mutation-report.json --fresh reports/fresh.json
 
 # Annotate a pull request at each surfaced survivor
-pnpm exec stryker annotate --baseline .stryker-baseline.json
+stryker annotate --baseline .stryker-baseline.json
 
 # Check every dropped mutant against a kill matrix, or count a finished run
-pnpm exec stryker audit --matrix kill-matrix/ --projects packages/a,packages/b --out reports/audit.json
-pnpm exec stryker audit --matrix kill-matrix/ --projects packages/a --files packages/a/src/sum.ts --out reports/audit.json
-pnpm exec stryker audit --counts-only --matrix mutation-report/ --out reports/counts.json
+stryker audit --matrix kill-matrix/ --projects packages/a,packages/b --out reports/audit.json
+stryker audit --matrix kill-matrix/ --projects packages/a --files packages/a/src/sum.ts --out reports/audit.json
+stryker audit --counts-only --matrix mutation-report/ --out reports/counts.json
 
 # Judge one surfaced survivor, or drive runs from an editor or an agent
-pnpm exec stryker feedback <id> --not-useful --reason "logging only"
-pnpm exec stryker serve stdio
-pnpm exec stryker mcp
+stryker feedback <id> --not-useful --reason "logging only"
+stryker serve stdio
+stryker mcp
 ```
 
 `stryker run --since <ref>` takes the merge base of `<ref>` and the working tree, diffs it at `--unified=0`, and intersects the changed lines with `mutate`; it falls back to a full run when the Stryker config, a test-runner config, `package.json`, or the lockfile changed. `stryker run --mutant <id,...>` admits each id against the previous report (`reports/mutation/mutation.json`), restricts the run to those mutants' files, and emits each one's status, covering tests, killing test, and a `stryker run --mutant <id>` reproducer. `stryker gate` exits non-zero on survivors missing from its baseline, and exits `1` with `score-below-break` when a project's mutation score falls below that project's own `thresholds.break` (`stryker merge` records each project's thresholds in the merged report, so a sharded run is judged like an unsharded one). `stryker compare` exits `1` on a status mismatch after subtracting a `--noise` file, and `stryker annotate` prints GitHub workflow commands at each surfaced survivor.
@@ -193,8 +195,8 @@ A mutation run only starts on main CI. `stryker run` — and the programmatic `r
 Human output is the default, whether or not `stdout` is a terminal. A machine consumer opts into the NDJSON event stream explicitly:
 
 ```bash
-pnpm exec stryker run --json                # wire records on stdout, diagnostics on stderr
-STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
+stryker run --json                # wire records on stdout, diagnostics on stderr
+STRYKER_MODE=machine stryker run  # the same, named by environment
 ```
 
 `--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to the `progressStreamFile` (`--progressStreamFile`, or for `stryker run` also the config file, default `reports/mutation-stream.jsonl`) in both modes, which is the artifact `stryker merge` rebuilds a shard's partial report from. A run never counts its own stream file, at the path it resolved or at the default path, as part of the project, so re-running with the same settings never re-runs a mutant because of it; the path is matched as an ignore pattern, with exact case where the file system tells case apart, so keep glob characters (`!`, `*`, `?`, `[`, `{`) out of it. A stream path naming an existing file whose first line is neither a Stryker run event record, a `stream` header of any schema version (a `stream` object carrying string `schemaVersion` and `runId`) nor, as the whole file, an unterminated line that opens like one and reads as the unfinished start of a JSON value (what a run that died mid-write leaves) is never overwritten. Only the first 1 MiB is read, so a first line still unterminated after 1 MiB is no record. That case, and a stream file that cannot be opened or written, is logged as `stryker.output.drain_file_failed`, and the `--json` records still reach `stdout`.

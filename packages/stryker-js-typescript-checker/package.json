@@ -52,7 +52,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "file:../../.deps/effect-cell-types.tgz",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",

@@ -11,7 +11,6 @@ import {
   Match,
   Option,
   Path,
-  Result,
   Schema,
   Scope,
   Stream,
@@ -24,32 +23,23 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import {
   committableLockOf,
   type FileBytes,
-  filledLockOf,
   type FixtureInput,
   fixtureKeyBytes,
-  FixtureManifest,
-  installClosure,
-  InstallClosureCommand,
   missingFixtures as missingFixturesWorkflow,
   MissingFixturesCommand,
-  PackedManifest,
-  type PackedMember,
-  type PackedTree,
   type PackInput,
   packsKeyBytes,
   parseWorkspaceCatalogs,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
   resolvedManifestText,
-  type StagedFixtureManifest,
-  withClosureDevDependencies,
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
-import type { BakeOutcome, PackedPackage, TurboDryClosure } from './bake-key.schema.js'
-import { FixtureKeys, MalformedClosure, TurboClosure, TurboDryRun } from './bake-key.schema.js'
+import type { BakeOutcome } from './bake-key.schema.js'
+import { FixtureKeys } from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
-import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
+import { ExitFailure, FixtureMissingFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
 import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.js'
 import * as Warm from './warm-sandbox.handle.js'
@@ -64,11 +54,6 @@ export type BakePlatform =
   | Readiness.HostProber
 
 type StagePlatform = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
-
-interface StagedClosure {
-  readonly dependencies: Readonly<Record<string, string>>
-  readonly manifests: Readonly<Record<string, Schema.Json>>
-}
 
 interface BakedFixture {
   readonly fixtureId: string
@@ -93,42 +78,25 @@ interface BakeEnvironment {
 }
 
 const STEP_BAKE = 'bake every fixture in the preparation microVM'
-const STEP_CLOSURE = 'build the packed workspace closure'
-const STEP_TARBALLS = 'read the packed tarballs'
-const STEP_KEY = 'derive the bake cache key'
-const STEP_INSTALL_PLAN = 'plan the workspace closure install'
+const STEP_PACKAGE = "build the flake's stryker package"
 const STEP_LOCK = 'regenerate a fixture lock'
 
 const TREE_CONCURRENCY = 16
-const UNPACK_CONCURRENCY = 4
+const KEY_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
-
-const ENTRY_PACKAGES = [
-  '@systemfsoftware/stryker-js',
-  '@systemfsoftware/stryker-js-svelte',
-  '@systemfsoftware/stryker-js-vitest-runner',
-  '@systemfsoftware/stryker-js-typescript-checker',
-] as const
 
 type Argv = readonly [string, ...Array<string>]
 
 const LOCK_ONLY_INSTALL: Argv = ['npm', 'install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund']
 
-const PACKS_DIR = 'packs'
 const STAGED_FIXTURES_DIR = 'baked'
-const PACKS_FROM_FIXTURE = `../../${PACKS_DIR}`
+const STRYKER_PACKAGE: Argv = ['nix', 'build', '--no-link', '--print-out-paths', '.#stryker']
 const LOCKFILE_NAME = 'package-lock.json'
 const JSON_INDENT = 2
 
 const JsonText = Schema.fromJsonString(Schema.Json)
 
 const jsonTextOf = (json: Schema.Json): string => `${JSON.stringify(json, null, JSON_INDENT)}\n`
-
-const tarballFileOf = (packageName: string): string => `${packageName.replace(/^@/, '').replace('/', '-')}.tgz`
-
-const PACKED_MANIFEST_PATH = 'package/package.json'
-
-const WorkspaceListing = Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.optional(Schema.String) })))
 
 const runCommand = (argv: Argv, cwd?: string) =>
   Effect.scoped(Effect.gen(function*() {
@@ -270,27 +238,11 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     return kept.flat().sort()
   })
 
-const stageClosure = (destination: string, closure: StagedClosure) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const manifestPath = path.join(destination, MANIFEST_FILE_NAME)
-    const manifest = yield* Effect.orDie(Schema.decodeEffect(JsonText)(yield* fs.readFileString(manifestPath)))
-    yield* fs.writeFileString(manifestPath, jsonTextOf(withClosureDevDependencies(manifest, closure.dependencies)))
-    const lockPath = path.join(destination, LOCKFILE_NAME)
-    const lock = yield* Effect.option(Effect.flatMap(fs.readFileString(lockPath), Schema.decodeEffect(JsonText)))
-    yield* Option.match(lock, {
-      onNone: () => Effect.void,
-      onSome: (committed) => fs.writeFileString(lockPath, jsonTextOf(filledLockOf(committed, closure.manifests))),
-    })
-  })
-
 const stageFixtures = (
   environment: BakeEnvironment,
   stagingDir: string,
   fixtureIds: ReadonlyArray<string>,
   catalogs: WorkspaceCatalogs,
-  closure: StagedClosure,
 ) =>
   Effect.forEach(
     fixtureIds,
@@ -302,7 +254,6 @@ const stageFixtures = (
         yield* fs.copy(path.join(environment.resourcesDir, fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
         yield* rewriteStagedManifests(fixtureId, destination, catalogs)
-        yield* stageClosure(destination, closure)
       }),
     { discard: true, concurrency: STAGE_CONCURRENCY },
   )
@@ -421,205 +372,6 @@ const hashOf = (digest: Digest.Digest['Service'], bytes: Uint8Array) => digest.d
 const keysRecordOf = (fixtures: ReadonlyArray<BakedFixture>): FixtureKeys =>
   Object.fromEntries(fixtures.map((fixture) => [fixture.fixtureId, fixture.key]))
 
-const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArray<string> =>
-  Option.match(
-    Option.filter(Option.fromNullishOr(task.package), () => task.command === 'build' || task.taskId.endsWith('#build')),
-    {
-      onNone: () => [],
-      onSome: (packageName) => [packageName],
-    },
-  )
-
-const resolveTurboDryClosure = (stdout: string): TurboDryClosure => {
-  const jsonStart = stdout.indexOf('{')
-  return Option.match(Option.filter(Option.some(jsonStart), (start) => start >= 0), {
-    onNone: (): TurboDryClosure => MalformedClosure.make({}),
-    onSome: (start): TurboDryClosure =>
-      Result.match(Schema.decodeResult(Schema.fromJsonString(TurboDryRun))(stdout.slice(start)), {
-        onFailure: (): TurboDryClosure => MalformedClosure.make({}),
-        onSuccess: (dryRun): TurboDryClosure =>
-          TurboClosure.make({ packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort() }),
-      }),
-  })
-}
-
-const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, directory: string) => {
-  const fileName = tarballFileOf(packageName)
-  return Boolean.match(fileNames.includes(fileName), {
-    onTrue: () =>
-      Effect.succeed<PackedPackage>({ name: packageName, fileName, tarballPath: `${directory}/${fileName}` }),
-    onFalse: () =>
-      Effect.fail(new PackFailure({ step: STEP_TARBALLS, detail: `pnpm pack wrote no ${fileName} into ${directory}` })),
-  })
-}
-
-const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const dryRun = yield* withSeamSpan(
-      SpanNames.packBuild,
-      { 'e2e.pack.phase': 'dry' },
-      runChecked(
-        STEP_CLOSURE,
-        ['pnpm', 'exec', 'turbo', 'run', 'build', ...ENTRY_PACKAGES.map((entry) => `--filter=${entry}`), '--dry=json'],
-        environment.repoRoot,
-      ),
-    )
-    const closure = resolveTurboDryClosure(dryRun.stdout)
-    return yield* Match.value(closure).pipe(
-      Match.tag('Malformed', () =>
-        Effect.fail(
-          new PackFailure({
-            step: STEP_CLOSURE,
-            detail: 'the turbo dry run wrote no parseable closure document',
-          }),
-        )),
-      Match.tag('Closure', (closure) =>
-        Effect.gen(function*() {
-          yield* withSeamSpan(
-            SpanNames.packBuild,
-            { 'e2e.pack.phase': 'build' },
-            runChecked(
-              STEP_CLOSURE,
-              [
-                'pnpm',
-                'exec',
-                'turbo',
-                'run',
-                'build',
-                ...closure.packages.map((packageName) => `--filter=${packageName}`),
-              ],
-              environment.repoRoot,
-            ),
-          )
-          yield* withSeamSpan(
-            SpanNames.packTarballs,
-            { 'e2e.packages': closure.packages.length },
-            runChecked(
-              `pack ${closure.packages.length} closure packages`,
-              [
-                'pnpm',
-                '-r',
-                ...closure.packages.map((packageName) => `--filter=${packageName}`),
-                'pack',
-                '--out',
-                `${directory}/%s.tgz`,
-              ],
-              environment.repoRoot,
-            ),
-          )
-          const fileNames = yield* fs.readDirectory(directory)
-          return yield* Effect.forEach(
-            closure.packages,
-            (packageName) => packedTarballOf(fileNames, packageName, directory),
-          )
-        })),
-      Match.exhaustive,
-    )
-  }).pipe(seamSpan(SpanNames.pack, {}))
-
-const packsInputOf = (
-  environment: BakeEnvironment,
-  packs: ReadonlyArray<PackedPackage>,
-  scratch: string,
-): Effect.Effect<PackInput, ExitFailure | PlatformError | HarnessError, StagePlatform> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const bakeScript = yield* fs.readFile(environment.bakeScriptPath)
-    const packedTrees = yield* Effect.forEach(
-      packs,
-      (pack) =>
-        withSeamSpan(
-          SpanNames.packsKeyUnpack,
-          { 'e2e.pack': pack.fileName },
-          Effect.gen(function*() {
-            const target = path.join(scratch, 'unpacked', pack.fileName)
-            yield* fs.makeDirectory(target, { recursive: true })
-            yield* requireZeroExit(STEP_KEY, yield* runCommand(['tar', '-xzf', pack.tarballPath, '-C', target]))
-            const files = yield* readTreeBytes(target)
-            return { fileName: pack.fileName, files: files.map(canonicalFile) }
-          }),
-        ),
-      { concurrency: UNPACK_CONCURRENCY },
-    )
-    return { baseImage: GuestJobs.BASE_IMAGE, bakeScript, packs: packedTrees }
-  }).pipe(seamSpan(SpanNames.packsKey, { 'e2e.packs': packs.length }))
-
-const workspacePackagesOf = (environment: BakeEnvironment) =>
-  Effect.gen(function*() {
-    const listing = yield* runChecked(
-      STEP_INSTALL_PLAN,
-      ['pnpm', 'ls', '-r', '--depth', '-1', '--json'],
-      environment.repoRoot,
-    )
-    const projects = yield* Schema.decodeEffect(WorkspaceListing)(listing.stdout).pipe(
-      Effect.mapError(() =>
-        new PackFailure({ step: STEP_INSTALL_PLAN, detail: 'pnpm ls wrote no parseable workspace listing' })
-      ),
-    )
-    return projects.flatMap((project) => Option.toArray(Option.fromNullishOr(project.name)))
-  })
-
-const packedMemberOf = (tree: PackedTree) =>
-  Effect.gen(function*() {
-    const unreadable = new PackFailure({
-      step: STEP_INSTALL_PLAN,
-      detail: `the packed tarball ${tree.fileName} carries no readable ${PACKED_MANIFEST_PATH}`,
-    })
-    const manifestFile = yield* Option.match(
-      Array.findFirst(tree.files, (file) => file.relativePath === PACKED_MANIFEST_PATH),
-      {
-        onNone: () => Effect.fail(unreadable),
-        onSome: (found) => Effect.succeed(found),
-      },
-    )
-    const json = yield* Schema.decodeEffect(JsonText)(new TextDecoder().decode(manifestFile.bytes)).pipe(
-      Effect.mapError(() => unreadable),
-    )
-    const manifest = yield* Schema.decodeUnknownEffect(PackedManifest)(json).pipe(Effect.mapError(() => unreadable))
-    const member: PackedMember = { tarballPath: `${PACKS_FROM_FIXTURE}/${tree.fileName}`, manifest }
-    return { member, fileName: tree.fileName, json }
-  })
-
-const stagedManifestsOf = (input: FixtureInput) =>
-  Effect.forEach(
-    Array.filter(input.files, (file) => isManifestPath(file.relativePath)),
-    (file) =>
-      Schema.decodeEffect(Schema.fromJsonString(FixtureManifest))(new TextDecoder().decode(file.bytes)).pipe(
-        Effect.map((manifest): StagedFixtureManifest => ({
-          path: `${input.fixtureId}/${file.relativePath}`,
-          manifest,
-        })),
-        Effect.mapError(() =>
-          new PackFailure({
-            step: STEP_INSTALL_PLAN,
-            detail: `the fixture manifest ${input.fixtureId}/${file.relativePath} is not a readable package.json`,
-          })
-        ),
-      ),
-  )
-
-const closureInstallOf = (
-  environment: BakeEnvironment,
-  packsInput: PackInput,
-  fixtureInputs: ReadonlyArray<FixtureInput>,
-) =>
-  Effect.gen(function*() {
-    const workspace = yield* workspacePackagesOf(environment)
-    const packed = yield* Effect.forEach(packsInput.packs, packedMemberOf)
-    const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
-    const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members: packed.map(({ member }) => member), fixtures, workspace })),
-    ).pipe(
-      Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
-    )
-    return {
-      dependencies: install.dependencies,
-      manifests: Object.fromEntries(packed.map(({ fileName, json }) => [fileName, json])),
-    }
-  })
-
 const fixtureInputsOf = (
   environment: BakeEnvironment,
   fixtureIds: ReadonlyArray<string>,
@@ -638,7 +390,7 @@ const fixtureInputsOf = (
           return { fixtureId, files: resolved.map(canonicalFile) }
         }),
       ),
-    { concurrency: UNPACK_CONCURRENCY },
+    { concurrency: KEY_CONCURRENCY },
   ).pipe(seamSpan(SpanNames.fixtureKeys, { 'e2e.fixtures': fixtureIds.length }))
 
 interface DerivedBakeKeys {
@@ -660,7 +412,7 @@ const deriveBakeKeys = (
           hashOf(digest, fixtureKeyBytes(input)),
           (key): BakedFixture => ({ fixtureId: input.fixtureId, key }),
         ),
-      { concurrency: UNPACK_CONCURRENCY },
+      { concurrency: KEY_CONCURRENCY },
     )
     return { packsKey, fixtures }
   })
@@ -677,17 +429,31 @@ const missingFixtures = (root: string, fixtures: ReadonlyArray<BakedFixture>) =>
     return missing.map((fixture): BakedFixture => ({ fixtureId: fixture.fixtureId, key: fixture.key }))
   })
 
+const strykerPackageOf = (environment: BakeEnvironment) =>
+  Effect.map(
+    withSeamSpan(SpanNames.packageBuild, {}, runChecked(STEP_PACKAGE, STRYKER_PACKAGE, environment.repoRoot)),
+    (built) => built.stdout.trim(),
+  )
+
+const packageInputOf = (
+  environment: BakeEnvironment,
+  packagePath: string,
+): Effect.Effect<PackInput, PlatformError, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const bakeScript = yield* fs.readFile(environment.bakeScriptPath)
+    const identity = { relativePath: packagePath, bytes: new Uint8Array() }
+    return { baseImage: GuestJobs.BASE_IMAGE, bakeScript, packs: [{ fileName: 'stryker', files: [identity] }] }
+  })
+
 const bakeMissing = (
   environment: BakeEnvironment,
-  packsDir: string,
+  packagePath: string,
   root: string,
   missing: ReadonlyArray<BakedFixture>,
   catalogs: WorkspaceCatalogs,
-  packsInput: PackInput,
-  fixtureInputs: ReadonlyArray<FixtureInput>,
 ) =>
   Effect.gen(function*() {
-    const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const secureRandom = yield* SecureRandom.SecureRandom
@@ -697,16 +463,16 @@ const bakeMissing = (
       yield* fs.remove(stagingDir, { recursive: true, force: true })
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
-      yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs, closure)
+      yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs)
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       yield* jobs.requireCleanExit(STEP_BAKE, ['sh', '-c', bakeScript, 'bake-fixtures'], [
         { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
-        { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
+        { host: packagePath, guest: GuestJobs.GUEST_STRYKER_ROOT },
       ])
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),
-        { discard: true, concurrency: UNPACK_CONCURRENCY },
+        { discard: true, concurrency: KEY_CONCURRENCY },
       )
     }).pipe(Effect.ensuring(fs.remove(stagingDir, { recursive: true, force: true }).pipe(Effect.orDie)))
   }).pipe(
@@ -721,16 +487,10 @@ const lockFixtures = (environment: BakeEnvironment) =>
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const scratch = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-e2e-fixture-locks-' })
-    const packsDir = path.join(scratch, PACKS_DIR)
     const stagedDir = path.join(scratch, STAGED_FIXTURES_DIR)
-    yield* fs.makeDirectory(packsDir)
-    const packs = yield* packWorkspaceClosure(environment, packsDir)
     const fixtureIds = yield* listFixtureIds(environment)
     const catalogs = yield* loadWorkspaceCatalogs(environment)
-    const packsInput = yield* packsInputOf(environment, packs, scratch)
-    const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
-    const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
-    yield* stageFixtures(environment, stagedDir, fixtureIds, catalogs, closure)
+    yield* stageFixtures(environment, stagedDir, fixtureIds, catalogs)
     yield* Effect.forEach(fixtureIds, (fixtureId) =>
       Effect.gen(function*() {
         yield* runChecked(STEP_LOCK, LOCK_ONLY_INSTALL, path.join(stagedDir, fixtureId))
@@ -748,26 +508,21 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const scratch = yield* fs.makeTempDirectory({ prefix: 'stryker-e2e-packs-' })
-    const packsDir = path.join(scratch, 'packs')
-    return yield* Effect.gen(function*() {
-      yield* fs.makeDirectory(packsDir)
-      const packs = yield* packWorkspaceClosure(environment, packsDir)
-      const fixtureIds = yield* listFixtureIds(environment)
-      const catalogs = yield* loadWorkspaceCatalogs(environment)
-      const packsInput = yield* packsInputOf(environment, packs, scratch)
-      const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
-      const { packsKey, fixtures } = yield* deriveBakeKeys(packsInput, fixtureInputs)
-      const root = path.join(environment.bakedCacheRoot, packsKey)
-      yield* fs.makeDirectory(root, { recursive: true })
-      const lease = yield* leaseEntry(root)
-      const missing = yield* missingFixtures(root, fixtures)
-      yield* Boolean.match(missing.length === 0, {
-        onTrue: () => Effect.void,
-        onFalse: () => bakeMissing(environment, packsDir, root, missing, catalogs, packsInput, fixtureInputs),
-      })
-      return { root, keys: keysRecordOf(fixtures), lease }
-    }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
+    const packagePath = yield* strykerPackageOf(environment)
+    const fixtureIds = yield* listFixtureIds(environment)
+    const catalogs = yield* loadWorkspaceCatalogs(environment)
+    const packageInput = yield* packageInputOf(environment, packagePath)
+    const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
+    const { packsKey, fixtures } = yield* deriveBakeKeys(packageInput, fixtureInputs)
+    const root = path.join(environment.bakedCacheRoot, packsKey)
+    yield* fs.makeDirectory(root, { recursive: true })
+    const lease = yield* leaseEntry(root)
+    const missing = yield* missingFixtures(root, fixtures)
+    yield* Boolean.match(missing.length === 0, {
+      onTrue: () => Effect.void,
+      onFalse: () => bakeMissing(environment, packagePath, root, missing, catalogs),
+    })
+    return { root, keys: keysRecordOf(fixtures), lease }
   })
 
 const warmFixtureInto = (

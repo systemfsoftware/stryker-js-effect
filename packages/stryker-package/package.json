@@ -1,0 +1,22 @@
+{
+  "name": "@systemfsoftware/stryker-package",
+  "private": true,
+  "version": "0.0.0",
+  "description": "What the flake's stryker package installs: the CLI and the plugins it ships, deployed together",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-package"
+  },
+  "type": "module",
+  "dependencies": {
+    "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "workspace:^",
+    "@systemfsoftware/stryker-js": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-svelte": "workspace:^",
+    "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
+    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^"
+  }
+}

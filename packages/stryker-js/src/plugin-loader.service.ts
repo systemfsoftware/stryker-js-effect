@@ -5,7 +5,6 @@ import { type MutatorProvider, Options } from '@systemfsoftware/stryker-js-plugi
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -375,55 +374,46 @@ const manifestOf = (
       (text) => parsedManifestOf(specifier, text),
     ))
 
-const packageAnchorOf = (
-  specifier: string,
-  basePath: string,
-): Effect.Effect<URL, PluginLoadRefusedError, Path.Path> =>
+/**
+ * A bare plugin specifier names a package installed beside the CLI, so it resolves from the
+ * CLI's own module, never from the project under test: the flake's `stryker` package ships the
+ * runner, the checker and the ignorers with the CLI, and a project need not install any of them.
+ * A plugin the CLI does not ship is named by its `file:` URL (`import.meta.resolve` in the config).
+ */
+const CLI_ANCHOR = import.meta.url
+
+const foundManifestPathOf = (specifier: string): Effect.Effect<string, PluginLoadRefusedError> =>
   Effect.flatMap(
-    Path.Path,
-    (path) =>
-      Effect.mapError(path.toFileUrl(path.join(basePath, 'package.json')), (cause) =>
-        importFailure(specifier, { cause })),
+    Effect.try({
+      try: (): Option.Option<string> =>
+        Option.fromUndefinedOr(
+          globalThis.process.getBuiltinModule('node:module').findPackageJSON(specifier, CLI_ANCHOR),
+        ),
+      catch: () => Option.none<string>(),
+    }).pipe(Effect.orElseSucceed(() => Option.none<string>())),
+    (found) =>
+      Effect.fromOption(
+        found,
+        () =>
+          importFailure(specifier, {
+            cause: new Error(`the package "${specifier}" is not installed beside the stryker CLI`),
+          }),
+      ),
   )
 
-const foundManifestPathOf = (
-  specifier: string,
-  basePath: string,
-): Effect.Effect<string, PluginLoadRefusedError, Path.Path> =>
-  Effect.flatMap(packageAnchorOf(specifier, basePath), (anchor) =>
-    Effect.flatMap(
-      Effect.try({
-        try: (): Option.Option<string> =>
-          Option.fromUndefinedOr(
-            globalThis.process.getBuiltinModule('node:module').findPackageJSON(specifier, anchor.href),
-          ),
-        catch: () => Option.none<string>(),
-      }).pipe(Effect.orElseSucceed(() => Option.none<string>())),
-      (found) =>
-        Effect.fromOption(
-          found,
-          () => importFailure(specifier, { cause: new Error(`the package "${specifier}" is not installed`) }),
-        ),
-    ))
-
-const resolveBareSpecifierOf = (
-  specifier: string,
-  basePath: string,
-): Effect.Effect<string, PluginLoadRefusedError, Path.Path> =>
-  Effect.flatMap(packageAnchorOf(specifier, basePath), (anchor) =>
-    Effect.try({
-      try: () => globalThis.process.getBuiltinModule('node:module').createRequire(anchor.href).resolve(specifier),
-      catch: (): PluginLoadRefusedError =>
-        importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
-    }))
+const resolveBareSpecifierOf = (specifier: string): Effect.Effect<string, PluginLoadRefusedError> =>
+  Effect.try({
+    try: () => globalThis.process.getBuiltinModule('node:module').createRequire(CLI_ANCHOR).resolve(specifier),
+    catch: (): PluginLoadRefusedError =>
+      importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
+  })
 
 const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntrypoint.name)(function*(
   specifier: string,
-  basePath: string,
 ): Effect.fn.Return<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
   const path = yield* Path.Path
-  const manifestPath = yield* foundManifestPathOf(specifier, basePath)
-  const resolved = yield* resolveBareSpecifierOf(specifier, basePath)
+  const manifestPath = yield* foundManifestPathOf(specifier)
+  const resolved = yield* resolveBareSpecifierOf(specifier)
   const entry = yield* manifestOf(specifier, manifestPath)
   const joined = path.join(path.dirname(manifestPath), entry)
   const selected = resolved.endsWith(entry) ? resolved : joined
@@ -432,20 +422,18 @@ const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntryp
 
 const entrypointOf = (
   specifier: string,
-  basePath: string,
 ): Effect.Effect<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> =>
   Option.match(fileUrlOf(specifier), {
     onSome: (url) => Effect.succeed(url),
-    onNone: () => packageEntrypointOf(specifier, basePath),
+    onNone: () => packageEntrypointOf(specifier),
   })
 
-const loadPluginsEffect = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoad.name)(function*(
+export const loadPlugins = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoad.name)(function*(
   pluginDescriptors: readonly string[],
-  basePath: string,
 ): Effect.fn.Return<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
   const entrypoints = yield* Effect.forEach(
     Array.dedupe(pluginDescriptors),
-    (specifier) => Effect.map(entrypointOf(specifier, basePath), (entrypoint) => ({ specifier, entrypoint })),
+    (specifier) => Effect.map(entrypointOf(specifier), (entrypoint) => ({ specifier, entrypoint })),
     { concurrency: 'unbounded' },
   )
   const loaded = yield* Effect.forEach(
@@ -495,18 +483,6 @@ const loadPluginsEffect = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoad.name)(func
   }
   return result
 })
-
-export const loadPlugins: {
-  (basePath: string): (pluginDescriptors: readonly string[]) => Effect.Effect<
-    LoadedPlugins,
-    PluginLoadRefusedError,
-    FileSystem.FileSystem | Path.Path
-  >
-  (
-    pluginDescriptors: readonly string[],
-    basePath: string,
-  ): Effect.Effect<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path>
-} = dual(2, (pluginDescriptors: readonly string[], basePath: string) => loadPluginsEffect(pluginDescriptors, basePath))
 
 export const pluginUrlsFromOptions = (options: Options.StrykerOptions): readonly string[] => [
   ...options.plugins,

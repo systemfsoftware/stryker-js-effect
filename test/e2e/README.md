@@ -4,14 +4,14 @@ MicroVM-isolated end-to-end tests for the packaged `@systemfsoftware/stryker-js`
 
 ## What it tests
 
-The suite resolves the workspace closure of the CLI and its plugins, packs each member with `pnpm pack`, installs the whole closure into isolated fixture projects inside a preparation microVM, and runs every `stryker` invocation in its own [`@systemfsoftware/effect-microsandbox`](https://www.npmjs.com/package/@systemfsoftware/effect-microsandbox) microVM to verify behavior across the process boundary:
+The suite builds the flake's `stryker` package (`nix build .#stryker`), the CLI with every plugin it ships, and runs every `stryker` invocation in its own [`@systemfsoftware/effect-microsandbox`](https://github.com/systemfsoftware/effect-microvm) microVM to verify behavior across the process boundary:
 
 - Full mutation runs against realistic test suites
 - Exit codes and typed machine-mode JSON error envelopes on failure
 
-Each fixture installs with one `npm ci` from its committed `package-lock.json`, with no `@systemfsoftware` workspace package taken from the registry. `pnpm pack` rewrites a workspace alias (`"@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"`) to `npm:<target>@^<version>`, and npm resolves an `npm:` spec from the registry even when the target's tarball is in the same install. So the staged fixture manifest lists every packed tarball plus one `<alias>: file:<target tarball>` entry per alias edge between closure members as devDependencies (`installClosure` in `@systemfsoftware/stryker-e2e-core`). Global setup fails, naming the edge, instead of reaching the registry when a packed member depends on a workspace package the closure did not pack (`UnpackedWorkspaceDependency`), when one alias name would install two different packages (`ConflictingAliasTargets`), or when a fixture manifest names a workspace package itself (`FixtureNamesWorkspacePackage`). The closure is installed into every fixture, so a fixture never names it.
+A preparation microVM bakes each fixture: one `npm ci` from its committed `package-lock.json` installs the fixture's own dependencies, then the package's `lib` tree is copied to `node_modules/.stryker`, with `node_modules/@systemfsoftware/stryker-js` and `node_modules/.bin/stryker` linked into it. A fixture names no `@systemfsoftware` stryker package in its manifest; its config names plugins by their bare names, which the CLI resolves from its own install. `calc-fixture` loads both Effect ignorers, so a plugin the package cannot load fails the lane. The bake cache is keyed by the package's store path, the base image, the bake script and each fixture's files.
 
-The committed locks pin every registry dependency, so an upstream publish never changes what a fixture installs. They omit each closure tarball's `integrity` and `version`, which a source change or release moves; the bake fills those, the tarball's `bin` and its dependency fields back in from the freshly packed manifests, so a changed bin needs no regeneration. When a fixture's dependency range or a closure tarball's dependency edges no longer match the lock, or the lock is missing, the bake fails with `npm ci`'s own error and a line naming the fix: run `pnpm --filter @systemfsoftware/stryker-e2e fixtures:lock` and commit the result.
+When a fixture's dependency range no longer matches its lock, or the lock is missing, the bake fails with `npm ci`'s own error and a line naming the fix: run `pnpm --filter @systemfsoftware/stryker-e2e fixtures:lock` and commit the result.
 
 ## Running locally
 
@@ -39,7 +39,7 @@ OTEL_ENABLED=true pnpm --filter @systemfsoftware/stryker-e2e exec vitest run tes
 
 ### Fixture cache
 
-Global setup keys the prepared fixtures on two inputs: the packed closure (base image, `tests/__fixtures__/bake-fixtures.sh`, and the unpacked contents of every packed tarball) and, separately, each fixture's own source files with its manifests resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry lands a new closure key and re-bakes its fixture set, with no manual invalidation.
+Global setup keys the prepared fixtures on two inputs: the package (base image, `tests/__fixtures__/bake-fixtures.sh`, and the store path of the flake's `stryker` package) and, separately, each fixture's own source files with its manifests resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry builds a new store path and re-bakes its fixture set, with no manual invalidation.
 
 A run leases its entry for as long as it lives and prunes unleased entries of other keys from its global teardown, so concurrent runs sharing the cache do not delete each other's entries.
 
@@ -86,4 +86,4 @@ Query Grafana LGTM traces (OTLP export to Tempo) to isolate the diverging span o
 
 ### Diagnosing a bundle defect
 
-The lane runs the packed `dist/main.mjs`, not workspace source. A worker failure that cannot be reproduced from source is a bundle defect (an unresolvable import, or a tree-shaken combinator compiling to `(void 0)`): read the packed-bundle line in the stack before blaming source. The image uses a fixed tag, so a run may adopt bundles baked before your edit — after changing a workspace package, clear the baked cache (`rm -rf node_modules/.cache/stryker-e2e/baked`) before trusting a verdict.
+The lane runs the package's `dist/main.mjs`, not workspace source. A worker failure that cannot be reproduced from source is a bundle defect (an unresolvable import, or a tree-shaken combinator compiling to `(void 0)`): read the bundle line in the stack before blaming source. The image uses a fixed tag, so a run may adopt bundles baked before your edit — after changing a workspace package, clear the baked cache (`rm -rf node_modules/.cache/stryker-e2e/baked`) before trusting a verdict.

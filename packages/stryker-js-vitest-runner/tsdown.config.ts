@@ -1,7 +1,7 @@
 import { sourceExports } from '@systemfsoftware/tsdown-config'
 import { defineConfig } from 'tsdown'
 
-const internalArtifacts = ['main', 'stryker-setup']
+const internalArtifacts = ['main', 'worker', 'stryker-setup']
 const exports = { ...sourceExports({ dtsExt: '.d.mts' }), exclude: internalArtifacts }
 
 const shared = {
@@ -23,7 +23,7 @@ export default defineConfig([
   },
   {
     ...shared,
-    entry: { main: './src/main.ts' },
+    entry: { main: './src/main.ts', worker: './src/worker.ts' },
     platform: 'node',
     deps: {
       neverBundle: [/^vitest$/, /^vitest\//],

@@ -39,19 +39,27 @@ and 12.0.0.
 
 ## Fix
 
-- The flake now takes effect-microvm (6.1.0), effect-readiness (1.1.2) and
-  systemfsoftware (effect-cell-types 12.1.2) as producers, so their tarballs
-  land in `.deps` beside the stryker ones.
-- `test/e2e` names the three tarballs as `file:../../.deps/<name>.tgz`.
+- The flake now takes three producers, so their tarballs land in `.deps`:
+  effect-microvm (6.1.0), effect-readiness (1.1.2), and systemfsoftware as
+  `core` (effect-cell-types 12.1.3).
+- `test/e2e` names the microsandbox, readiness and cell-types tarballs as
+  `file:../../.deps/<name>.tgz`.
+- Overrides scoped to `effect-microsandbox>` and `effect-readiness>` give those
+  two packages the cell-types tarball. Every published package keeps the
+  registry's 12.0.0.
 - The lockfile resolves effect 4.1.4, which satisfies their `^4.1.2` peer
   range.
 
 ## Rule
 
-A pnpm 11 `overrides` entry does not reach a workspace package's own
-dependencies, only packages outside the workspace. A catalog entry cannot use
-`file:`. A workspace package that needs a producer tarball therefore names the
-`file:` path in its own manifest, as the dogfood devDependencies already do.
+- A pnpm 11 `overrides` key with a `@*` selector does not reach a workspace
+  package's own dependencies.
+- A catalog entry cannot use `file:`.
+- A published package must not depend on a `file:` tarball. `pnpm pack` keeps
+  the path, so an npm install of the packed package fails with `ENOENT` on
+  `node_modules/.deps/<name>.tgz`, and `pnpm deploy` resolves the path against
+  its target directory.
+
 When effect moves to a new minor, check that every @systemfsoftware dependency
 has a release built against that minor. The registry copy may be stale,
 because new releases ship only as Nix outputs.

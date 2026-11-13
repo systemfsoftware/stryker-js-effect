@@ -22,7 +22,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/tsgo": "catalog:",
-    "@systemfsoftware/effect-cell-types": "file:../../.deps/effect-cell-types.tgz",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-e2e-core": "workspace:^",

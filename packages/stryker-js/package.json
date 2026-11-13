@@ -16,9 +16,6 @@
     "dist",
     "CHANGELOG.md"
   ],
-  "bin": {
-    "stryker": "./dist/main.mjs"
-  },
   "scripts": {
     "clean": "rimraf dist",
     "build": "pnpm run typecheck && tsdown",
@@ -46,7 +43,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
-    "@systemfsoftware/effect-cell-types": "file:../../.deps/effect-cell-types.tgz",
+    "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^",
     "yaml": "catalog:"
   },

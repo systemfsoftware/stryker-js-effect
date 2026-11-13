@@ -75,6 +75,12 @@
           own = {
             inherit dprint;
             stryker-published = producerTarballsOf pkgs;
+            stryker = pkgs.callPackage ./nix/stryker.nix {
+              inherit (importPnpmLock.legacyPackages.${pkgs.stdenv.hostPlatform.system}) iplConfigHook;
+              inherit (workspace) mitmCache;
+              src = self;
+              deps = producerTarballsOf pkgs;
+            };
             deno = pkgs.deno;
             comment-checker = sandboxed;
             comment-checker-unwrapped = unwrapped;

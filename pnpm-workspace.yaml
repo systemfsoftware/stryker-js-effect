@@ -28,8 +28,6 @@ catalog:
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
   "@systemfsoftware/differential-spec": ^1.0.1
-  # Read only by the e2e fixtures, which install from their own lockfiles inside the microVM;
-  # every workspace package names the .deps tarball instead.
   "@systemfsoftware/effect-cell-types": ^12.0.0
   "@systemfsoftware/effect-gherkin-spec": ^7.0.0
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
@@ -81,10 +79,10 @@ overrides:
   "@effect/platform-node": "catalog:"
   "@effect/platform-node-shared": "catalog:"
   "@effect/tsgo": "catalog:"
-  # The e2e harness's microVM packages, and the cell types they share with this
-  # workspace, come from their producers' flake outputs (effect-microvm,
-  # effect-readiness, systemfsoftware), never a registry.
-  "@systemfsoftware/effect-cell-types@*": file:.deps/effect-cell-types.tgz
+  # The e2e harness's microVM packages, and the cell types those two need, come from
+  # their producers' flake outputs (effect-microvm, effect-readiness, systemfsoftware).
+  "@systemfsoftware/effect-microsandbox>@systemfsoftware/effect-cell-types": file:.deps/effect-cell-types.tgz
+  "@systemfsoftware/effect-readiness>@systemfsoftware/effect-cell-types": file:.deps/effect-cell-types.tgz
   "@systemfsoftware/effect-microsandbox@*": file:.deps/effect-microsandbox.tgz
   "@systemfsoftware/effect-readiness@*": file:.deps/effect-readiness.tgz
   # Every package this repository releases resolves to the tarball of the release
