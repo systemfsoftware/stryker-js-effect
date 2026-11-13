@@ -1,5 +1,17 @@
 # @systemfsoftware/stryker-js-cli-contract
 
+## 2.0.0
+
+Tests: the contract version law fetches a treeless clone's missing trees by the base commit, which GitHub serves, not by tree hash, which it refuses.
+
+These packages depend on the plugin interface whose Mutant gains a required probeEligibility; nothing they export or do changes.
+
+The stock catalog marks AtomicUpdateSplit, SynchronizationRemoval and FinalizerEscape default-tier, and every stock entry is default-tier. StockCatalog.StockOptInName and StockCatalog.StockMutatorName are removed; StockCatalog.StockDefaultName names every stock mutator.
+
+`ShardPlan` is version 2 and carries a required `scope`: `Unscoped`, `DiffScoped` with `base`, `head`, `sources` and `files`, or `FullScope` with those and `reason`. A scoped plan's `files` lists the repository-relative paths it schedules mutants in, and `sources` is a SHA-256 digest of each of those paths paired with the git blob digest of the content the working tree holds there, the empty digest for a path the tree no longer holds. Version 1 plans no longer decode, and the `PlanKnown` stream event carries the new shape, so `StreamSchemaVersion` moves to `9.0`.
+
+The run stream moves to schema version 10.0: the embedded ShardPlan version 2 scope makes version 9.0 readers reject plans that the stream now carries. Readers that pin schemaVersion 9.0 must move to 10.0.
+
 ## 1.0.0
 
 The span taxonomy names `rpc.typeQuery`, the span a checker worker records when it serves the `typeQuery` RPC. It carries the same `rpc.method` attribute as the other served RPC spans, and the published span-taxonomy document lists it.

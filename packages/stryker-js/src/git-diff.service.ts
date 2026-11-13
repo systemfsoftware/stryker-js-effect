@@ -47,6 +47,20 @@ interface GitRun {
 
 type GitEnv = ChildProcessSpawner.ChildProcessSpawner | Path.Path | Scope.Scope
 
+/**
+ * Pins the output parseHunks reads, whatever the user's git config says: colour, an external
+ * diff driver, `diff.relative`, `diff.noprefix` and `diff.mnemonicPrefix` each change it.
+ */
+const DIFF_FORMAT: ReadonlyArray<string> = [
+  '--unified=0',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-relative',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+]
+
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/
 const NEW_FILE = /^\+\+\+ (?!\/dev\/null)(.+)$/
 const OLD_FILE = /^--- (?!\/dev\/null)(.+)$/
@@ -190,7 +204,7 @@ const readHunks = (
 ): Effect.Effect<ReadonlyArray<DiffHunk>, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const hunks = parseHunks(yield* readOutput(cwd, ['diff', '--unified=0', base]))
+    const hunks = parseHunks(yield* readOutput(cwd, ['diff', ...DIFF_FORMAT, base]))
     return hunks.map((hunk) => ({ ...hunk, file: path.relative(cwdFromRoot, hunk.file) }))
   })
 
