@@ -81,4 +81,14 @@ else
     fi
   done
 fi
+
+# Format, lint and typecheck of what the branch changed. Tests never run from the hook.
+if [ "$status" -eq 0 ]; then
+  pnpm --silent format:check || status=1
+  pnpm --silent lint || status=1
+  if [ "$status" -eq 0 ]; then
+    TURBO_SCM_BASE=$(git merge-base HEAD "$main_sha") TURBO_SCM_HEAD=HEAD \
+      pnpm exec turbo run typecheck lint --affected --output-logs=errors-only || status=1
+  fi
+fi
 exit "$status"
