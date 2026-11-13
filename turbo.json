@@ -1,5 +1,9 @@
 {
   "$schema": "https://v2-10-1.turborepo.dev/schema.json",
+  "futureFlags": {
+    "affectedUsingTaskInputs": true,
+    "githubActionsRemoteBaseRefFallback": true
+  },
   "globalPassThroughEnv": [
     "XDG_CACHE_HOME"
   ],
@@ -50,6 +54,21 @@
       "outputs": [],
       "cache": true
     },
+    "//#test:scripts": {
+      "outputLogs": "errors-only",
+      "inputs": [
+        "scripts/**",
+        "test/bench/src/turbo-affected.ts",
+        "test/bench/src/turbo-affected.schema.ts",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "bin/deno",
+        "flake.nix",
+        "flake.lock"
+      ],
+      "outputs": [],
+      "cache": true
+    },
     "test": {
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -62,6 +81,38 @@
         "!**/AGENTS.md",
         "!**/CHANGELOG.md",
         "!**/etc/*.api.md"
+      ],
+      "outputLogs": "errors-only",
+      "dependsOn": [
+        "^build",
+        "^api:check",
+        "build",
+        "api:check"
+      ],
+      "outputs": [],
+      "env": [
+        "NODE_ENV",
+        "CI",
+        "AGENT"
+      ],
+      "cache": true
+    },
+    "@systemfsoftware/stryker-e2e-core#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "vitest.config.ts",
+        "vitest.config.*",
+        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
+        "$TURBO_ROOT$/packages/toolchain/vitest-config/lib/**",
+        "!**/README.md",
+        "!**/AGENTS.md",
+        "!**/CHANGELOG.md",
+        "!**/etc/*.api.md",
+        "$TURBO_ROOT$/test/e2e/tests/**/*.e2e.test.ts",
+        "$TURBO_ROOT$/test/e2e/testResources/**",
+        "$TURBO_ROOT$/packages/stryker-js-instrumenter/testResources/effect-concurrency/**",
+        "$TURBO_ROOT$/pnpm-workspace.yaml"
       ],
       "outputLogs": "errors-only",
       "dependsOn": [
