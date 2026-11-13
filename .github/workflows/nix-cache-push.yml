@@ -13,6 +13,7 @@ env:
   EXTRA_OUTPUTS: >-
     dprint
     stryker-published
+    stryker
     repo-checks
     pnpm-store
 
