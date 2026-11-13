@@ -17,11 +17,8 @@ export const StockDefaultName = S.Literals([
   'StringLiteral',
   'UnaryOperator',
   'UpdateOperator',
+  'AtomicUpdateSplit',
+  'SynchronizationRemoval',
+  'FinalizerEscape',
 ])
 export type StockDefaultName = typeof StockDefaultName.Type
-
-export const StockOptInName = S.Literals(['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape'])
-export type StockOptInName = typeof StockOptInName.Type
-
-export const StockMutatorName = S.Union([StockDefaultName, StockOptInName])
-export type StockMutatorName = typeof StockMutatorName.Type

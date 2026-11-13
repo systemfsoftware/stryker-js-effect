@@ -7,7 +7,7 @@ export const strykerMutators = {
     {
       id: 'flip-side',
       name: 'acme/FlipSide',
-      tier: 'default',
+      tier: 'optIn',
       definition: 'Replace a "left" string literal with "right".',
       examples: [{ before: "'left'", after: ['"right"'] }],
       implementation: flipSide,

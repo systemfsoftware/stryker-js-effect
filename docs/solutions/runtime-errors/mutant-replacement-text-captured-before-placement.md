@@ -30,8 +30,8 @@ $$
 
 The invariant fails only when a mutator's replacement node is reachable through
 the mutated node, which is the common case for the Effect-concurrency mutators
-(they rewrite the argument expression in place), so the defect is silent for the
-whole default mutator set and appears only under an opt-in mutator.
+(they rewrite the argument expression in place), so the defect stays silent for
+every other default mutator and appears under those three.
 
 ## Architectural invariants
 
