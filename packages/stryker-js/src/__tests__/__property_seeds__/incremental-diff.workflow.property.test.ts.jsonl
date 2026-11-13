@@ -1,3 +1,0 @@
-{"_tag":"Refuted","property":"incrementalDiff > ∀is_RecordAndDigest_≡AChangedClosureDigestRunsNamingClosureChanged","seed":3155186633,"attempt":8,"size":1,"path":[0,0,0,0],"failure":"ReturnedFalse"}
-{"_tag":"Refuted","property":"incrementalDiff > ∀r_RecordWithAKey_≡AFailedClosureAnalysisRunsNamingClosureChanged","seed":56957555,"attempt":1,"size":0,"path":[0],"failure":"ReturnedFalse"}
-{"_tag":"Refuted","property":"incrementalDiff > ∀r_Record_≡AStaticMutantWithoutFlakesIsRememberedExactlyLikeAnyOtherMutant","seed":4144520539,"attempt":99,"size":10,"path":[0,1,1,1,1,1,1,2,2,2,2],"failure":"ReturnedFalse"}

@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -15,6 +16,7 @@ import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
 import { recordedDryRunMsOf } from './__fixtures__/recorded-dry-run.schema.js'
+import { storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -28,7 +30,7 @@ const CONFIG = `export default {
   testRunner: 'vm',
   testFiles: ['test/**/*.mjs'],
   mutate: ['src/**/*.js'],
-  reporters: [],
+  reporters: ['json'],
   checkers: [],
   concurrency: 1,
   cleanTempDir: 'always',
@@ -83,7 +85,9 @@ const BETA_TEST = [
 
 const ALPHA_EDIT = `${ALPHA_SOURCE}\n// the developer edits this file\n`
 
-const REPORT_FILE = 'reports/stryker-incremental.json'
+const INCREMENTAL_FILE = 'reports/stryker-incremental.json'
+
+const MUTATION_REPORT_FILE = 'reports/mutation/mutation.json'
 
 interface ExecOutcome {
   readonly exitCode: number
@@ -137,15 +141,11 @@ const planObservationOf = (text: string): PlanObservation =>
     }),
   })
 
-const decodeReportedIncremental = S.decodeUnknownOption(S.fromJsonString(Engine.IncrementalReportSchema))
+const decodeMutationReport = S.decodeUnknownOption(S.fromJsonString(Report.MutationTestResult))
 
-type ReportedIncremental = S.Schema.Type<typeof Engine.IncrementalReportSchema>
-type ReportedMutant = ReportedIncremental['files'][string]['mutants'][number]
+type ReportedMutant = Report.MutationTestResult['files'][string]['mutants'][number]
 
-const costMsByIdOf = (reported: ReportedIncremental): Record<string, number> =>
-  Object.fromEntries(Object.entries(reported.costs).map(([id, cost]) => [id, cost.actualMs ?? cost.predictedMs]))
-
-const mutantsOf = (reported: ReportedIncremental): readonly ReportedMutant[] =>
+const mutantsOf = (reported: Report.MutationTestResult): readonly ReportedMutant[] =>
   Object.values(reported.files).flatMap((file) => file.mutants)
 
 const runsWholeSuite = (mutant: ReportedMutant): boolean =>
@@ -213,14 +213,17 @@ const runPlanEditPlan = (
     const path = yield* Path.Path
     const { root } = fixture
     const run = yield* spawnCli(root, ['run'])
-    const reportText = yield* fs.readFileString(path.join(root, REPORT_FILE))
-    const reported = Option.getOrThrow(decodeReportedIncremental(reportText))
+    const reported = Option.getOrThrow(
+      decodeMutationReport(yield* fs.readFileString(path.join(root, MUTATION_REPORT_FILE))),
+    )
+    const reportText = yield* fs.readFileString(path.join(root, INCREMENTAL_FILE))
     const runIds = sortedIds(mutantsOf(reported).map((mutant) => mutant.id))
     const alphaIds = sortedIds(
       reported.files['src/alpha.js']?.mutants.map((mutant) => mutant.id) ?? [],
     )
     const wholeSuiteIds = sortedIds(mutantsOf(reported).filter(runsWholeSuite).map((mutant) => mutant.id))
-    const costMsById = costMsByIdOf(reported)
+    const stored = yield* storedVerdictsIn({ projectRoot: root, mutantIds: runIds })
+    const costMsById = Object.fromEntries(Object.entries(stored).map(([id, verdict]) => [id, verdict.costMs] as const))
     const editedMutantsMs = costedMillisecondsOf(costMsById, Arr.dedupe([...alphaIds, ...wholeSuiteIds]))
     const quietPlan = yield* spawnCli(root, [
       'plan',

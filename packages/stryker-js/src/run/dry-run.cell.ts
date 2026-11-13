@@ -40,7 +40,7 @@ import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { type DryRunChoice, dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
 import { testCoverageOf, testFileModulesFieldOf } from './dry-run-coverage.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
+import { incrementalReportTextOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import {
@@ -644,8 +644,8 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   const idGenerator = yield* IdGenerator
   const env = yield* RunEnvironment
 
-  const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })
-  const choice = yield* dryRunChoiceOf(command, env.basePath, texts)
+  const text = yield* incrementalReportTextOf({ basePath: env.basePath, options: command.options })
+  const choice = yield* dryRunChoiceOf(command, env.basePath, [text])
   const { prior, decision, currentRoot, currentTestClosureDigest, runInputsDigest } = choice
 
   yield* Match.value(decision).pipe(

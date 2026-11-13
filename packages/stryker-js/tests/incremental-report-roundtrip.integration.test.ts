@@ -14,6 +14,8 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { type StoredVerdict, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+
 const Feature = makeFeature({ it })
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -21,11 +23,6 @@ const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 const SOURCE = [
   'export const add = (left: number, right: number): number => left + right',
   'export const label = (): string => "value"',
-  '',
-].join('\n')
-
-const EXTRA_SOURCE = [
-  'export const double = (value: number): number => value * 2',
   '',
 ].join('\n')
 
@@ -64,16 +61,12 @@ const removeFixture = (root: string): Effect.Effect<void, never, never> =>
     filePorts,
   )
 
-const optionsOf = (
-  root: string,
-  command: string,
-  mutate: readonly string[] = ['src/**/*.ts'],
-): Options.PartialStrykerOptions => ({
+const optionsOf = (root: string, command: string): Options.PartialStrykerOptions => ({
   testRunner: 'command',
   commandRunner: { command },
   coverageAnalysis: 'off',
   reporters: [],
-  mutate: [...mutate],
+  mutate: ['src/**/*.ts'],
   checkers: [],
   cleanTempDir: 'always',
   incremental: true,
@@ -89,17 +82,13 @@ const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Engin
     }
   })
 
-const runToCompletion = (
-  root: string,
-  command: string,
-  mutate?: readonly string[],
-): Effect.Effect<string, never, never> =>
+const runToCompletion = (root: string, command: string): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const { layer } = yield* runLayerOf(root)
     yield* Engine.mutationTestCell
-      .run({ cliOptions: optionsOf(root, command, mutate), targetMutatePatterns: undefined })
+      .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
     return yield* fs.readFileString(path.join(root, 'reports', 'main.json'))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
@@ -108,7 +97,6 @@ interface RecordedFsOp {
   readonly op: 'write' | 'rename'
   readonly path: string
   readonly to?: string
-  readonly data?: string
 }
 
 const recordingFileSystemLayer = (ops: RecordedFsOp[]): Layer.Layer<FileSystem.FileSystem> =>
@@ -118,7 +106,7 @@ const recordingFileSystemLayer = (ops: RecordedFsOp[]): Layer.Layer<FileSystem.F
       ...base,
       writeFileString: (path, data, options) =>
         base.writeFileString(path, data, options).pipe(
-          Effect.tap(() => Effect.sync(() => ops.push({ op: 'write', path, data }))),
+          Effect.tap(() => Effect.sync(() => ops.push({ op: 'write', path }))),
         ),
       rename: (from, to) =>
         base.rename(from, to).pipe(
@@ -148,100 +136,71 @@ const runToCompletionRecordingWrites = (
     return { directWrites: writesTo(ops, target).length, renamed: renamesTo(ops, target).length > 0 }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const runToCompletionRecordingContents = (
-  root: string,
-  command: string,
-  ops: RecordedFsOp[],
-): Effect.Effect<void, never, never> =>
-  Effect.gen(function*() {
-    const { layer } = yield* runLayerOf(root, Layer.merge(Engine.nodePlatformLayer, recordingFileSystemLayer(ops)))
-    yield* Engine.mutationTestCell
-      .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
-      .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
-  }).pipe(Effect.orDie, Effect.provide(filePorts))
+type Tested = RunEvent.RunMutantTestedEvent
 
-interface RecordedMutant {
-  readonly id: string
-  readonly file: string
-  readonly remembered: boolean
+const isTested = S.is(RunEvent.RunMutantTestedEvent)
+
+interface Interrupted {
+  readonly text: string
+  readonly firstStoredId: string
+  readonly tested: readonly Tested[]
+  readonly stored: Readonly<Record<string, StoredVerdict>>
 }
 
-const recordedMutantsOf = (text: string): readonly RecordedMutant[] =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
-    onNone: () => [],
-    onSome: (report) =>
-      Object.entries(report.files).flatMap(([file, result]) =>
-        result.mutants.map((mutant) => ({ id: mutant.id, file, remembered: mutant.remembered === true }))
-      ),
-  })
-
-const firstCheckpointOf = (ops: readonly RecordedFsOp[], target: string): string =>
-  ops
-    .filter((op) => op.op === 'write' && op.path.startsWith(`${target}.`))
-    .map((op) => op.data ?? '')
-    .find((data) => {
-      const { decoded, shape } = decodedOf(data)
-      return decoded && !shape.carriesFramework && !shape.carriesConfig
-    }) ?? ''
-
-const interruptAtFirstCheckpoint = (root: string, command: string): Effect.Effect<string, never, never> =>
+const interruptOnceAVerdictIsStored = (root: string, command: string): Effect.Effect<Interrupted, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const { layer } = yield* runLayerOf(root)
+    const { queue, layer } = yield* runLayerOf(root)
     const fiber = yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.exit, Effect.forkChild)
-    const file = path.join(root, 'reports', 'main.json')
-    const waitForDecodable = (attempts: number): Effect.Effect<boolean, never> =>
-      fs.readFileString(file).pipe(
-        Effect.orElseSucceed(() => ''),
-        Effect.flatMap((text) =>
-          decodedOf(text).decoded
+    const takeUntilTested = (
+      taken: readonly RunEvent.RunEvent[],
+    ): Effect.Effect<readonly RunEvent.RunEvent[], Cause.Done> =>
+      Effect.flatMap(
+        Queue.take(queue),
+        (event) => isTested(event) ? Effect.succeed([...taken, event]) : takeUntilTested([...taken, event]),
+      )
+    const before = yield* takeUntilTested([])
+    const first = before.filter(isTested)[0]?.id ?? ''
+    const waitForStored = (attempts: number): Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path> =>
+      Effect.flatMap(
+        storedVerdictsIn({ projectRoot: root, mutantIds: [first] }),
+        (stored) =>
+          stored[first] !== undefined
             ? Effect.succeed(true)
             : attempts <= 0
             ? Effect.succeed(false)
-            : Effect.andThen(Effect.sleep(25), waitForDecodable(attempts - 1))
-        ),
+            : Effect.andThen(Effect.sleep(25), waitForStored(attempts - 1)),
       )
-    const appeared = yield* waitForDecodable(2000)
+    yield* waitForStored(2000)
     yield* Fiber.interrupt(fiber)
-    return appeared ? yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => '')) : ''
+    const after = yield* Queue.takeAll(queue).pipe(Effect.orElseSucceed((): readonly RunEvent.RunEvent[] => []))
+    const tested = [...before, ...after].filter(isTested)
+    return {
+      text: yield* fs.readFileString(path.join(root, 'reports', 'main.json')).pipe(Effect.orElseSucceed(() => '')),
+      firstStoredId: first,
+      tested,
+      stored: yield* storedVerdictsIn({ projectRoot: root, mutantIds: tested.map((event) => event.id) }),
+    }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
 interface Decoded {
   readonly decoded: boolean
   readonly error: string
-  readonly shape: {
-    readonly bytes: number
-    readonly carriesFramework: boolean
-    readonly carriesConfig: boolean
-    readonly carriesDryRunDigest: boolean
-    readonly carriesPendingMutants: boolean
-  }
+  readonly carriesDryRunDigest: boolean
 }
 
 const decodedOf = (text: string): Decoded => {
   const result = S.decodeResult(S.fromJsonString(Engine.IncrementalReportSchema))(text)
   const document = S.decodeOption(
-    S.fromJsonString(
-      S.Struct({
-        framework: S.optional(S.Unknown),
-        config: S.optional(S.Unknown),
-        dryRunCoverage: S.optional(S.Struct({ testClosureDigest: S.String })),
-      }),
-    ),
+    S.fromJsonString(S.Struct({ dryRunCoverage: S.optional(S.Struct({ testClosureDigest: S.String })) })),
   )(text)
   return {
     decoded: Result.isSuccess(result),
     error: Result.isFailure(result) ? result.failure.message : '',
-    shape: {
-      bytes: text.length,
-      carriesFramework: Option.exists(document, (present) => present.framework !== undefined),
-      carriesConfig: Option.exists(document, (present) => present.config !== undefined),
-      carriesDryRunDigest: Option.exists(document, (present) => present.dryRunCoverage !== undefined),
-      carriesPendingMutants: text.includes('"Pending"'),
-    },
+    carriesDryRunDigest: Option.exists(document, (present) => present.dryRunCoverage !== undefined),
   }
 }
 
@@ -258,50 +217,42 @@ Feature('Reading the incremental report the engine writes')
             Effect.gen(function*() {
               const root = yield* writeFixture([['src/math.ts', SOURCE]])
               return yield* Effect.ensuring(
-                Effect.map(runToCompletion(root, 'true'), (text) => {
-                  const { decoded, error, shape } = decodedOf(text)
-                  return { decoded, error, shape }
-                }),
+                Effect.map(runToCompletion(root, 'true'), decodedOf),
                 removeFixture(root),
               )
             }).pipe(Effect.orDie, Effect.provide(filePorts)),
         ),
-        Then('the report decodes with the full-run fields and a dry-run closure digest')((s, expect) =>
-          expect({
-            decoded: s.observed.decoded,
-            error: s.observed.error,
-            fullReport: s.observed.shape.carriesFramework && s.observed.shape.carriesConfig,
-            carriesDryRunDigest: s.observed.shape.carriesDryRunDigest,
-          }).toEqual({ decoded: true, error: '', fullReport: true, carriesDryRunDigest: true })
+        Then('the report decodes with a dry-run closure digest')((s, expect) =>
+          expect(s.observed).toEqual({ decoded: true, error: '', carriesDryRunDigest: true })
         ),
       ),
     )
 
     scenario(
-      'A run interrupted during mutation testing leaves a checkpoint the reader decodes',
+      'A run interrupted during mutation testing leaves a decodable report and the verdicts it streamed',
       Gherkin.Do.pipe(
-        Given('a workspace whose incremental run is interrupted once its first checkpoint lands')(
+        Given('a workspace whose incremental run is interrupted once its first verdict is stored')(
           'observed',
           () =>
             Effect.gen(function*() {
               const root = yield* writeFixture([['src/math.ts', SOURCE]])
-              return yield* Effect.ensuring(
-                Effect.map(interruptAtFirstCheckpoint(root, 'sleep 0.2'), (text) => {
-                  const { decoded, error, shape } = decodedOf(text)
-                  return { decoded, error, shape }
-                }),
-                removeFixture(root),
-              )
+              return yield* Effect.ensuring(interruptOnceAVerdictIsStored(root, 'sleep 0.2'), removeFixture(root))
             }).pipe(Effect.orDie, Effect.provide(filePorts)),
         ),
-        Then('the checkpoint decodes, carries no full-run section, and still names its planned mutants')((s, expect) =>
-          expect({
-            decoded: s.observed.decoded,
-            error: s.observed.error,
-            slimReport: !s.observed.shape.carriesFramework && !s.observed.shape.carriesConfig,
-            carriesPendingMutants: s.observed.shape.carriesPendingMutants,
-          }).toEqual({ decoded: true, error: '', slimReport: true, carriesPendingMutants: true })
-        ),
+        Then('the report decodes and every stored verdict is the one the run streamed')((s, expect) => {
+          const streamed: Readonly<Record<string, string>> = Object.fromEntries(
+            s.observed.tested.map((event) => [event.id, event.status]),
+          )
+          const { decoded, error } = decodedOf(s.observed.text)
+          return expect({
+            decoded,
+            error,
+            storedTheFirst: s.observed.stored[s.observed.firstStoredId] !== undefined,
+            storedMatchesStream: Object.entries(s.observed.stored).every(([id, verdict]) =>
+              streamed[id] === verdict.status
+            ),
+          }).toEqual({ decoded: true, error: '', storedTheFirst: true, storedMatchesStream: true })
+        }),
       ),
     )
 
@@ -322,48 +273,6 @@ Feature('Reading the incremental report the engine writes')
         ),
         Then('the incremental report path is only ever produced by renaming a completed temporary file')(
           (s, expect) => expect(s.observed).toEqual({ directWrites: 0, renamed: true }),
-        ),
-      ),
-    )
-
-    scenario(
-      'A checkpoint written partway through a run marks exactly the reused mutants as remembered',
-      Gherkin.Do.pipe(
-        Given('a workspace whose first run mutates one file and whose second run widens the scope to a second')(
-          'observed',
-          () =>
-            Effect.gen(function*() {
-              const path = yield* Path.Path
-              const root = yield* writeFixture([['src/math.ts', SOURCE], ['src/extra.ts', EXTRA_SOURCE]])
-              const ops: RecordedFsOp[] = []
-              return yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  const first = recordedMutantsOf(yield* runToCompletion(root, 'true', ['src/math.ts']))
-                  yield* runToCompletionRecordingContents(root, 'true', ops)
-                  const checkpoint = recordedMutantsOf(firstCheckpointOf(ops, path.join(root, 'reports', 'main.json')))
-                  return { first, checkpoint }
-                }),
-                removeFixture(root),
-              )
-            }).pipe(Effect.orDie, Effect.provide(filePorts)),
-        ),
-        Then("the checkpoint marks the first run's mutants remembered and the newly scoped mutants not")(
-          (s, expect) => {
-            const ids = (mutants: readonly RecordedMutant[]) => mutants.map((mutant) => mutant.id).sort()
-            return expect({
-              firstRunMutated: s.observed.first.length > 0,
-              rememberedInCheckpoint: ids(s.observed.checkpoint.filter((mutant) => mutant.remembered)),
-              newlyScopedInCheckpoint: s.observed.checkpoint.some((mutant) => mutant.file === 'src/extra.ts'),
-              newlyScopedRemembered: s.observed.checkpoint.some((mutant) =>
-                mutant.file === 'src/extra.ts' && mutant.remembered
-              ),
-            }).toEqual({
-              firstRunMutated: true,
-              rememberedInCheckpoint: ids(s.observed.first),
-              newlyScopedInCheckpoint: true,
-              newlyScopedRemembered: false,
-            })
-          },
         ),
       ),
     )

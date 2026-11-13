@@ -42,6 +42,8 @@ const fixture: Effect.Effect<Fixture, never, FileSystem.FileSystem | Path.Path> 
   }
 }).pipe(Effect.orDie)
 
+const publishedEngineOptionsOf = (options: Options.StrykerOptions) => ({ ...options, incrementalSources: [] })
+
 const makeClient = Effect.gen(function*() {
   const path = yield* Path.Path
   const options = Result.getOrThrow(
@@ -52,7 +54,7 @@ const makeClient = Effect.gen(function*() {
   )
   return yield* Worker.makeWorkerClient({
     rpcs: Plugin.CheckerRpcs,
-    options,
+    options: publishedEngineOptionsOf(options),
     entrypoint: WORKER_ENTRYPOINT,
     workingDirectory: yield* path.fromFileUrl(WORKING_DIRECTORY_URL),
     execArgv: [],

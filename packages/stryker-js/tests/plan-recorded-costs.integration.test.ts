@@ -16,10 +16,10 @@ import {
   cliConfigTextOf,
   PLAN_FILE,
   planWorkspaceFiles,
-  readReportIn,
   removeWorkspace,
   REPORT_FILE,
-  type ReportObservation,
+  storedObservationIn,
+  type StoreObservation,
   writeWorkspace,
 } from './__fixtures__/check-cost-workspace.fixture.js'
 import { recordedDryRunMsOf } from './__fixtures__/recorded-dry-run.schema.js'
@@ -72,7 +72,7 @@ interface ObservedPlan {
   readonly runExitCode: number
   readonly planExitCode: number
   readonly plan: ShardPlan | null
-  readonly report: ReportObservation
+  readonly stored: StoreObservation
   readonly dryRunMs: number
   readonly output: string
 }
@@ -89,7 +89,7 @@ const planAfterFullRun = (
     const path = yield* Path.Path
     yield* fs.writeFileString(path.join(directory, CONFIG_FILE), cliConfigTextOf(directory))
     const run = yield* spawnCli(directory, ['run'])
-    const plan = yield* spawnCli(directory, [
+    const planRun = yield* spawnCli(directory, [
       'plan',
       '--target-seconds',
       TARGET_SECONDS,
@@ -100,15 +100,19 @@ const planAfterFullRun = (
       '--full',
     ])
     const planText = yield* fs.readFileString(path.join(directory, PLAN_FILE)).pipe(Effect.orElseSucceed(() => ''))
-    const report = yield* readReportIn(directory)
+    const plan = Option.getOrNull(decodePlan(planText))
+    const scheduledIds = plan === null
+      ? []
+      : plan.shards.flatMap((shard) => shard.projects.flatMap((project) => project.mutants))
+    const stored = yield* storedObservationIn({ projectRoot: directory, mutantIds: scheduledIds })
     const reportText = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
     return {
       runExitCode: run.exitCode,
-      planExitCode: plan.exitCode,
-      plan: Option.getOrNull(decodePlan(planText)),
-      report,
+      planExitCode: planRun.exitCode,
+      plan,
+      stored,
       dryRunMs: recordedDryRunMsOf(reportText),
-      output: `${run.output}\n${plan.output}`,
+      output: `${run.output}\n${planRun.output}`,
     }
   }).pipe(Effect.orDie)
 
@@ -133,32 +137,20 @@ const planSummaryOf = (observed: ObservedPlan) => {
   }
   const scheduledIds = plan.shards.flatMap((shard) => shard.projects.flatMap((project) => project.mutants))
   const plannedSecondsMs = plan.shards.reduce((total, shard) => total + shard.predictedSeconds * 1000, 0)
-  const recordedCostsMs = scheduledIds.reduce(
-    (total, id) => total + (observed.report.costs[id]?.actualMs ?? 0),
-    0,
-  )
-  const costsWithoutMeasuredCheckTimeMs = scheduledIds.reduce((total, id) => {
-    const cost = observed.report.costs[id]
-    const status = observed.report.statuses[id] ?? ''
-    return total +
-      (DECIDED_WITHOUT_A_TEST[status] === true
-        ? (cost?.predictedMs ?? cost?.actualMs ?? 0)
-        : (cost?.actualMs ?? 0))
-  }, 0)
+  const storedCostsMs = scheduledIds.reduce((total, id) => total + (observed.stored.costs[id] ?? 0), 0)
   return {
     planWritten: true,
     runExitCode: observed.runExitCode,
     planExitCode: observed.planExitCode,
-    everyScheduledMutantCarriesAMeasuredCost: scheduledIds.length > 0 &&
-      scheduledIds.every((id) => observed.report.costs[id]?.actualMs !== null),
+    everyScheduledMutantHasAStoredCost: scheduledIds.length > 0 &&
+      scheduledIds.every((id) => observed.stored.costs[id] !== undefined),
     aCheckDecidedMutantIsScheduled: scheduledIds.some(
-      (id) => DECIDED_WITHOUT_A_TEST[observed.report.statuses[id] ?? ''] === true,
+      (id) => DECIDED_WITHOUT_A_TEST[observed.stored.statuses[id] ?? ''] === true,
     ),
     aTestRunningMutantIsScheduled: scheduledIds.some(
-      (id) => TEST_RUNNING_STATUSES[observed.report.statuses[id] ?? ''] === true,
+      (id) => TEST_RUNNING_STATUSES[observed.stored.statuses[id] ?? ''] === true,
     ),
-    thePlanPricesTheRecordedCosts: roundMs(plannedSecondsMs) === roundMs(recordedCostsMs + observed.dryRunMs),
-    thePlanPricesNoWholeSuitePrediction: roundMs(plannedSecondsMs) < roundMs(costsWithoutMeasuredCheckTimeMs),
+    thePlanPricesTheStoredCosts: roundMs(plannedSecondsMs) === roundMs(storedCostsMs + observed.dryRunMs),
   }
 }
 
@@ -182,17 +174,16 @@ Feature('Shard planning on the measured costs a run records')
           'a workspace whose covered modules are checked by a rejecting checker and whose test runner passes, run in full and then planned in full',
         )('observed', () => observedPlanAfterFullRun),
         Then(
-          'the plan prices its scheduled mutants at their measured costs rather than at a whole-suite prediction',
+          'the plan prices its scheduled mutants at the costs stored with their verdicts',
         )((s, expect) =>
           expect(planSummaryOf(s.observed)).toEqual({
             planWritten: true,
             runExitCode: 0,
             planExitCode: 0,
-            everyScheduledMutantCarriesAMeasuredCost: true,
+            everyScheduledMutantHasAStoredCost: true,
             aCheckDecidedMutantIsScheduled: true,
             aTestRunningMutantIsScheduled: true,
-            thePlanPricesTheRecordedCosts: true,
-            thePlanPricesNoWholeSuitePrediction: true,
+            thePlanPricesTheStoredCosts: true,
           })
         ),
       ),

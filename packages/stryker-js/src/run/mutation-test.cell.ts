@@ -58,9 +58,7 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
 ) {
   const reporting = yield* MutationReporting
   const env = yield* RunEnvironment
-  yield* reporting.publishDryRunCoverage(
-    reportingInputOf({ prev: raw.prev, env, results: [], rememberedMutantIds: [] }),
-  ).pipe(
+  yield* reporting.publishDryRunCoverage(reportingInputOf({ prev: raw.prev, env, results: [] })).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to publish the dry-run coverage', cause)),
     Effect.ignoreCause,
   )
@@ -110,7 +108,6 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     checkedPlans: checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkers.handle), plan.runPlans),
     checkReadmitted: (readmitted) =>
       checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkers.handle), readmitted),
-    closureDigestsByMutantId: reuse.closureDigestsByMutantId,
     runPlanOf: ({ context, checkpoint, settleChecked }) => (runPlan, checkMs) =>
       Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
         onNone: () => Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),

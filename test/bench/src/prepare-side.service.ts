@@ -309,6 +309,8 @@ const manifestPathsUnder = (
     return relativePaths.filter((relativePath) => path.basename(relativePath) === MANIFEST_FILE_NAME)
   })
 
+const ENTERPRISE_FIXTURE = 'enterprise'
+
 const stagedManifestsOf = (
   bundleRoot: string,
 ): Effect.Effect<ReadonlyArray<StagedFixtureManifest>, BenchSetupFailed, BenchPlatform> =>
@@ -330,7 +332,7 @@ const stagedManifestsOf = (
             )
           ),
         )
-        return { path: relativePath, manifest } satisfies StagedFixtureManifest
+        return { fixture: ENTERPRISE_FIXTURE, path: relativePath, manifest } satisfies StagedFixtureManifest
       }))
   })
 
@@ -371,9 +373,9 @@ const enterpriseInstallSpecs = (
     const members = yield* Effect.forEach(packs, packedMemberOf)
     const fixtures = yield* stagedManifestsOf(bundleRoot)
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members, fixtures, workspace })),
+      installClosure(InstallClosureCommand.make({ members, fixtures, workspace, onRequest: [] })),
     ).pipe(Effect.mapError((failure) => fail(STEP_ENTERPRISE_CLOSURE, failure.message)))
-    return install.specs
+    return install.fixtures.flatMap((fixture) => fixture.specs)
   })
 
 const prepareEnterprise = (

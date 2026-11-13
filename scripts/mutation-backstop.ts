@@ -4,9 +4,13 @@ import { join, resolve } from '@std/path'
 
 const DEFAULT_PACKAGE = 'packages/stryker-js'
 const DEFAULT_CLI = 'packages/stryker-js/dist/main.mjs'
-const FIRST_RUN = 'run-1.stryker-incremental.json'
-const SECOND_RUN = 'run-2.stryker-incremental.json'
+const FIRST_REPORT = 'run-1.mutation.json'
+const SECOND_REPORT = 'run-2.mutation.json'
+const CACHED_REPORT = 'cached.mutation.json'
+const FIRST_INCREMENTAL = 'run-1.stryker-incremental.json'
+const SECOND_INCREMENTAL = 'run-2.stryker-incremental.json'
 const NOISE_FILE = 'noise.json'
+const MUTATION_REPORT = 'reports/mutation-report.json'
 const ABSENT = 'absent'
 
 export type StatusTable = Readonly<Record<string, string>>
@@ -72,31 +76,44 @@ const runStryker = async (cli: string, cwd: string, cliArgs: readonly string[]):
   return code
 }
 
-const runCold = async (cli: string, packageDir: string, label: string, incrementalFile: string): Promise<void> => {
+const runCold = async (
+  cli: string,
+  packageDir: string,
+  label: string,
+  incrementalFile: string,
+  reportFile: string,
+): Promise<void> => {
   const code = await runStryker(cli, packageDir, ['run', '--force', '--incrementalFile', incrementalFile])
-  if (!await exists(incrementalFile)) {
-    throw new Error(`${label} exited ${code} without writing ${incrementalFile}; a cold run must finish`)
+  const produced = join(packageDir, MUTATION_REPORT)
+  if (!await exists(produced)) {
+    throw new Error(`${label} exited ${code} without writing ${produced}; a cold run must finish`)
   }
-  console.log(`${label}: exit ${code}, statuses at ${incrementalFile}`)
+  await Deno.copyFile(produced, reportFile)
+  console.log(`${label}: exit ${code}, per-mutant statuses preserved at ${reportFile}`)
 }
 
 const main = async (): Promise<number> => {
   const args = parseArgs(Deno.args, { string: ['package', 'runs', 'cache', 'cli'] })
   const packageDir = resolve(args.package ?? DEFAULT_PACKAGE)
   const runsDir = resolve(args.runs ?? join(packageDir, 'reports', 'backstop'))
-  const cacheFile = resolve(args.cache ?? join(packageDir, 'reports', 'stryker-incremental.json'))
+  const cacheFile = resolve(args.cache ?? join(packageDir, MUTATION_REPORT))
   const cli = resolve(args.cli ?? DEFAULT_CLI)
 
   if (!await exists(cli)) throw new Error(`no workspace CLI at ${cli}; build it with \`pnpm build\` first`)
-  if (!await exists(cacheFile)) throw new Error(`no cached report at ${cacheFile}; run the dogfood suite first`)
+  if (!await exists(cacheFile)) {
+    throw new Error(`no cached mutation report at ${cacheFile}; run the dogfood suite first`)
+  }
 
   await Deno.mkdir(runsDir, { recursive: true })
-  const first = join(runsDir, FIRST_RUN)
-  const second = join(runsDir, SECOND_RUN)
+  const cached = join(runsDir, CACHED_REPORT)
+  const first = join(runsDir, FIRST_REPORT)
+  const second = join(runsDir, SECOND_REPORT)
   const noiseFile = join(runsDir, NOISE_FILE)
 
-  await runCold(cli, packageDir, 'cold run 1', first)
-  await runCold(cli, packageDir, 'cold run 2', second)
+  await Deno.copyFile(cacheFile, cached)
+
+  await runCold(cli, packageDir, 'cold run 1', join(runsDir, FIRST_INCREMENTAL), first)
+  await runCold(cli, packageDir, 'cold run 2', join(runsDir, SECOND_INCREMENTAL), second)
 
   const noise = disagreementsOf(await statusesOfFile(first), await statusesOfFile(second))
   await Deno.writeTextFile(noiseFile, `${JSON.stringify(noise, null, 2)}\n`)
@@ -105,7 +122,7 @@ const main = async (): Promise<number> => {
   const code = await runStryker(cli, packageDir, [
     'compare',
     '--baseline',
-    cacheFile,
+    cached,
     '--fresh',
     first,
     '--noise',
