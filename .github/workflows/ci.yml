@@ -50,6 +50,18 @@ jobs:
         run: |
           unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
           git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
+      - if: steps.lane.outputs.docs-only == 'true' && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') && github.actor != 'dependabot[bot]'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - if: steps.lane.outputs.docs-only == 'true' && github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') && github.actor != 'dependabot[bot]'
+        name: Lint the squash message
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pnpm install --frozen-lockfile --filter . --ignore-scripts
+          pnpm exec commitlint --from "$BASE" --to "$HEAD" --verbose
       - if: steps.lane.outputs.docs-only == 'true'
         name: Docs gates (format, single plan)
         run: |
@@ -93,6 +105,17 @@ jobs:
         run: |
           unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
           git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
+      - name: Lint the squash message
+        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'mergify/merge-queue/') && github.actor != 'dependabot[bot]'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: pnpm exec commitlint --from "$BASE" --to "$HEAD" --verbose
+      - name: Require a change intent for every publishable-package change
+        if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: nix run "github:systemfsoftware/pnpm-release-management/ae663466c157a8e5b612c78091e17ddd32a030e0#changeset-management" -- check "$BASE"
       - id: base
         name: Base commit (first parent of the checked-out commit; merge-base with main on dispatch)
         run: |
