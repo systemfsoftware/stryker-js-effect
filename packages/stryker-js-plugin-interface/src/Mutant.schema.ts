@@ -1,5 +1,7 @@
 /// <reference types="vitest/importMeta" />
+import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
+import type * as Opt from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -108,6 +110,41 @@ export type Readmitted = typeof Readmitted.Type
 export const Subsumption = S.Union([Subsumed, Readmitted])
 export type Subsumption = typeof Subsumption.Type
 
+export const ProbeKind = S.Literals(['arithmetic', 'relational', 'unary', 'constant'])
+export type ProbeKind = typeof ProbeKind.Type
+
+export const Probed = S.TaggedStruct('Probed', { kind: ProbeKind })
+export type Probed = typeof Probed.Type
+
+/**
+ * Why a mutant carries no probe and runs exactly as it would without one:
+ * - `mutator-not-probed`: its mutator is outside the probed set.
+ * - `operator-not-probed`: its mutator is probed, but not for this original operator.
+ * - `every-reach-infects`: an `==`/`!=`/`===`/`!==` swap changes the value on every evaluation.
+ * - `not-a-comparison`: a constant replacement of an expression that is not a comparison.
+ * - `operand-not-proven-local`: a constant replacement of a comparison whose operand may run user code.
+ * - `shape-not-recognized`: the original and replacement nodes do not have the probed form.
+ * - `not-decided`: the mutant was built or decoded without an eligibility decision.
+ */
+export const UnprobedReason = S.Literals([
+  'mutator-not-probed',
+  'operator-not-probed',
+  'every-reach-infects',
+  'not-a-comparison',
+  'operand-not-proven-local',
+  'shape-not-recognized',
+  'not-decided',
+])
+export type UnprobedReason = typeof UnprobedReason.Type
+
+export const Unprobed = S.TaggedStruct('Unprobed', { reason: UnprobedReason })
+export type Unprobed = typeof Unprobed.Type
+
+export const ProbeEligibility = S.Union([Probed, Unprobed])
+export type ProbeEligibility = typeof ProbeEligibility.Type
+
+const NOT_DECIDED = { _tag: 'Unprobed', reason: 'not-decided' } as const satisfies Unprobed
+
 export const subsumptionMatchesStatus: {
   (status: MutantStatus | undefined): (subsumption: Subsumption) => boolean
   (subsumption: Subsumption, status: MutantStatus | undefined): boolean
@@ -136,6 +173,10 @@ export const Mutant = S.TaggedStruct('Mutant', {
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   subsumption: S.optional(Subsumption),
+  probeEligibility: ProbeEligibility.pipe(
+    S.withConstructorDefault(Effect.succeed(NOT_DECIDED)),
+    S.withDecodingDefaultKey(Effect.succeed(NOT_DECIDED)),
+  ),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
@@ -391,5 +432,47 @@ if (import.meta.vitest !== void 0) {
     { of: [Subsumption, S.NullOr(MutantStatusSchema)], subject: decodesWith },
     (subject, [subsumption, status]) =>
       subject(subsumption, status) === ACCEPTED_BY_TAG[subsumption._tag].includes(status),
+  )
+
+  const Struct = await import('effect/Struct')
+  const Boolean = await import('effect/Boolean')
+  // The omitted field is dropped at runtime; the cast keeps the caller's type, which the decoder re-checks.
+  const withoutEligibility = <T extends { readonly probeEligibility?: ProbeEligibility }>(value: T, absent: boolean) =>
+    Boolean.match(absent, {
+      onTrue: () => Struct.omit(value, ['probeEligibility']),
+      onFalse: () => value,
+    })
+  const eligibilityOf = (mutant: Mutant, absent: boolean) => {
+    const decoded = Option.map(
+      Option.flatMap(S.encodeOption(Mutant)(mutant), (e) => S.decodeOption(Mutant)(withoutEligibility(e, absent))),
+      (d) => d.probeEligibility,
+    )
+    const constructed = Mutant.make(withoutEligibility(mutant, absent)).probeEligibility
+    return { decoded, constructed }
+  }
+  const isNotDecided = (eligibility: ProbeEligibility): boolean =>
+    S.is(Unprobed)(eligibility) && eligibility.reason === 'not-decided'
+  const sameEligibility = (a: ProbeEligibility, b: ProbeEligibility): boolean =>
+    JSON.stringify(S.encodeSync(ProbeEligibility)(a)) === JSON.stringify(S.encodeSync(ProbeEligibility)(b))
+
+  const agreesWhenAbsent = (decoded: Opt.Option<ProbeEligibility>, constructed: ProbeEligibility): boolean =>
+    Option.exists(decoded, isNotDecided) && isNotDecided(constructed)
+  const agreesWhenPresent = (
+    mutant: Mutant,
+    decoded: Opt.Option<ProbeEligibility>,
+    constructed: ProbeEligibility,
+  ): boolean =>
+    Option.exists(decoded, (d) => sameEligibility(d, mutant.probeEligibility)) &&
+    sameEligibility(constructed, mutant.probeEligibility)
+
+  // One subject for both shapes: an absent field is not-decided, a present one is kept.
+  // A constant impostor answers not-decided for the present case too, so it fails here.
+  it.prop(
+    '∀m_OwnEligibility_≡OwnUnlessAbsentIsNotDecided',
+    { of: [Mutant, S.Boolean], subject: eligibilityOf },
+    (subject, [mutant, absent]) => {
+      const { decoded, constructed } = subject(mutant, absent)
+      return absent ? agreesWhenAbsent(decoded, constructed) : agreesWhenPresent(mutant, decoded, constructed)
+    },
   )
 }
