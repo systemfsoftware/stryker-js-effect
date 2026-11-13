@@ -28,6 +28,9 @@ catalog:
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
   "@systemfsoftware/differential-spec": ^1.0.1
+  # Read only by the e2e fixtures, which install from their own lockfiles inside the microVM;
+  # every workspace package names the .deps tarball instead.
+  "@systemfsoftware/effect-cell-types": ^12.0.0
   "@systemfsoftware/effect-gherkin-spec": ^7.0.0
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
   "@systemfsoftware/effect-schema-law": ^5.0.0
