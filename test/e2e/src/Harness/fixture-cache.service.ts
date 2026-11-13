@@ -79,6 +79,8 @@ interface BakeEnvironment {
 
 const STEP_BAKE = 'bake every fixture in the preparation microVM'
 const STEP_PACKAGE = "build the flake's stryker package"
+const STEP_PACKAGE_COPY = 'copy the read-only package to a mountable directory'
+const PACKAGE_COPY_DIR = '.stryker-package'
 const STEP_LOCK = 'regenerate a fixture lock'
 
 const TREE_CONCURRENCY = 16
@@ -464,10 +466,13 @@ const bakeMissing = (
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
       yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs)
+      const packageCopy = path.join(stagingDir, PACKAGE_COPY_DIR)
+      yield* runChecked(STEP_PACKAGE_COPY, ['cp', '-R', packagePath, packageCopy])
+      yield* runChecked(STEP_PACKAGE_COPY, ['chmod', '-R', 'u+w', packageCopy])
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       yield* jobs.requireCleanExit(STEP_BAKE, ['sh', '-c', bakeScript, 'bake-fixtures'], [
         { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
-        { host: packagePath, guest: GuestJobs.GUEST_STRYKER_ROOT },
+        { host: packageCopy, guest: GuestJobs.GUEST_STRYKER_ROOT },
       ])
       yield* Effect.forEach(
         missing,
