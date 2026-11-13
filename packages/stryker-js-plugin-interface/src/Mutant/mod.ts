@@ -2,6 +2,7 @@ export {
   IgnoreRuleId,
   IgnoreStatusReason,
   IgnoreStatusReasonText,
+  RememberedReason,
   RunFailureCode,
   SettledReasonCode,
   StatusReason,
@@ -10,6 +11,7 @@ export {
 export type {
   IgnoreRuleId as IgnoreRuleIdValue,
   IgnoreStatusReason as IgnoreStatusReasonValue,
+  RememberedReason as RememberedReasonValue,
   RunFailureCode as RunFailureCodeValue,
   SettledReasonCode as SettledReasonCodeValue,
   StatusReason as StatusReasonValue,

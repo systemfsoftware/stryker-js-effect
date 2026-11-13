@@ -182,7 +182,7 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatusesWithTheirReasons',
+    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatusesWithARememberedReason',
     { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
     (subject, [record]) => {
       const decision = onlyDecision(subject(matchingCommandOf(record)))
@@ -191,7 +191,9 @@ describe('incrementalDiff', () => {
       }
       return remembersWith(record, record.programDigest)
         ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId &&
-          decision.status === record.status && decision.statusReason === record.statusReason
+          decision.status === record.status && decision.statusReason === (record.status === 'Ignored'
+              ? record.statusReason
+              : `remembered: ${(record.statusReason ?? '').replace(/^remembered: /, '')}`)
         : S.is(MutantToRun)(decision) && decision.refusal === refusalOfTheMatchingCommand(record)
     },
   )

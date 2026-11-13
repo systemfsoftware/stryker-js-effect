@@ -33,15 +33,19 @@ const FAULTS: Readonly<Record<Mutant.MutantStatus, Fault>> = {
     name: 'Killed reported as Survived',
     detection: /annotated Killed but the run reported Survived/u,
     file: 'packages/stryker-js/src/mutation-reporting.service.ts',
-    anchor: "reportMutant(mutant, 'Killed', {",
-    replacement: "reportMutant(mutant, 'Survived', {",
+    anchor:
+      "reportMutant(mutant, 'Killed', {\n        testsCompleted: killed.nrOfTests,\n        killedBy: [...killed.killedBy],\n        statusReason: statusReasonTextOf({\n          status: 'Killed',\n          statusReason: { code: 'killed', detail: killed.failureMessage },\n        }),\n      })",
+    replacement:
+      "reportMutant(mutant, 'Survived', {\n        testsCompleted: killed.nrOfTests,\n        statusReason: survivedReasonOf(mutant, killed.nrOfTests),\n      })",
   },
   Survived: {
     name: 'Survived reported as Killed',
     detection: /annotated Survived but the run reported Killed/u,
     file: 'packages/stryker-js/src/mutation-reporting.service.ts',
-    anchor: "reportMutant(mutant, 'Survived', { testsCompleted: survived.nrOfTests })",
-    replacement: "reportMutant(mutant, 'Killed', { testsCompleted: survived.nrOfTests })",
+    anchor:
+      "reportMutant(mutant, 'Survived', {\n        testsCompleted: survived.nrOfTests,\n        statusReason: survivedReasonOf(mutant, survived.nrOfTests),\n      })",
+    replacement:
+      "reportMutant(mutant, 'Killed', {\n        testsCompleted: survived.nrOfTests,\n        killedBy: [],\n        statusReason: 'killed: seeded status fault',\n      })",
   },
   NoCoverage: {
     name: 'NoCoverage reported as Survived',
@@ -54,22 +58,25 @@ const FAULTS: Readonly<Record<Mutant.MutantStatus, Fault>> = {
     name: 'CompileError reported with a reason naming no diagnostic',
     detection: /reported reason names no such cause: seeded status fault/u,
     file: 'packages/stryker-js/src/mutation-reporting.service.ts',
-    anchor: "reportMutantStatus(mutant, 'CompileError', result.reason)",
-    replacement: "reportMutantStatus(mutant, 'CompileError', 'seeded status fault: this reason names no diagnostic')",
+    anchor: "statusReason: { code: 'compile-error', detail: result.reason }",
+    replacement:
+      "statusReason: { code: 'compile-error', detail: 'seeded status fault: this reason names no diagnostic' }",
   },
   RuntimeError: {
     name: 'RuntimeError reported as Survived',
     detection: /annotated RuntimeError\([^)]*\) but the run reported Survived/u,
     file: 'packages/stryker-js/src/mutation-reporting.service.ts',
-    anchor: "reportMutant(mutant, 'RuntimeError', { statusReason: errored.errorMessage })",
-    replacement: "reportMutant(mutant, 'Survived', { statusReason: errored.errorMessage })",
+    anchor:
+      "reportMutant(mutant, 'RuntimeError', {\n        statusReason: statusReasonTextOf({\n          status: 'RuntimeError',\n          statusReason: { code: 'runtime-error', detail: errored.errorMessage },\n        }),\n      })",
+    replacement: "reportMutant(mutant, 'Survived', { statusReason: survivedReasonOf(mutant, 0) })",
   },
   Timeout: {
     name: 'Timeout reported as Survived',
     detection: /\+\s*"timedOutIsNonEmpty": false/u,
     file: 'packages/stryker-js/src/mutation-reporting.service.ts',
-    anchor: "reportMutant(mutant, 'Timeout', reasonedOutcomeOf(timedOut.reason))",
-    replacement: "reportMutant(mutant, 'Survived', reasonedOutcomeOf(timedOut.reason))",
+    anchor:
+      "reportMutant(mutant, 'Timeout', {\n        statusReason: statusReasonTextOf({\n          status: 'Timeout',\n          statusReason: { code: 'timed-out', detail: timedOut.reason ?? '' },\n        }),\n      })",
+    replacement: "reportMutant(mutant, 'Survived', { statusReason: survivedReasonOf(mutant, 0) })",
   },
   Ignored: {
     name: 'Directive-ignored mutant reported as Survived',
