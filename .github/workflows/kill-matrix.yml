@@ -55,6 +55,14 @@ jobs:
           cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
+      # Planning loads every project's stryker config, and a config can load a plugin
+      # through a workspace link (the instrumenter's effect-schema-declarations ignorer),
+      # whose dist exists only after a build.
+      - name: Build every mutated project
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "$PROJECTS" | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
       - id: plan
         name: Plan every mutant, from scratch
         run: |
