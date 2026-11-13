@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/effect-cell-types": "file:../../.deps/effect-cell-types.tgz",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:"
