@@ -1,6 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
+import type * as Opt from 'effect/Option'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -436,9 +437,9 @@ if (import.meta.vitest !== void 0) {
   const Struct = await import('effect/Struct')
   const Boolean = await import('effect/Boolean')
   // The omitted field is dropped at runtime; the cast keeps the caller's type, which the decoder re-checks.
-  const withoutEligibility = <T extends object>(value: T, absent: boolean): T =>
+  const withoutEligibility = <T extends { readonly probeEligibility?: ProbeEligibility }>(value: T, absent: boolean) =>
     Boolean.match(absent, {
-      onTrue: () => Struct.omit(value as unknown as Record<string, unknown>, ['probeEligibility']) as unknown as T,
+      onTrue: () => Struct.omit(value, ['probeEligibility']),
       onFalse: () => value,
     })
   const eligibilityOf = (mutant: Mutant, absent: boolean) => {
@@ -454,6 +455,16 @@ if (import.meta.vitest !== void 0) {
   const sameEligibility = (a: ProbeEligibility, b: ProbeEligibility): boolean =>
     JSON.stringify(S.encodeSync(ProbeEligibility)(a)) === JSON.stringify(S.encodeSync(ProbeEligibility)(b))
 
+  const agreesWhenAbsent = (decoded: Opt.Option<ProbeEligibility>, constructed: ProbeEligibility): boolean =>
+    Option.exists(decoded, isNotDecided) && isNotDecided(constructed)
+  const agreesWhenPresent = (
+    mutant: Mutant,
+    decoded: Opt.Option<ProbeEligibility>,
+    constructed: ProbeEligibility,
+  ): boolean =>
+    Option.exists(decoded, (d) => sameEligibility(d, mutant.probeEligibility)) &&
+    sameEligibility(constructed, mutant.probeEligibility)
+
   // One subject for both shapes: an absent field is not-decided, a present one is kept.
   // A constant impostor answers not-decided for the present case too, so it fails here.
   it.prop(
@@ -461,10 +472,7 @@ if (import.meta.vitest !== void 0) {
     { of: [Mutant, S.Boolean], subject: eligibilityOf },
     (subject, [mutant, absent]) => {
       const { decoded, constructed } = subject(mutant, absent)
-      return absent
-        ? Option.exists(decoded, isNotDecided) && isNotDecided(constructed)
-        : Option.exists(decoded, (d) => sameEligibility(d, mutant.probeEligibility)) &&
-          sameEligibility(constructed, mutant.probeEligibility)
+      return absent ? agreesWhenAbsent(decoded, constructed) : agreesWhenPresent(mutant, decoded, constructed)
     },
   )
 }
