@@ -1,3 +1,4 @@
-import { serveChecker } from './serve.mjs'
+import { serveChecker } from '../checker-worker.mjs'
+import { dominatorAnswerOf } from './dominator-answer.mjs'
 
-serveChecker({ status: 'ignored', reason: 'checker: ignored by the subsumption fixture checker' })
+serveChecker(dominatorAnswerOf({ status: 'ignored', reason: 'checker: ignored by the subsumption fixture checker' }))

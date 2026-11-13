@@ -13,6 +13,7 @@ export class MutantTestPlanCommand
     staticCoverage: S.optional(S.Record(Mutant.MutantId, Report.NonNegativeInt)),
     testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
     priorKilledByByMutantId: S.optional(S.Record(Mutant.MutantId, S.Array(TestRunner.TestId))),
+    rememberedStatusByMutantId: S.optional(S.Record(Mutant.MutantId, Mutant.MutantStatusSchema)),
     testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
     options: S.Struct({
       coverageAnalysis: Options.CoverageAnalysisMode,

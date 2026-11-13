@@ -6,11 +6,9 @@ import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
-const DOMINATOR_REPLACEMENT = 'a <= b'
 const CHECK_DELAY = '5 millis'
 
-export const serveChecker = (dominatorAnswer) => {
-  const answerOf = (mutant) => mutant.replacement === DOMINATOR_REPLACEMENT ? dominatorAnswer : { status: 'passed' }
+export const serveChecker = (answerOf) => {
   const handlers = Plugin.CheckerRpcs.toLayer({
     group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
     digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),

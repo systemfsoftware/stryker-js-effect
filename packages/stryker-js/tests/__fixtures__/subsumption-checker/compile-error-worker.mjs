@@ -1,3 +1,6 @@
-import { serveChecker } from './serve.mjs'
+import { serveChecker } from '../checker-worker.mjs'
+import { dominatorAnswerOf } from './dominator-answer.mjs'
 
-serveChecker({ status: 'compileError', reason: 'the subsumption fixture checker refused the dominator' })
+serveChecker(
+  dominatorAnswerOf({ status: 'compileError', reason: 'the subsumption fixture checker refused the dominator' }),
+)
