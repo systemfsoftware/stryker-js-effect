@@ -1,5 +1,16 @@
 # @systemfsoftware/stryker-js
 
+## 22.0.0
+
+`run --since` and `plan --since` widen a project to a full run only when a Stryker config, a test-runner config, a `package.json` or a lockfile changed in that project or in one of its ancestor directories. A change to those files in a sibling package no longer widens it. The diff is read with its output format pinned (`--no-color`, `--no-ext-diff`, `--no-textconv`, `--no-relative` and the `a/`/`b/` prefixes), so a user's git config can no longer empty or misplace the diff scope.
+
+Each call the CLI makes to a plugin worker is traced as `RpcClient.<method>` again, the name the span taxonomy declares. effect 4.0.0 used that prefix by default; later effect releases name the span after the method alone, so `RpcClient.check`, `RpcClient.mutantRun` and their siblings had stopped appearing.
+
+The CLI ships as the flake's `stryker` package (`nix run github:systemfsoftware/stryker-js-effect/<release>#stryker`): `bin/stryker` with the vitest runner, the TypeScript checker, the instrumenter, the svelte framework and both Effect ignorers in one `lib/node_modules` tree. A project installs none of them; to type its `stryker.config.ts` it links `lib/node_modules/@systemfsoftware/stryker-js` from that package.
+
+- A bare plugin name in `plugins`, `appendPlugins`, `ignorers`, `testRunner.plugin` or a checker's `plugin` now resolves from the CLI's own install, not from the project. A plugin the CLI does not ship is named by its `file:` URL, for example `import.meta.resolve('my-ignorer')` in the config.
+- The package no longer declares a `bin`. Run `stryker` from the flake's package.
+
 ## 21.0.0
 
 A wall-clock expiry no longer scores a mutant as a detected Timeout on its own. When a mutant's run outlasts its deadline, the worker is replaced as before and the mutant runs once more in the same run, on the fresh worker, under twice the deadline. It is reported Timeout (`wall-clock-timeout`) only if that run expires too; otherwise it gets the verdict its tests give. If the fresh worker never starts the run, the mutant is a RuntimeError, not a Timeout. A hit-limit Timeout is unchanged.

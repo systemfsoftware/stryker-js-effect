@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-vitest-runner
 
+## 10.1.0
+
+The runner's worker resolves `vitest` from the sandbox it runs in, so a runner installed outside the project, such as the flake's `stryker` package, runs the project's own vitest. It used to resolve vitest from its own install location and failed with `ERR_MODULE_NOT_FOUND` when nothing installed vitest beside it.
+
 ## 10.0.0
 
 Nothing you configure or import changes: the published plugin, its options and its behaviour stay the same.
