@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -9,14 +10,32 @@ type MutantRunOutcomeTypeId = typeof MutantRunOutcomeTypeId
 
 export const NoCoveringTestExecutedReason = S.Literal('no covering test executed')
 
+export const NeverStartedReason = S.Literal('a fresh test runner did not start the mutant run within its boot window')
+
+const CONFIRMATION_DEADLINE_FACTOR = 2
+
 export class MutantRunSettled
   extends S.TaggedClass<MutantRunSettled, { readonly brand: unique symbol }>()('MutantRunSettled', {})
 {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunPoolInvalidated
-  extends S.TaggedClass<MutantRunPoolInvalidated, { readonly brand: unique symbol }>()('MutantRunPoolInvalidated', {})
+export class MutantRunConfirm
+  extends S.TaggedClass<MutantRunConfirm, { readonly brand: unique symbol }>()('MutantRunConfirm', {
+    timeoutMs: Mutant.RunOptionsFields.timeout,
+  })
+{
+  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
+}
+
+export class MutantRunTimeoutConfirmed
+  extends S.TaggedClass<MutantRunTimeoutConfirmed, { readonly brand: unique symbol }>()('MutantRunTimeoutConfirmed', {})
+{
+  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
+}
+
+export class MutantRunNeverStarted
+  extends S.TaggedClass<MutantRunNeverStarted, { readonly brand: unique symbol }>()('MutantRunNeverStarted', {})
 {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
@@ -35,13 +54,18 @@ export class MutantRunRetryExhausted
 
 export type MutantRunOutcome =
   | MutantRunSettled
-  | MutantRunPoolInvalidated
+  | MutantRunConfirm
+  | MutantRunTimeoutConfirmed
+  | MutantRunNeverStarted
   | MutantRunRetry
   | MutantRunRetryExhausted
 
 export class MutantRunObservation
   extends S.Class<MutantRunObservation, { readonly brand: unique symbol }>('MutantRunObservation')({
-    wallClockTimeout: S.Boolean,
+    workerReplaced: S.Boolean,
+    neverStarted: S.Boolean,
+    confirming: S.Boolean,
+    timeoutMs: Mutant.RunOptionsFields.timeout,
     coveringTests: S.String.pipe(S.Array),
     executedTests: S.String.pipe(S.Array, S.optionalKey),
     attempt: S.Natural,
@@ -75,15 +99,40 @@ const decideGuard = (command: MutantRunObservation): Result.Result<MutantRunOutc
     onFalse: () => Result.succeed(MutantRunSettled.make({})),
   })
 
+const confirmationDeadlineOf = (timeoutMs: number): number =>
+  Boolean.match(Number.isFinite(timeoutMs * CONFIRMATION_DEADLINE_FACTOR), {
+    onTrue: () => timeoutMs * CONFIRMATION_DEADLINE_FACTOR,
+    onFalse: () => Number.MAX_VALUE,
+  })
+
+const decideConfirmation = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
+  Boolean.match(command.neverStarted, {
+    onTrue: () => Result.succeed(MutantRunNeverStarted.make({})),
+    onFalse: () => Result.succeed(MutantRunTimeoutConfirmed.make({})),
+  })
+
+const decideExpiry = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
+  Boolean.match(command.confirming, {
+    onTrue: () => decideConfirmation(command),
+    onFalse: () => Result.succeed(MutantRunConfirm.make({ timeoutMs: confirmationDeadlineOf(command.timeoutMs) })),
+  })
+
 const decide = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
-  Boolean.match(command.wallClockTimeout, {
-    onTrue: () => Result.succeed(MutantRunPoolInvalidated.make({})),
+  Boolean.match(command.workerReplaced, {
+    onTrue: () => decideExpiry(command),
     onFalse: () => decideGuard(command),
   })
 
 export const interpretMutantRun = Workflow.make({
   command: MutantRunObservation,
-  decision: S.Union([MutantRunSettled, MutantRunPoolInvalidated, MutantRunRetry, MutantRunRetryExhausted]),
+  decision: S.Union([
+    MutantRunSettled,
+    MutantRunConfirm,
+    MutantRunTimeoutConfirmed,
+    MutantRunNeverStarted,
+    MutantRunRetry,
+    MutantRunRetryExhausted,
+  ]),
   error: S.Never,
   decide,
 })

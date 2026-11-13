@@ -19,25 +19,41 @@ const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
 
-/**
- * One mutant in this module returns a promise that never settles: a mutant on the
- * `if` guard takes the never-resolving branch when the covering test calls
- * `settle(true)`. The remaining mutants are finite and are classified from the
- * ordinary covering test. The cover awaits the promise, so no hit counter grows
- * and the wall-clock backstop is the only bound that sees the hang.
- */
 const DAEMON_FILE = 'src/lib/daemon.ts'
-const DAEMON_SOURCE = [
-  'export const settle = (immediate: boolean): Promise<string> => {',
-  '  if (immediate) {',
-  "    return Promise.resolve('settled')",
-  '  }',
-  '  return new Promise<string>(() => {})',
-  '}',
-  '',
-  'export const double = (value: number): number => value * 2',
-  '',
-].join('\n')
+const daemonSourceOf = (secondBranch: ReadonlyArray<string>, imports: ReadonlyArray<string>): string =>
+  [
+    ...imports,
+    'export const settle = (immediate: boolean): Promise<string> => {',
+    '  if (immediate) {',
+    "    return Promise.resolve('settled')",
+    '  }',
+    ...secondBranch,
+    '}',
+    '',
+    'export const double = (value: number): number => value * 2',
+    '',
+  ].join('\n')
+
+const NEVER_SETTLING_DAEMON = daemonSourceOf(['  return new Promise<string>(() => {})'], [])
+
+const HANGS_ONCE_DAEMON = daemonSourceOf(
+  ['  return firstCallHangs()'],
+  ["import { firstCallHangs } from '../../helpers/first-call-hangs.mjs'", ''],
+)
+const MARKER_FILE = 'hung-once.marker'
+const firstCallHangsSourceOf = (marker: string): string =>
+  [
+    "import { existsSync, writeFileSync } from 'node:fs'",
+    '',
+    'export const firstCallHangs = () => {',
+    `  if (existsSync(${JSON.stringify(marker)})) {`,
+    "    return Promise.resolve('settled')",
+    '  }',
+    `  writeFileSync(${JSON.stringify(marker)}, '')`,
+    '  return Promise.withResolvers().promise',
+    '}',
+    '',
+  ].join('\n')
 
 const TEST_SOURCE = [
   "import { expect, test } from 'vitest'",
@@ -60,26 +76,38 @@ const VITEST_CONFIG_SOURCE = 'export default { test: { testTimeout: 600_000, hoo
 
 const MUTANT_BUDGET_MS = 2_000
 
+type DaemonVariant = 'never-settles' | 'hangs-once'
+
 interface Workspace {
   readonly directory: string
 }
 
 const reportFileOf = (directory: string): string => `${directory}/reports/mutation/mutation.json`
 const incrementalFileOf = (directory: string): string => `${directory}/reports/stryker-incremental.json`
+const markerFileOf = (directory: string): string => `${directory}/${MARKER_FILE}`
 
-const writeWorkspace = (): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+const filesOf = (
+  variant: DaemonVariant,
+  directory: string,
+): ReadonlyArray<readonly [string, string]> => [
+  ['package.json', '{ "type": "commonjs" }\n'],
+  ['vitest.config.ts', VITEST_CONFIG_SOURCE],
+  ['test/sample.test.mjs', TEST_SOURCE],
+  ...(variant === 'never-settles'
+    ? [[DAEMON_FILE, NEVER_SETTLING_DAEMON] as const]
+    : [
+      [DAEMON_FILE, HANGS_ONCE_DAEMON] as const,
+      ['helpers/first-call-hangs.mjs', firstCallHangsSourceOf(markerFileOf(directory))] as const,
+    ]),
+]
+
+const writeWorkspace = (variant: DaemonVariant): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
-    const files: ReadonlyArray<readonly [string, string]> = [
-      ['package.json', '{ "type": "commonjs" }\n'],
-      ['vitest.config.ts', VITEST_CONFIG_SOURCE],
-      [DAEMON_FILE, DAEMON_SOURCE],
-      ['test/sample.test.mjs', TEST_SOURCE],
-    ]
     yield* Effect.forEach(
-      files,
+      filesOf(variant, directory),
       ([name, content]) =>
         Effect.gen(function*() {
           const target = path.join(directory, name)
@@ -107,6 +135,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 })
 
 interface MutantRow {
+  readonly id: string
   readonly status: Mutant.MutantStatus
   readonly statusReason?: string | undefined
 }
@@ -115,6 +144,7 @@ interface ObservedRun {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly daemonMutants: ReadonlyArray<MutantRow>
+  readonly recordedCostMs: Readonly<Record<string, number | null>>
 }
 
 const readDaemonMutants = (
@@ -128,11 +158,22 @@ const readDaemonMutants = (
       .filter(([file]) => file === DAEMON_FILE)
       .flatMap(([, fileResult]) =>
         fileResult.mutants.map((mutant): MutantRow => ({
+          id: mutant.id,
           status: mutant.status,
           statusReason: mutant.statusReason,
         }))
       )
   }).pipe(Effect.orElseSucceed(() => []))
+
+const readRecordedCosts = (
+  directory: string,
+): Effect.Effect<Readonly<Record<string, number | null>>, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(incrementalFileOf(directory))
+    const record = yield* S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(text)
+    return Object.fromEntries(Object.entries(record.costs).map(([id, cost]) => [id, cost.actualMs]))
+  }).pipe(Effect.orElseSucceed(() => ({})))
 
 const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
@@ -167,11 +208,37 @@ const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, Fil
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     const events = yield* Queue.takeAll(queue).pipe(Effect.orElseSucceed(() => []))
     const daemonMutants = yield* readDaemonMutants(workspace.directory)
-    return { exit, events: [...events], daemonMutants }
+    const recordedCostMs = yield* readRecordedCosts(workspace.directory)
+    return { exit, events: [...events], daemonMutants, recordedCostMs }
   })
 
-const runAndClean = (workspace: Workspace): Effect.Effect<ObservedRun, never, never> =>
-  executeRun(workspace).pipe(
+interface ObservedRuns {
+  readonly first: ObservedRun
+  readonly second: ObservedRun
+}
+
+const runTwiceAndClean = (workspace: Workspace): Effect.Effect<ObservedRuns, never, never> =>
+  Effect.gen(function*() {
+    const first = yield* executeRun(workspace)
+    const second = yield* executeRun(workspace)
+    return { first, second }
+  }).pipe(
+    Effect.ensuring(removeWorkspace(workspace.directory)),
+    Effect.provide(filePorts),
+  )
+
+interface HangOnceObservation {
+  readonly run: ObservedRun
+  readonly hangHappened: boolean
+}
+
+const runOnceAndClean = (workspace: Workspace): Effect.Effect<HangOnceObservation, never, never> =>
+  Effect.gen(function*() {
+    const run = yield* executeRun(workspace)
+    const fs = yield* FileSystem.FileSystem
+    const hangHappened = yield* fs.exists(markerFileOf(workspace.directory)).pipe(Effect.orElseSucceed(() => false))
+    return { run, hangHappened }
+  }).pipe(
     Effect.ensuring(removeWorkspace(workspace.directory)),
     Effect.provide(filePorts),
   )
@@ -179,50 +246,101 @@ const runAndClean = (workspace: Workspace): Effect.Effect<ObservedRun, never, ne
 const verdictOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.VerdictReached | undefined =>
   events.find(S.is(RunEvent.VerdictReached))
 
+const reuseOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.ReuseReported | undefined =>
+  events.find(S.is(RunEvent.ReuseReported))
+
 const timeoutStreamed = (events: ReadonlyArray<RunEvent.RunEvent>): boolean =>
   events.some((event) => S.is(RunEvent.RunMutantTested)(event) && event.status === 'Timeout')
 
-Feature('Reporting a mutant that never settles without aborting the run')
+const wallClockTimeoutsOf = (run: ObservedRun): ReadonlyArray<MutantRow> =>
+  run.daemonMutants.filter((mutant) => mutant.status === 'Timeout' && mutant.statusReason === 'wall-clock-timeout')
+
+const coversBothAttempts = (run: ObservedRun): boolean =>
+  wallClockTimeoutsOf(run).every((mutant) => (run.recordedCostMs[mutant.id] ?? 0) >= 3 * MUTANT_BUDGET_MS)
+
+const verdictClassOf = (run: ObservedRun) => Exit.isSuccess(run.exit) ? run.exit.value.verdict : undefined
+
+Feature('Scoring a wall-clock expiry only when a confirmation expires too')
   .withLayer(Layer.empty)
   .live('the run spawns the vm worker and drives the real child-process test runner')
   .body(({ scenario }) => {
     scenario(
-      'A mutant whose covering test never settles is reported as timed out and the run continues',
+      'A mutant that never settles expires twice, is reported as a confirmed timeout, and the next run reuses it',
       Gherkin.Do.pipe(
         Given('a project whose module can be mutated so its promise never settles')(
           'workspace',
-          () => writeWorkspace().pipe(Effect.provide(filePorts)),
+          () => writeWorkspace('never-settles').pipe(Effect.provide(filePorts)),
+        ),
+        When('two mutation runs execute with a short time budget for each mutant')(
+          'observation',
+          (s) => runTwiceAndClean(s.workspace),
+        ),
+        Then(
+          'the first run finishes with the never-settling mutant timed out and its siblings classified, and the second run reuses that timeout instead of refusing it as unreproduced',
+        )((s, expect) => {
+          const { first, second } = s.observation
+          return expect({
+            firstRunCompleted: Exit.isSuccess(first.exit),
+            firstVerdictReached: verdictOf(first.events) !== undefined,
+            firstInternalError: verdictClassOf(first) === 'InternalError',
+            firstWallClockTimeoutReported: wallClockTimeoutsOf(first).length >= 1,
+            firstTimeoutStreamed: timeoutStreamed(first.events),
+            firstVerdictCountsTimeout: (verdictOf(first.events)?.counts.timeout ?? 0) >= 1,
+            siblingsStillClassified: first.daemonMutants.some((mutant) => mutant.status === 'Killed'),
+            firstCostCoversBothAttempts: coversBothAttempts(first),
+            secondRunCompleted: Exit.isSuccess(second.exit),
+            secondRefusesUnreproducedTimeouts: reuseOf(second.events)?.refused.timeoutUnreproduced,
+            secondRanNoMutant: reuseOf(second.events)?.ran,
+            secondStillReportsTheTimeout: wallClockTimeoutsOf(second).length === wallClockTimeoutsOf(first).length,
+          }).toEqual({
+            firstRunCompleted: true,
+            firstVerdictReached: true,
+            firstInternalError: false,
+            firstWallClockTimeoutReported: true,
+            firstTimeoutStreamed: true,
+            firstVerdictCountsTimeout: true,
+            siblingsStillClassified: true,
+            firstCostCoversBothAttempts: true,
+            secondRunCompleted: true,
+            secondRefusesUnreproducedTimeouts: 0,
+            secondRanNoMutant: 0,
+            secondStillReportsTheTimeout: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A mutant whose first run hangs and whose confirmation finishes is classified by its tests, not timed out',
+      Gherkin.Do.pipe(
+        Given('a project whose mutated branch hangs only the first time a run reaches it')(
+          'workspace',
+          () => writeWorkspace('hangs-once').pipe(Effect.provide(filePorts)),
         ),
         When('a mutation run executes with a short time budget for each mutant')(
           'observation',
-          (s) => runAndClean(s.workspace),
+          (s) => runOnceAndClean(s.workspace),
         ),
-        Then(
-          'the run finishes, the never-settling mutant is recorded as timed out, its siblings keep their results, and the run does not end as an internal failure',
-        )((s, expect) => {
-          const verdict = verdictOf(s.observation.events)
-          const timeouts = s.observation.daemonMutants.filter((mutant) => mutant.status === 'Timeout')
-          const wallClockTimeouts = timeouts.filter((mutant) => mutant.statusReason === 'wall-clock-timeout')
-          const killed = s.observation.daemonMutants.filter((mutant) => mutant.status === 'Killed')
-          const verdictClass = Exit.isSuccess(s.observation.exit) ? s.observation.exit.value.verdict : undefined
-          return expect({
-            runCompleted: Exit.isSuccess(s.observation.exit),
-            verdictReached: verdict !== undefined,
-            internalErrorVerdict: verdictClass === 'InternalError',
-            wallClockTimeoutReported: wallClockTimeouts.length >= 1,
-            timeoutStreamed: timeoutStreamed(s.observation.events),
-            verdictCountsTimeout: (verdict?.counts.timeout ?? 0) >= 1,
-            siblingsStillClassified: killed.length >= 1,
-          }).toEqual({
-            runCompleted: true,
-            verdictReached: true,
-            internalErrorVerdict: false,
-            wallClockTimeoutReported: true,
-            timeoutStreamed: true,
-            verdictCountsTimeout: true,
-            siblingsStillClassified: true,
-          })
-        }),
+        Then('the run finishes, one attempt hung, and no mutant of the module is reported as timed out')(
+          (s, expect) => {
+            const { run, hangHappened } = s.observation
+            return expect({
+              runCompleted: Exit.isSuccess(run.exit),
+              internalError: verdictClassOf(run) === 'InternalError',
+              hangHappened,
+              mutantsReported: run.daemonMutants.length > 0,
+              timeouts: run.daemonMutants.filter((mutant) => mutant.status === 'Timeout').length,
+              timeoutStreamed: timeoutStreamed(run.events),
+            }).toEqual({
+              runCompleted: true,
+              internalError: false,
+              hangHappened: true,
+              mutantsReported: true,
+              timeouts: 0,
+              timeoutStreamed: false,
+            })
+          },
+        ),
       ),
     )
   })

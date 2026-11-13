@@ -28,6 +28,7 @@ import {
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import type { CheckerCrash } from '../Checker/Checker.handle.js'
+import type { TimeoutEvidence } from '../IncrementalDiff.schema.js'
 import { checkOnlyCostOf, decidedWithoutATest } from '../mutant-cost.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import {
@@ -344,6 +345,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
+    timeoutEvidence: yield* Ref.make<Readonly<Record<string, TimeoutEvidence>>>(reuse.timeoutEvidenceByMutantId),
   }
   const settledResults = [
     ...rememberedResults,
@@ -426,7 +428,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev: basis, env, results: allResults, rememberedMutantIds: context.rememberedMutantIds }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,
-    timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
+    timeoutEvidenceByMutantId: yield* Ref.get(context.timeoutEvidence),
     ...optionalField('programDigest', reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)
