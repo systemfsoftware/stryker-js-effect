@@ -83,11 +83,7 @@ const TsConfigText = S.String.pipe(
   S.decodeTo(
     TsConfigDocumentSchema,
     SchemaTransformation.transformEffect({
-      decode: (jsonText: string) =>
-        Result.match(decodeText(jsonText), {
-          onFailure: (issue) => Effect.fail(issue),
-          onSuccess: (document) => Effect.succeed(document),
-        }),
+      decode: (jsonText: string) => Effect.fromResult(decodeText(jsonText)),
       encode: (document: TsConfigDocument) => Effect.succeed(JSON.stringify(document)),
     }),
   ),

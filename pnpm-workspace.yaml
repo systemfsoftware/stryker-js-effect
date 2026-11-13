@@ -10,11 +10,11 @@ catalog:
   "@commitlint/cli": ^21
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
-  "@effect/tsgo": ^0.63.0
-  "@effect/platform-node": ^4.1.0
-  "@effect/platform-node-shared": ^4.1.0
-  "@effect/vitest": ^4.1.0
-  "@effect/opentelemetry": ^4.1.0
+  "@effect/tsgo": ^0.64.1
+  "@effect/platform-node": ^4.1.2
+  "@effect/platform-node-shared": ^4.1.2
+  "@effect/vitest": ^4.1.2
+  "@effect/opentelemetry": ^4.1.2
   "@eslint-community/regexpp": ^4.12.2
   angular-html-parser: ~10.12.0
   "@microsoft/api-extractor": ^7
@@ -53,7 +53,7 @@ catalog:
   "@vitest/browser-playwright": ^5
   "@vitest/coverage-v8": ^5
   fast-check: ^4
-  effect: ^4.1.0
+  effect: ^4.1.2
   husky: ^9
   lint-staged: ^17
   microsandbox: 0.7.2
@@ -77,9 +77,6 @@ catalogs:
     mutation-testing-elements: 3.9.0
     mutation-testing-report-schema: 3.9.0
 overrides:
-  "@effect/opentelemetry": "catalog:"
-  "@effect/platform-node": "catalog:"
-  "@effect/platform-node-shared": "catalog:"
   "@effect/tsgo": "catalog:"
   # Every package this repository releases resolves to the tarball of the release
   # pinned by the `stryker-published` flake input, wherever it appears outside
