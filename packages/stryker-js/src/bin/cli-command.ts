@@ -100,7 +100,7 @@ const runOptions = {
   since: Flag.String('since')
     .pipe(
       Flag.withDescription(
-        'Scope the run to the lines changed since a git ref. Stryker resolves the merge base, diffs the working tree at `--unified=0`, and intersects the changed lines with the configured `mutate` globs. Falls back to a full run when the Stryker config, a test-runner config, `package.json`, or the lockfile changed.',
+        'Scope the run to the lines changed since a git ref. Stryker resolves the merge base, diffs the working tree at `--unified=0`, and intersects the changed lines with the configured `mutate` globs. Falls back to a full run when the Stryker config, a test-runner config, `package.json`, or the lockfile changed in the project or one of its ancestor directories.',
       ),
       optional,
     ),

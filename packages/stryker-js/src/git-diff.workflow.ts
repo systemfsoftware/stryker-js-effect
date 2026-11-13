@@ -53,10 +53,26 @@ const testRunnerConfigPoisonOf = (file: string): Option.Option<string> =>
     onFalse: () => Option.none(),
   })
 
+/**
+ * Hunk paths are relative to the project. A file in the project or in one of its ancestor
+ * directories (the workspace root's lockfile and manifest) governs how the project's tests
+ * run; a file under another directory, such as a sibling package's manifest, does not.
+ */
+const isClimb = (segment: string): boolean => segment === '..'
+
+const governsProject = (file: string): boolean => {
+  const directories = file.replace(/\\/g, '/').split('/').slice(0, -1)
+  const climbs = Arr.takeWhile(directories, isClimb).length
+  return climbs * (directories.length - climbs) === 0
+}
+
 const poisonReasonOf = (file: string): Option.Option<string> =>
-  Option.orElse(
-    lockfilePoisonOf(file),
-    () => Option.orElse(strykerConfigPoisonOf(file), () => testRunnerConfigPoisonOf(file)),
+  Option.filter(
+    Option.orElse(
+      lockfilePoisonOf(file),
+      () => Option.orElse(strykerConfigPoisonOf(file), () => testRunnerConfigPoisonOf(file)),
+    ),
+    () => governsProject(file),
   )
 
 const changedFilesOf = (command: DiffScopeCommand): ReadonlyArray<string> => [
