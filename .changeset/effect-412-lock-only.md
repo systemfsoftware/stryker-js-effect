@@ -15,4 +15,4 @@
 "@systemfsoftware/stryker-js-svelte": none
 ---
 
-The lockfile resolves effect and the @effect packages at 4.1.4 instead of 4.1.0. Every manifest keeps its ^4.1.0 range, so what a consumer installs is unchanged.
+The workspace pins effect and the @effect packages at 4.1.2 instead of 4.1.0. 4.1.3 and 4.1.4 deadlock the checker RPC conformance scenarios. Every manifest keeps its ^4.1.0 range, so what a consumer installs is unchanged.
