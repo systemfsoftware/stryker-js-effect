@@ -1,5 +1,23 @@
 # @systemfsoftware/stryker-js
 
+## 21.0.0
+
+A wall-clock expiry no longer scores a mutant as a detected Timeout on its own. When a mutant's run outlasts its deadline, the worker is replaced as before and the mutant runs once more in the same run, on the fresh worker, under twice the deadline. It is reported Timeout (`wall-clock-timeout`) only if that run expires too; otherwise it gets the verdict its tests give. If the fresh worker never starts the run, the mutant is a RuntimeError, not a Timeout. A hit-limit Timeout is unchanged.
+
+Breaking: mutants that a slow run used to push over the deadline now report Survived or Killed, so mutation scores can drop. A confirmed Timeout is reused by the next incremental run instead of being refused as `timeoutUnreproduced`, and its recorded cost covers both attempts.
+
+The repository's own mutation and test tooling now installs the v20.0.0 release tarballs; the published code and the dependencies a consumer installs are unchanged.
+
+Every `Mutant` now carries a required `probeEligibility`: `Probed { kind }` when a dry run could compute the mutant's value from operands the original code already evaluates (`arithmetic`, `relational`, `unary` or `constant`), otherwise `Unprobed { reason }`. A mutant decoded or constructed without the field reads `Unprobed` with reason `not-decided`. The `Mutant` namespace exports the new schemas.
+
+The instrumenter marks `Probed` the `-`, `*`, `/` and `%` arithmetic swaps, swaps of a `<`, `<=`, `>` or `>=` comparison, `+x`/`-x` sign flips, and `true`/`false` replacements of a comparison between two literals. Nothing reads the field yet: mutant statuses and the tests each mutant runs are unchanged.
+
+Migration: code that builds a `Mutant` object literal must set `probeEligibility`.
+
+`stryker plan --since <ref>` plans only the mutants on lines changed since a ref, recording scope `Unscoped`, `DiffScoped` (merge base, HEAD, file digest) or `FullScope`. `run --plan --shard` runs those mutants, exiting 2 at another HEAD, when a scheduled file changes, or a scheduled mutant is undiscoverable (a config edit), naming the plan and the missing ids; the plan file and unrelated edits never matter. `run --plan <file>` without `--shard` exits 2 naming `--shard` and the next action. Undecodable plans, unknown refs and failed git commands exit 2, naming `plan-undecodable` and next `stryker plan --since <base>`. `GitDiff` gains `head`, `toplevel` and `sourceDigest`; `changedSince` returns `hunks[].file` and `untrackedFiles` relative to the requested directory; `GitDiff.layer` requires `ChildProcessSpawner` and `Path.Path`; `GitDiffSchema` adds `PlannedDiff`.
+
+Runs now plant AtomicUpdateSplit, SynchronizationRemoval and FinalizerEscape by default, so scores and the mutant set change. Naming one of them in mutator.optInMutations refuses the run as a config failure (default-tier mutator); remove it from that list, or move it to mutator.excludedMutations to keep it off. Their replacements use Effect 4 APIs and the peer range is effect ^4.0.0, so a repository on Effect 3 must list the three in mutator.excludedMutations.
+
 ## 20.0.0
 
 Refuse dry-run coverage recorded under another project root. Coverage now records the project root as the run spells it, the spelling mutant ids are computed from, and a run reuses it only under that same root: coverage from another root, including the same directory reached through a symlink, is refused with the new reason rootChanged, and coverage that records no root is refused once with rootUnrecorded. Either refusal runs a full dry run that records the current root, and its log line names the roots and the next action. Among several restored reports, only coverage recorded under the current root is reused, and only its flaky mutants force a dry run. `plan` prices from that coverage only when the run reuses it; otherwise it estimates from the first report recorded under the current root. Coverage is shared across machines only when they run from the same absolute workspace path.
