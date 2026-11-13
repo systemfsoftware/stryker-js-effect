@@ -29,6 +29,6 @@ export class GuestJobs
   static readonly GUEST_MEMORY_MIB = 4096
   static readonly GUEST_WORKROOT = '/work'
   static readonly GUEST_BAKED_ROOT = '/baked'
-  static readonly GUEST_PACKS_ROOT = '/packs'
+  static readonly GUEST_STRYKER_ROOT = '/stryker'
   static readonly STDERR_TAIL_CHARS = 4000
 }

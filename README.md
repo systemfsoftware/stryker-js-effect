@@ -9,8 +9,7 @@
 Stryker introduces synthetic bugs (mutants) into source code to verify whether test suites catch behavioral regressions or merely pad line coverage metrics.
 
 ```bash
-pnpm add -D @systemfsoftware/stryker-js
-pnpm exec stryker run
+nix run github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -- run
 ```
 
 The default `vm` runner loads your suites through your project's `vitest`, so `vitest` must be installed next to your tests.
@@ -291,7 +290,7 @@ Stryker returns distinct exit codes to allow CI pipelines and AI coding agents t
 A piped `stdout` is human output, exactly like a terminal. Machine consumers ask for the stream explicitly with `--json` (or `STRYKER_MODE=machine`):
 
 ```console
-$ pnpm exec stryker run --json
+$ stryker run --json
 {"_tag":"stream","schemaVersion":"9.0","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag"}
 {"_tag":"phase","phase":"prepare","elapsedMs":115}
 {"_tag":"plan","total":7,"shardPlan":null}

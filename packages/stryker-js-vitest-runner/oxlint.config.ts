@@ -2,6 +2,7 @@ import recommended from '@systemfsoftware/oxlint-config-recommended'
 import { defineConfig } from 'oxlint'
 
 const userProjectSetupFile = 'sandbox/stryker-setup.ts'
+const moduleHookBootstrap = 'src/main.ts'
 
 export default defineConfig({
   extends: [recommended],
@@ -13,6 +14,13 @@ export default defineConfig({
     'no-restricted-globals': ['error', { name: 'process', message: 'use @effect/platform instead' }],
   },
   overrides: [
+    {
+      files: [moduleHookBootstrap],
+      rules: {
+        'no-restricted-imports': 'off',
+        '@systemfsoftware/effect-platform/entrypoint-interprets-once': 'off',
+      },
+    },
     {
       files: [userProjectSetupFile],
       rules: {

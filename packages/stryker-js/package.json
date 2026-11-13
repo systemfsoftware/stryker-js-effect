@@ -16,9 +16,6 @@
     "dist",
     "CHANGELOG.md"
   ],
-  "bin": {
-    "stryker": "./dist/main.mjs"
-  },
   "scripts": {
     "clean": "rimraf dist",
     "build": "pnpm run typecheck && tsdown",

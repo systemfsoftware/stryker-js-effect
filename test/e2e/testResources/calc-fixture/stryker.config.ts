@@ -5,4 +5,8 @@ export default defineConfig({
   testFiles: ['src/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
   reporters: ['json'],
+  ignorers: [
+    '@systemfsoftware/stryker-ignorer-effect-schema-declarations',
+    '@systemfsoftware/stryker-ignorer-in-source-vitest-block',
+  ],
 })

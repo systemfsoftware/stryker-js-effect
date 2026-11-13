@@ -22,6 +22,12 @@
     # `repo-checks`. Only that package references this input, so building
     # any other package never fetches it.
     systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
+    # The producers of the e2e harness's microVM packages, at their release commits:
+    # `@systemfsoftware/effect-cell-types` 12.1.3 (systemfsoftware, as `core`),
+    # `@systemfsoftware/effect-microsandbox` 6.1.0 and `@systemfsoftware/effect-readiness` 1.1.2.
+    core.url = "github:systemfsoftware/systemfsoftware/3ef6c21c36f19a539078b6817b495df3039cc163";
+    effect-microvm.url = "github:systemfsoftware/effect-microvm/6242c4c039c0203b5749e12f0af013e895407f2f";
+    effect-readiness.url = "github:systemfsoftware/effect-readiness/6e094361a2f7a706a2191bab83036ebf107d6ffc";
     # One `pnpm pack` tarball per workspace package, built offline from the
     # lockfile by the same builder systemfsoftware uses.
     pnpm-release-management = {
@@ -37,7 +43,7 @@
     stryker-published.url = "github:systemfsoftware/stryker-js-effect/b11828050b15d23bdbfb78c11bfe294956914272";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published, core, effect-microvm, effect-readiness }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -45,7 +51,7 @@
       # The tarballs of the latest release, as `<attr>.tgz` under `.deps/`.
       producerTarballsOf = pkgs: pnpm-release-management.lib.mkProducerTarballs {
         inherit pkgs;
-        producers = { inherit stryker-published; };
+        producers = { inherit stryker-published core effect-microvm effect-readiness; };
       };
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
@@ -69,6 +75,12 @@
           own = {
             inherit dprint;
             stryker-published = producerTarballsOf pkgs;
+            stryker = pkgs.callPackage ./nix/stryker.nix {
+              inherit (importPnpmLock.legacyPackages.${pkgs.stdenv.hostPlatform.system}) iplConfigHook;
+              inherit (workspace) mitmCache;
+              src = self;
+              deps = producerTarballsOf pkgs;
+            };
             deno = pkgs.deno;
             comment-checker = sandboxed;
             comment-checker-unwrapped = unwrapped;

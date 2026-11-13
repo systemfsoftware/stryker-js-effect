@@ -16,6 +16,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 
+const PACKAGE_MODULES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
+
 const Feature = makeFeature({ it })
 
 const PHASE = 'instrument'
@@ -67,6 +69,7 @@ const writeProject = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-instrument-phase-' }))
+    yield* fs.symlink(PACKAGE_MODULES, path.join(root, 'node_modules'))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.makeDirectory(path.join(root, 'test'), { recursive: true })
     yield* fs.writeFileString(path.join(root, 'src/math.ts'), SOURCE)
