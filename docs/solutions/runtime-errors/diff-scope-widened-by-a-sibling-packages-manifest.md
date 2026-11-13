@@ -10,7 +10,7 @@ applies_when:
   - "Changing which changed files widen `run --since` or `plan --since` to a full scope"
   - "Running diff-scoped mutation on one package of a monorepo"
 symptoms:
-  - "`stryker plan --since <ref>` in a monorepo package records `FullScope` with a reason naming another package's file, such as `manifest or lockfile changed: ../../infra/deploy-environments/package.json`"
+  - "`stryker plan --since <ref>` in a monorepo package records `FullScope` with a reason naming another package's file, such as `manifest or lockfile changed: ../../<another package>/package.json`"
 root_cause: logic_error
 resolution_type: code_fix
 tags: [diff-scope, plan-since, run-since, monorepo, git-diff]
@@ -20,10 +20,10 @@ tags: [diff-scope, plan-since, run-since, monorepo, git-diff]
 
 ## Problem
 
-The run was `stryker plan --since bef4c1059f` in younna-ai `packages/billing`.
+`stryker plan --since <ref>` ran in one package of an external pnpm monorepo.
 It planned all 823 mutants as `FullScope`. The recorded reason named
-`../../infra/deploy-environments/package.json`, a file billing neither reads
-nor depends on.
+`../../<another package>/package.json`, a file the package neither reads nor
+depends on.
 
 ## Cause
 
