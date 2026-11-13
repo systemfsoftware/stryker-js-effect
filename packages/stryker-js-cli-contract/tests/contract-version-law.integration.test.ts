@@ -200,6 +200,8 @@ const isMissingTree = (repositoryRoot: string, tree: string) =>
     return yield* Effect.die(new Error(`git ${args.join(' ')} exited ${probed.exitCode}: ${probed.stderr}`))
   })
 
+// GitHub serves a want only for a commit tip, not for a tree hash (`bad revision`), so the missing trees
+// come from one refetch of the base commit; the fixture origin allows any want, which hid that.
 const prefetchFirstParentTrees = (repositoryRoot: string, mainBase: string) =>
   Effect.gen(function*() {
     const trees = (yield* gitOutput(repositoryRoot, ['log', '--first-parent', '--format=%T', mainBase]))
@@ -212,8 +214,9 @@ const prefetchFirstParentTrees = (repositoryRoot: string, mainBase: string) =>
         '--no-tags',
         '--no-write-fetch-head',
         '--filter=blob:none',
+        '--refetch',
         'origin',
-        ...trees,
+        mainBase,
       ])
     }
   })
