@@ -58,7 +58,7 @@ the same command exits 0 and plans 987 mutants across 5 shards.
 
 Both plan jobs now build every mutated project with the same turbo filter the
 build and shard jobs use, before they load any config. A cold build of the five
-corpus projects took 21 s on the workstation.
+corpus projects took 21 s.
 
 ## Rule
 
