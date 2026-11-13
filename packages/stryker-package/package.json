@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-package",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "What the flake's stryker package installs: the CLI and the plugins it ships, deployed together",
   "license": "Apache-2.0",
   "repository": {
