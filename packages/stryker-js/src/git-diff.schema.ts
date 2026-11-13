@@ -17,6 +17,7 @@ export type DiffHunk = typeof DiffHunk.Type
 export const GitDiffResult = S.Struct({
   ref: S.String,
   base: S.String,
+  head: S.String,
   hunks: S.Array(DiffHunk),
   untrackedFiles: S.Array(S.String),
 })
@@ -29,6 +30,8 @@ export class GitRefUnresolved
     detail: S.String,
   })
 {
+  readonly exitClass = 'ConfigError' as const
+
   override get message(): string {
     return `Cannot resolve git ref "${this.ref}": ${this.detail}`
   }
@@ -38,8 +41,11 @@ export class GitCommandFailed
   extends S.TaggedError<GitCommandFailed, { readonly brand: unique symbol }>()('GitCommandFailed', {
     command: S.String,
     detail: S.String,
+    cause: S.optional(S.Unknown),
   })
 {
+  readonly exitClass = 'ConfigError' as const
+
   override get message(): string {
     return `git ${this.command} failed: ${this.detail}`
   }
@@ -70,3 +76,16 @@ export class FullScope extends S.TaggedClass<FullScope, { readonly brand: unique
 
 export const DiffScopeDecision = S.Union([DiffScoped, FullScope])
 export type DiffScopeDecision = typeof DiffScopeDecision.Type
+
+export const WholeProject = S.TaggedStruct('WholeProject', {})
+
+export const ChangedSince = S.TaggedStruct('ChangedSince', { diff: GitDiffResult })
+
+export const PlannedDiff = S.Union([WholeProject, ChangedSince])
+export type PlannedDiff = typeof PlannedDiff.Type
+
+export interface StageInput {
+  readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedDiff?: PlannedDiff | undefined
+  readonly plannedMutantsFile?: string | undefined
+}

@@ -26,6 +26,8 @@ export type ProjectFiles = ReadonlyArray<readonly [string, string]>
 
 export interface CliOutcome {
   readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
   readonly output: string
 }
 
@@ -119,9 +121,14 @@ export const copyProject = (
     return to
   })
 
-const CLI_ENV = { STRYKER_MODE: 'machine', NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' }
+const cliEnv = (mode: 'human' | 'machine'): Record<string, string> => ({
+  STRYKER_MODE: mode,
+  NO_COLOR: '1',
+  GITHUB_ACTIONS: '',
+  ALLOW_LOCAL_MUTATION: '1',
+})
 
-const startCli = (cli: string, root: string, args: ReadonlyArray<string>) =>
+const startCli = (cli: string, root: string, args: ReadonlyArray<string>, mode: 'human' | 'machine') =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const present = yield* Effect.orDie(fs.exists(cli))
@@ -133,7 +140,7 @@ const startCli = (cli: string, root: string, args: ReadonlyArray<string>) =>
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: 'pipe',
-        env: CLI_ENV,
+        env: cliEnv(mode),
         extendEnv: true,
       }),
     )
@@ -143,22 +150,27 @@ export interface CliRun {
   readonly root: string
   readonly args: ReadonlyArray<string>
   readonly cli?: string
+  readonly mode?: 'human' | 'machine'
 }
 
-export const runCli = ({ root, args, cli = BUILT_CLI }: CliRun): Effect.Effect<
+export const runCli = ({ root, args, cli = BUILT_CLI, mode = 'machine' }: CliRun): Effect.Effect<
   CliOutcome,
   never,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
   Effect.scoped(
     Effect.gen(function*() {
-      const handle = yield* startCli(cli, root, args)
+      const handle = yield* startCli(cli, root, args, mode)
       const stdout = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
       const stderr = yield* Effect.forkScoped(handle.stderr.pipe(Stream.decodeText, Stream.mkString))
       const exitCode = yield* handle.exitCode
+      const out = yield* Fiber.join(stdout)
+      const err = yield* Fiber.join(stderr)
       return {
         exitCode: Number(exitCode),
-        output: `${yield* Fiber.join(stdout)}\n${yield* Fiber.join(stderr)}`,
+        stdout: out,
+        stderr: err,
+        output: `${out}\n${err}`,
       }
     }),
   ).pipe(Effect.orDie)
@@ -167,14 +179,14 @@ const decodeEvent = S.decodeOption(S.fromJsonString(RunEvent.RunEvent))
 
 const isMutantEvent = (line: string): boolean => Option.exists(decodeEvent(line), S.is(RunEvent.RunMutantTested))
 
-export const runCliKilledAtFirstMutant = ({ root, args }: Omit<CliRun, 'cli'>): Effect.Effect<
+export const runCliKilledAtFirstMutant = ({ root, args, mode = 'machine' }: Omit<CliRun, 'cli'>): Effect.Effect<
   boolean,
   never,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > =>
   Effect.scoped(
     Effect.gen(function*() {
-      const handle = yield* startCli(BUILT_CLI, root, args)
+      const handle = yield* startCli(BUILT_CLI, root, args, mode)
       yield* Effect.forkScoped(handle.stderr.pipe(Stream.runDrain))
       const sawMutant = yield* handle.stdout.pipe(
         Stream.decodeText,

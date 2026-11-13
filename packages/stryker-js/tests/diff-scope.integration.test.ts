@@ -1,21 +1,30 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Cause from 'effect/Cause'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
+import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
 
 const Feature = makeFeature({ it })
 
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const COMMITTER = committerArgs(CONTRACT_GIT_IDENTITY)
+
+const TARGET_FILE = 'src/target.ts'
+const OTHER_FILE = 'src/other.ts'
+const CONFIG_FILE = 'stryker.config.mjs'
+const MANIFEST_FILE = 'package.json'
+const IGNORE_FILE = '.gitignore'
+const REPORT_FILE = 'reports/mutation.json'
+const UNKNOWN_REF = 'no-such-ref'
+const METACHARACTER_REF = '"; touch pwned #'
+const PWNED_FILE = 'pwned'
 
 const TARGET_SOURCE = [
   'export const target = (value: number): number => {',
@@ -25,6 +34,8 @@ const TARGET_SOURCE = [
   '',
 ].join('\n')
 
+const CHANGED_TARGET_SOURCE = TARGET_SOURCE.replace('return doubled + 1', 'return doubled + 2')
+
 const OTHER_SOURCE = [
   'export const other = (value: number): number => {',
   '  const tripled = value * 3',
@@ -33,41 +44,88 @@ const OTHER_SOURCE = [
   '',
 ].join('\n')
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
-  resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
-  runStartedAt: 0,
-  basePath: directory,
-  builtinReporters: {},
-  allowConsoleColors: false,
-})
+const MANIFEST_SOURCE = '{ "name": "diff-scope-consumer", "type": "module", "private": true }\n'
 
-interface Observation {
-  readonly scope: string | undefined
-  readonly mutatedFiles: readonly string[]
-  readonly mutantLines: readonly number[]
-  readonly failure: { readonly stage: string; readonly exitClass: string; readonly namesRef: boolean } | undefined
-  readonly refsSeen: readonly string[]
+const CONFIG_SOURCE = `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'true' },
+  mutate: ['src/**/*.ts'],
+  coverageAnalysis: 'off',
+  checkers: [],
+  reporters: ['json'],
+  jsonReporter: { fileName: '${REPORT_FILE}' },
+  thresholds: { high: 100, low: 80, break: 0 },
+  cleanTempDir: 'always',
+}
+`
+
+const CHANGED_CONFIG_SOURCE = `${CONFIG_SOURCE}\n// the developer edits the Stryker configuration\n`
+
+const BASE_FILES: ReadonlyArray<readonly [string, string]> = [
+  [MANIFEST_FILE, MANIFEST_SOURCE],
+  [IGNORE_FILE, 'reports/\n'],
+  [CONFIG_FILE, CONFIG_SOURCE],
+  [TARGET_FILE, TARGET_SOURCE],
+  [OTHER_FILE, OTHER_SOURCE],
+]
+
+interface Repo {
+  readonly root: string
+  readonly base: string
 }
 
-const writeFixture = (
-  files: ReadonlyArray<readonly [string, string]>,
-): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+const writeRepoFile = (
+  root: string,
+  file: string,
+  content: string,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> => writeFile(root, file, content)
+
+const commitAll = (
+  root: string,
+  message: string,
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.gen(function*() {
+    yield* execGit(root, [...COMMITTER, 'add', '-A'])
+    yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', message])
+  })
+
+const prepareRepo = (): Effect.Effect<
+  Repo,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-diff-scope-' }))
+    yield* Effect.forEach(BASE_FILES, ([file, content]) => writeRepoFile(root, file, content), { discard: true })
+    yield* execGit(root, ['init', '-q'])
+    yield* commitAll(root, 'base')
+    const base = yield* gitOutput(root, ['rev-parse', 'HEAD'])
+    return { root, base }
+  }).pipe(Effect.orDie)
+
+const runSince = (
+  root: string,
+  ref: string,
+  mode: 'human' | 'machine',
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--since', ref], mode })
+
+const planSince = (
+  root: string,
+  ref: string,
+  mode: 'human' | 'machine',
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['plan', '--target-seconds', '1', '--out', 'plan.json', '--since', ref], mode })
+
+const fileExists = (
+  root: string,
+  file: string,
+): Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
-    yield* Effect.forEach(
-      files,
-      ([file, content]) =>
-        Effect.gen(function*() {
-          const target = path.join(root, file)
-          yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-          yield* fs.writeFileString(target, content)
-        }),
-      { discard: true },
-    )
-    return root
+    return yield* fs.exists(path.join(root, file))
   }).pipe(Effect.orDie)
 
 const mutatedFilesOf = (report: Report.MutationTestResult): readonly string[] =>
@@ -81,111 +139,71 @@ const mutantLinesOf = (report: Report.MutationTestResult): readonly number[] =>
     .flatMap((file) => file.mutants.map((mutant) => mutant.location.start.line))
     .sort((left, right) => left - right)
 
-const runProject = (
-  files: ReadonlyArray<readonly [string, string]>,
-  since: string,
-  gitOutcome: (ref: string) => Effect.Effect<GitDiffSchema.GitDiffResult, GitDiffSchema.GitDiffError>,
-): Effect.Effect<Observation, never, never> =>
+const verdictOf = (stdout: string): Option.Option<RunEvent.VerdictReached> =>
+  Option.firstSomeOf(
+    stdout.split('\n').map((line) =>
+      line.trimStart().startsWith('{')
+        ? S.decodeOption(S.fromJsonString(RunEvent.VerdictReached))(line.trim())
+        : Option.none()
+    ),
+  )
+
+interface RunObservation {
+  readonly exitCode: number
+  readonly scope: string | undefined
+  readonly mutatedFiles: readonly string[]
+  readonly mutantLines: readonly number[]
+}
+
+const observeRun = (
+  root: string,
+  ran: CliOutcome,
+): Effect.Effect<RunObservation, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const root = yield* writeFixture(files)
-    return yield* Effect.ensuring(
-      Effect.gen(function*() {
-        const refsSeen: string[] = []
-        const fakeGit = Layer.succeed(GitDiff.GitDiff, {
-          changedSince: (input: GitDiff.GitDiffInput) =>
-            Effect.gen(function*() {
-              refsSeen.push(input.ref)
-              return yield* gitOutcome(input.ref)
-            }),
-        })
-        const ports = Layer.mergeAll(Engine.nodePlatformLayer, fakeGit)
-        const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-        const runLayer = Layer.merge(
-          Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(root), queue), ports),
-          ports,
-        )
-        const options: Options.PartialStrykerOptions = {
-          testRunner: 'command',
-          commandRunner: { command: 'true' },
-          coverageAnalysis: 'off',
-          reporters: ['json'],
-          jsonReporter: { fileName: path.join(root, 'reports', 'mutation.json') },
-          mutate: ['src/**/*.ts'],
-          checkers: [],
-          cleanTempDir: 'always',
-          since,
-        }
-        const exit = yield* Engine.mutationTestCell
-          .run({ cliOptions: options, targetMutatePatterns: undefined })
-          .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
-        const events = [
-          ...(yield* Queue.end(queue).pipe(
-            Effect.andThen(Queue.takeAll(queue)),
-            Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
-          )),
-        ]
-        const reportText = yield* fs.readFileString(path.join(root, 'reports', 'mutation.json')).pipe(
-          Effect.orElseSucceed(() => ''),
-        )
-        const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(reportText).pipe(
-          Effect.orElseSucceed(() => undefined),
-        )
-        const verdict = events.find(S.is(RunEvent.VerdictReached))
-        const failure = Exit.match(exit, {
-          onFailure: (cause) =>
-            Option.match(Cause.findErrorOption(cause), {
-              onNone: () => undefined,
-              onSome: (stageError) => ({
-                stage: stageError.stage,
-                exitClass: stageError.exitClass,
-                namesRef: S.is(GitDiffSchema.GitRefUnresolved)(stageError.cause),
-              }),
-            }),
-          onSuccess: () => undefined,
-        })
-        return {
-          scope: verdict?.scope,
-          mutatedFiles: report === undefined ? [] : mutatedFilesOf(report),
-          mutantLines: report === undefined ? [] : mutantLinesOf(report),
-          failure,
-          refsSeen,
-        }
-      }),
-      Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true }))),
-    )
-  }).pipe(Effect.provide(filePorts))
+    const reportText = yield* fs.readFileString(path.join(root, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
+    const report = Option.getOrUndefined(S.decodeOption(S.fromJsonString(Report.MutationTestResult))(reportText))
+    return {
+      exitCode: ran.exitCode,
+      scope: Option.match(verdictOf(ran.stdout), { onNone: () => undefined, onSome: (verdict) => verdict.scope }),
+      mutatedFiles: report === undefined ? [] : mutatedFilesOf(report),
+      mutantLines: report === undefined ? [] : mutantLinesOf(report),
+    }
+  }).pipe(Effect.orDie)
 
-const diffHunk = (file: string): GitDiffSchema.GitDiffResult => ({
-  ref: 'HEAD~1',
-  base: 'base-sha',
-  hunks: [{ file, startLine: 3, lineCount: 1 }],
-  untrackedFiles: [],
-})
-
-Feature('Scoping a mutation run to the changed lines since a git ref')
-  .withLayer(Layer.empty)
-  .live('the scenarios drive the real engine with a fake git service, so no git process is spawned')
+Feature('Scoping a mutation run to the changed lines since a git ref', { timeout: 180_000 })
+  .withLayer(Engine.nodePlatformLayer)
+  .live('the built stryker binary diffs a real temporary git repository and mutates only the changed lines')
   .body(({ scenario }) => {
     scenario(
       'A diff-scoped run mutates only the changed line of the changed file',
       Gherkin.Do.pipe(
-        Given('a project whose git diff changes line 3 of the target file only')(
-          'observation',
+        Given('a repository whose target line changed since its base commit')(
+          'repo',
           () =>
-            runProject(
-              [['src/target.ts', TARGET_SOURCE], ['src/other.ts', OTHER_SOURCE]],
-              'HEAD~1',
-              () => Effect.succeed(diffHunk('src/target.ts')),
-            ),
+            Effect.gen(function*() {
+              const repo = yield* prepareRepo()
+              yield* writeRepoFile(repo.root, TARGET_FILE, CHANGED_TARGET_SOURCE)
+              yield* commitAll(repo.root, 'change the target line')
+              return repo
+            }),
+        ),
+        When('the run is scoped to the base commit')(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const ran = yield* runSince(s.repo.root, s.repo.base, 'machine')
+              return yield* observeRun(s.repo.root, ran)
+            }),
         ),
         Then('the verdict records the diff scope and only the target line carries mutants')((s, expect) =>
           expect({
+            exitCode: s.observation.exitCode,
             scope: s.observation.scope,
             mutatedFiles: s.observation.mutatedFiles,
             mutantLines: s.observation.mutantLines,
-          }).toEqual({ scope: 'diff', mutatedFiles: ['target.ts'], mutantLines: [3] })
+          }).toEqual({ exitCode: 0, scope: 'diff', mutatedFiles: ['target.ts'], mutantLines: [3] })
         ),
       ),
     )
@@ -193,59 +211,92 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
     scenario(
       'A changed Stryker configuration widens the run to the full scope',
       Gherkin.Do.pipe(
-        Given('a project whose git diff changes the Stryker configuration')(
-          'observation',
+        Given('a repository whose Stryker configuration changed since its base commit')(
+          'repo',
           () =>
-            runProject(
-              [['src/target.ts', TARGET_SOURCE], ['src/other.ts', OTHER_SOURCE], [
-                'stryker.config.mjs',
-                'export default {}\n',
-              ]],
-              'HEAD~1',
-              () => Effect.succeed(diffHunk('stryker.config.mjs')),
-            ),
+            Effect.gen(function*() {
+              const repo = yield* prepareRepo()
+              yield* writeRepoFile(repo.root, CONFIG_FILE, CHANGED_CONFIG_SOURCE)
+              yield* commitAll(repo.root, 'change the Stryker configuration')
+              return repo
+            }),
+        ),
+        When('the run is scoped to the base commit')(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const ran = yield* runSince(s.repo.root, s.repo.base, 'machine')
+              return yield* observeRun(s.repo.root, ran)
+            }),
         ),
         Then('the verdict records the full scope and both files carry mutants')((s, expect) =>
           expect({
+            exitCode: s.observation.exitCode,
             scope: s.observation.scope,
             mutatedFiles: s.observation.mutatedFiles,
-          }).toEqual({ scope: 'full', mutatedFiles: ['other.ts', 'target.ts'] })
+          }).toEqual({ exitCode: 0, scope: 'full', mutatedFiles: ['other.ts', 'target.ts'] })
         ),
       ),
     )
 
     scenario(
-      'An unknown ref fails the run with a named preparation error and exit class 2',
+      'An unknown ref fails the plan with a named configuration error and exit class 2',
       Gherkin.Do.pipe(
-        Given('a project whose git ref cannot be resolved')(
-          'observation',
-          () =>
-            runProject(
-              [['src/target.ts', TARGET_SOURCE]],
-              'not-a-ref',
-              (ref) => Effect.fail(GitDiffSchema.GitRefUnresolved.make({ ref, detail: 'unknown revision' })),
-            ),
+        Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
+        When('the plan is scoped to a ref the repository does not have')(
+          'ran',
+          (s) => planSince(s.repo.root, UNKNOWN_REF, 'human'),
         ),
-        Then('the run fails while preparing, naming the ref, with the configuration exit class')((s, expect) =>
-          expect(s.observation.failure).toEqual({ stage: 'prepare', exitClass: 'ConfigError', namesRef: true })
+        Then('the plan exits with the configuration class, naming the ref')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesRef: s.ran.stderr.includes(UNKNOWN_REF),
+            namesClass: s.ran.stderr.includes('exit 2 (ConfigError)'),
+          }).toEqual({ exitCode: 2, namesRef: true, namesClass: true })
         ),
       ),
     )
 
     scenario(
-      'A ref with shell metacharacters reaches the git service as one literal argument',
+      'An unknown ref fails the run for a person with the configuration class and writes no report',
       Gherkin.Do.pipe(
-        Given('a project run with a ref that would be dangerous through a shell')(
-          'observation',
-          () =>
-            runProject(
-              [['src/target.ts', TARGET_SOURCE]],
-              '"; touch pwned #',
-              () => Effect.succeed(diffHunk('src/target.ts')),
-            ),
+        Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
+        When('the run is scoped to a ref the repository does not have')(
+          'observed',
+          (s) =>
+            Effect.gen(function*() {
+              const ran = yield* runSince(s.repo.root, UNKNOWN_REF, 'human')
+              return { ran, reportExists: yield* fileExists(s.repo.root, REPORT_FILE) }
+            }),
         ),
-        Then('the git service receives that ref verbatim, never interpreted as a command')((s, expect) =>
-          expect(s.observation.refsSeen).toEqual(['"; touch pwned #'])
+        Then('the run exits with the configuration class and writes no report')((s, expect) =>
+          expect({
+            exitCode: s.observed.ran.exitCode,
+            namesClass: s.observed.ran.stderr.includes('exit 2 (ConfigError)'),
+            reportExists: s.observed.reportExists,
+          }).toEqual({ exitCode: 2, namesClass: true, reportExists: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A plan scoped to a ref with shell metacharacters reaches git as one literal argument',
+      Gherkin.Do.pipe(
+        Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
+        When('the plan is scoped to a ref that would be dangerous through a shell')(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const ran = yield* planSince(s.repo.root, METACHARACTER_REF, 'human')
+              return { ran, pwned: yield* fileExists(s.repo.root, PWNED_FILE) }
+            }),
+        ),
+        Then('git refuses the ref verbatim and no shell command ran')((s, expect) =>
+          expect({
+            exitCode: s.observation.ran.exitCode,
+            namesTheLiteralRef: s.observation.ran.stderr.includes(METACHARACTER_REF),
+            pwned: s.observation.pwned,
+          }).toEqual({ exitCode: 2, namesTheLiteralRef: true, pwned: false })
         ),
       ),
     )

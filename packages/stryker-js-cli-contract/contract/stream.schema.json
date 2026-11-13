@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "runId": {
@@ -153,7 +153,103 @@
                 "version": {
                   "type": "number",
                   "enum": [
-                    1
+                    2
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Unscoped"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "_tag"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "DiffScoped"
+                          ]
+                        },
+                        "base": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "head": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sources": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "base",
+                        "head",
+                        "sources",
+                        "files"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "FullScope"
+                          ]
+                        },
+                        "base": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "head": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sources": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "base",
+                        "head",
+                        "sources",
+                        "files",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
                   ]
                 },
                 "targetSeconds": {
@@ -240,6 +336,7 @@
               },
               "required": [
                 "version",
+                "scope",
                 "targetSeconds",
                 "shards",
                 "matrix"
@@ -390,7 +487,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "role": {
@@ -1219,7 +1316,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "runId": {
@@ -1625,7 +1722,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "code": {
@@ -1766,7 +1863,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "code": {
@@ -1803,7 +1900,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "9.0"
+            "10.0"
           ]
         },
         "rule": {

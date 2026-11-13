@@ -6,48 +6,14 @@ import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
-import * as Stream from 'effect/Stream'
+import { committerArgs, CONTRACT_GIT_IDENTITY, execGit, writeFile } from './__fixtures__/git-repo.fixture.js'
 
 const Feature = makeFeature({ it })
 
-const COMMITTER = ['-c', 'user.email=contract@test', '-c', 'user.name=contract'] as const
-
-const execGit = (
-  cwd: string,
-  args: ReadonlyArray<string>,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const handle = yield* ChildProcess.make('git', args, {
-      cwd,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
-    const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString)
-    const exitCode = Number(yield* handle.exitCode)
-    yield* Effect.when(
-      Effect.die(new Error(`git ${args.join(' ')} failed (${exitCode}): ${stderr}`)),
-      Effect.succeed(exitCode !== 0),
-    )
-  }).pipe(Effect.orDie)
-
-const writeFile = (
-  root: string,
-  file: string,
-  content: string,
-): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const target = path.join(root, file)
-    yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-    yield* fs.writeFileString(target, content)
-  }).pipe(Effect.orDie)
+const COMMITTER = committerArgs(CONTRACT_GIT_IDENTITY)
 
 const buildRepo = (): Effect.Effect<
   string,
@@ -83,6 +49,15 @@ const changedSince = (
   ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | GitDiff.GitDiff
 > => Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: root, ref }))
 
+const sourceDigest = (
+  root: string,
+  paths: ReadonlyArray<string>,
+): Effect.Effect<
+  string,
+  GitDiffSchema.GitCommandFailed,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | GitDiff.GitDiff
+> => Effect.flatMap(GitDiff.GitDiff, (git) => git.sourceDigest({ cwd: root, paths }))
+
 const removeRepo = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
 
@@ -97,37 +72,81 @@ Feature('Reading a repository diff since a git ref')
           'repo',
           () => buildRepo(),
         ),
-        When('the git-diff service reads the diff since HEAD')(
+        When('the git-diff service reads the diff since HEAD from the root and from src/')(
           'observation',
           (s) =>
             Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const real = yield* changedSince(s.repo, 'HEAD')
-              const fake = yield* Effect.provideService(
-                Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: '/repo', ref: 'HEAD' })),
-                GitDiff.GitDiff,
-                { changedSince: () => Effect.succeed(real) },
-              )
-              const pwned = yield* fs.exists(path.join(s.repo, 'pwned'))
-              return { real, fake, pwned }
+              const fromSrc = yield* changedSince(path.join(s.repo, 'src'), 'HEAD')
+              return { real, fromSrc }
             }).pipe(Effect.ensuring(removeRepo(s.repo))),
         ),
-        Then('the parsed hunks and untracked list are as expected, and the fake reproduces them')((s, expect) =>
-          expect({
-            real: s.observation.real,
-            fakeMatchesReal: s.observation.fake,
-          }).toEqual({
+        Then(
+          'hunks and untracked files read the same from the root and from src/, at the commit HEAD names',
+        )((s, expect) =>
+          expect({ real: s.observation.real, fromSrc: s.observation.fromSrc }).toEqual({
             real: {
-              ref: s.observation.real.ref,
-              base: s.observation.real.base,
+              ref: 'HEAD',
+              base: s.observation.real.head,
+              head: expect.stringMatching(/^[0-9a-f]{40}$/),
               hunks: [
                 { file: 'src/gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'src/kept.ts', startLine: 4, lineCount: 2 },
               ],
               untrackedFiles: ['src/new.ts'],
             },
-            fakeMatchesReal: s.observation.real,
+            fromSrc: {
+              ref: 'HEAD',
+              base: s.observation.real.base,
+              head: s.observation.real.head,
+              hunks: [
+                { file: 'gone.ts', startLine: 0, lineCount: 0 },
+                { file: 'kept.ts', startLine: 4, lineCount: 2 },
+              ],
+              untrackedFiles: ['new.ts'],
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'The source digest follows exactly the files it names',
+      Gherkin.Do.pipe(
+        Given('a temporary repository')('repo', () => buildRepo()),
+        When(
+          'the service digests the named file, after an unrelated edit, after a named edit, an absent path, and from src/',
+        )(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const path = yield* Path.Path
+              const named = yield* sourceDigest(s.repo, ['src/kept.ts'])
+              yield* writeFile(s.repo, 'src/new.ts', 'const unrelated = 2\n')
+              const afterUnrelated = yield* sourceDigest(s.repo, ['src/kept.ts'])
+              yield* writeFile(s.repo, 'src/kept.ts', 'const a = 1\n')
+              const afterNamed = yield* sourceDigest(s.repo, ['src/kept.ts'])
+              const absent = yield* sourceDigest(s.repo, ['src/absent.ts'])
+              const fromSrc = yield* sourceDigest(path.join(s.repo, 'src'), ['src/kept.ts'])
+              return { named, afterUnrelated, afterNamed, absent, fromSrc }
+            }).pipe(Effect.ensuring(removeRepo(s.repo))),
+        ),
+        Then(
+          'the digest is a sha256 that ignores the unrelated file, moves with the named file and reads the same from either directory',
+        )((s, expect) =>
+          expect({
+            isSha256: /^[0-9a-f]{64}$/.test(s.observation.named),
+            unrelatedEditLeavesDigest: s.observation.afterUnrelated === s.observation.named,
+            namedEditMovesDigest: s.observation.afterNamed !== s.observation.named,
+            absentDiffersFromNamed: s.observation.absent !== s.observation.named,
+            sameFromEitherDirectory: s.observation.fromSrc === s.observation.afterNamed,
+          }).toEqual({
+            isSha256: true,
+            unrelatedEditLeavesDigest: true,
+            namedEditMovesDigest: true,
+            absentDiffersFromNamed: true,
+            sameFromEitherDirectory: true,
           })
         ),
       ),

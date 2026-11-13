@@ -1,4 +1,5 @@
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -9,6 +10,7 @@ import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { classifyShardChildExit, ClassifyShardChildExitCommand } from './classify-shard-child-exit.workflow.js'
 import { selectShard, SelectShardCommand, type ShardUnknown } from './select-shard.workflow.js'
 import {
   settleShardChild,
@@ -69,10 +71,17 @@ const settlementOf = (exitCode: number): SettleShardChildDecision =>
 const subThresholdLine = (project: string): string =>
   `stryker shard: ${project} scored below thresholds.break over this shard's mutants; \`stryker gate\` judges the project's break over the merged report`
 
+const exitClassOf = (exitCode: number): Plugin.ExitClass =>
+  Result.getOrElse(
+    classifyShardChildExit(ClassifyShardChildExitCommand.make({ exitCode })),
+    (neverError) => neverError,
+  ).exitClass
+
 const missingStreamFailure = (project: string, exitCode: number, streamFile: string): ShardChildFailed =>
   ShardChildFailed.make({
     project,
     exitCode,
+    exitClass: exitClassOf(exitCode),
     childOutput: `the shard child completed without leaving its progress stream at ${streamFile}`,
   })
 
@@ -122,6 +131,7 @@ export const runShard = (
                 ShardChildFailed.make({
                   project: project.project,
                   exitCode,
+                  exitClass: exitClassOf(exitCode),
                   childOutput: stderr.slice(-STDERR_LIMIT),
                 }),
               )),
@@ -139,6 +149,7 @@ export const runShard = (
               ShardChildFailed.make({
                 project: project.project,
                 exitCode: -1,
+                exitClass: exitClassOf(-1),
                 childOutput: cause.message,
               }),
             )),

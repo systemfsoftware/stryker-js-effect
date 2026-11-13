@@ -104,6 +104,7 @@ export class CliPlanRequested
     projects: S.Array(S.String).pipe(S.optional),
     out: S.optional(S.String),
     full: S.Boolean,
+    since: S.optional(S.String),
   })
 {
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
@@ -147,6 +148,21 @@ export class CliMcpRequested
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
+export class RunPlanWithoutShardRefused
+  extends S.TaggedError<RunPlanWithoutShardRefused, { readonly brand: unique symbol }>()(
+    'RunPlanWithoutShardRefused',
+    {
+      plan: S.String,
+    },
+  )
+{
+  readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `\`stryker run --plan\` needs \`--shard k/N\` to run one shard of the plan at ${this.plan}; next: stryker run --plan ${this.plan} --shard k/N`
+  }
+}
+
 export type CliRouteDecision =
   | CliHelpRequested
   | CliMergeRequested
@@ -183,8 +199,8 @@ export const routeCliRequest = Workflow.make({
     CliFeedbackRequested,
     CliMcpRequested,
   ]),
-  error: S.Never,
-  decide: (command): Result.Result<CliRouteDecision, never> =>
+  error: RunPlanWithoutShardRefused,
+  decide: (command): Result.Result<CliRouteDecision, RunPlanWithoutShardRefused> =>
     Match.value(command.route).pipe(
       Match.tag('help', () => Result.succeed(CliHelpRequested.make({}))),
       Match.tag('merge', (merge) =>
@@ -213,6 +229,7 @@ export const routeCliRequest = Workflow.make({
             projects: plan.projects,
             out: plan.out,
             full: plan.full,
+            since: plan.since,
           }),
         )),
       Match.tag('audit', (audit) =>
@@ -239,28 +256,29 @@ export const routeCliRequest = Workflow.make({
         )),
       Match.tag('mcp', () => Result.succeed(CliMcpRequested.make({}))),
       Match.tag('run', (run) =>
-        Option.match(
-          Option.all([Option.fromUndefinedOr(run.plan), Option.fromUndefinedOr(run.shard)]),
-          {
-            onSome: ([plan, shard]) =>
-              Option.match(Option.fromUndefinedOr(run.project), {
-                onSome: (project) => Result.succeed(CliShardLeafRequested.make({ plan, shard, project })),
-                onNone: () => Result.succeed(CliShardRunRequested.make({ plan, shard, out: run.out })),
-              }),
-            onNone: () =>
-              Option.match(
-                Option.filter(Option.fromUndefinedOr(run.mutants), (ids) => ids.length > 0),
-                {
-                  onSome: (ids) => Result.succeed(CliRerunRequested.make({ ids: [...ids] })),
-                  onNone: () =>
-                    Boolean.match(run.survivors, {
-                      onTrue: () => Result.succeed(CliSurvivorsRequested.make({})),
-                      onFalse: () => Result.succeed(CliRunRequested.make({})),
-                    }),
-                },
-              ),
-          },
-        )),
+        Option.match(Option.fromUndefinedOr(run.plan), {
+          onSome: (plan) =>
+            Option.match(Option.fromUndefinedOr(run.shard), {
+              onSome: (shard) =>
+                Option.match(Option.fromUndefinedOr(run.project), {
+                  onSome: (project) => Result.succeed(CliShardLeafRequested.make({ plan, shard, project })),
+                  onNone: () => Result.succeed(CliShardRunRequested.make({ plan, shard, out: run.out })),
+                }),
+              onNone: () => Result.fail(RunPlanWithoutShardRefused.make({ plan })),
+            }),
+          onNone: () =>
+            Option.match(
+              Option.filter(Option.fromUndefinedOr(run.mutants), (ids) => ids.length > 0),
+              {
+                onSome: (ids) => Result.succeed(CliRerunRequested.make({ ids: [...ids] })),
+                onNone: () =>
+                  Boolean.match(run.survivors, {
+                    onTrue: () => Result.succeed(CliSurvivorsRequested.make({})),
+                    onFalse: () => Result.succeed(CliRunRequested.make({})),
+                  }),
+              },
+            ),
+        })),
       Match.exhaustive,
     ),
 })

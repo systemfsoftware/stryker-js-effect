@@ -56,6 +56,7 @@ import {
   type ProjectScore,
   ScoreBelowBreak,
 } from './gate-score-break.workflow.js'
+import { type GitDiffError, type PlannedDiff, WholeProject } from './git-diff.schema.js'
 import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
@@ -67,7 +68,7 @@ import {
   type MutantRerunSettlement,
   RerunRefused,
 } from './Rerun/mod.js'
-import { routeCliRequest } from './route-cli-request.workflow.js'
+import { routeCliRequest, RunPlanWithoutShardRefused } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
 import { readConfig } from './run/load-config.js'
@@ -75,10 +76,11 @@ import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
+import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
-import { loadShardPlan } from './shard/shard-plan.js'
+import { loadAdmittedPlan, loadShardPlan } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
@@ -118,6 +120,7 @@ export type CliFailure =
   | SchemaError
   | SurvivorsRejection
   | RerunRefused
+  | RunPlanWithoutShardRefused
   | ConfigFileNotFoundError
   | ConfigFileUnreadableError
   | ConfigFileInvalidError
@@ -134,6 +137,8 @@ export type CliFailure =
   | AuditInputUnusable
   | NothingCounted
   | ShardPlanInvalid
+  | AdmitPlanHeadError
+  | GitDiffError
   | ShardUnknown
   | PlanShardsRefused
   | ShardChildFailed
@@ -193,12 +198,14 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
   }
 })
 
-const runStage = (channel: CliRead) =>
+const runStage = (channel: CliRead, plannedDiff?: PlannedDiff, plannedMutantsFile?: string) =>
   Layer.build(RunEnvironment.layerStage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
         cliOptions: channel.options,
         targetMutatePatterns: undefined,
+        plannedDiff,
+        plannedMutantsFile,
       })
     ),
     Effect.orDie,
@@ -696,7 +703,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
         ),
       ),
     CliShardRunRequested: (shard, channel) =>
-      loadShardPlan(channel.environment.basePath, shard.plan).pipe(
+      loadAdmittedPlan(channel.environment.basePath, shard.plan).pipe(
         Effect.flatMap((loaded) =>
           runShard({
             plan: loaded.plan,
@@ -710,7 +717,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       ),
     CliShardLeafRequested: (leaf, channel) =>
       Effect.gen(function*() {
-        const loaded = yield* loadShardPlan(channel.environment.basePath, leaf.plan)
+        const loaded = yield* loadAdmittedPlan(channel.environment.basePath, leaf.plan)
         const selected = yield* Effect.fromResult(
           selectShard(SelectShardCommand.make({ plan: loaded.plan, shard: leaf.shard })),
         )
@@ -725,7 +732,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
           ),
         )
         const options = { ...channel.options, mutantIds: [...project.mutants] }
-        return yield* runStage({ ...channel, options })
+        return yield* runStage({ ...channel, options }, WholeProject.make({}), loaded.file)
       }),
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),
@@ -740,6 +747,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
     CliRerunRequested: (rerun, channel) => mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
+    RunPlanWithoutShardRefused: (refusal) => Effect.fail(RunPlanWithoutShardRefused.make(refusal)),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })

@@ -102,6 +102,7 @@ const PlanRequestSchema = S.TaggedStruct('plan', {
   projects: S.Array(S.String).pipe(S.optional),
   out: S.optional(S.String),
   full: S.Boolean,
+  since: S.optional(S.String),
 })
 
 export type PlanRequest = S.Schema.Type<typeof PlanRequestSchema>
