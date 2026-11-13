@@ -19,10 +19,10 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
-    "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/effect-microsandbox": "catalog:",
+    "@systemfsoftware/effect-cell-types": "file:../../.deps/effect-cell-types.tgz",
+    "@systemfsoftware/effect-microsandbox": "file:../../.deps/effect-microsandbox.tgz",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
-    "@systemfsoftware/effect-readiness": "catalog:",
+    "@systemfsoftware/effect-readiness": "file:../../.deps/effect-readiness.tgz",
     "@systemfsoftware/stryker-e2e-core": "workspace:^",
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",

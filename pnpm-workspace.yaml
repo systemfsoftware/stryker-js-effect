@@ -28,9 +28,6 @@ catalog:
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
   "@systemfsoftware/differential-spec": ^1.0.1
-  "@systemfsoftware/effect-cell-types": ^12.0.0
-  "@systemfsoftware/effect-microsandbox": ^5.0.0
-  "@systemfsoftware/effect-readiness": ^1.0.0
   "@systemfsoftware/effect-gherkin-spec": ^7.0.0
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
   "@systemfsoftware/effect-schema-law": ^5.0.0
@@ -56,7 +53,7 @@ catalog:
   effect: ^4.1.0
   husky: ^9
   lint-staged: ^17
-  microsandbox: 0.7.2
+  microsandbox: 0.7.8
   oxc-parser: ^0.150.0
   oxc-walker: ^1
   oxlint: ~1.90.0
@@ -81,6 +78,12 @@ overrides:
   "@effect/platform-node": "catalog:"
   "@effect/platform-node-shared": "catalog:"
   "@effect/tsgo": "catalog:"
+  # The e2e harness's microVM packages, and the cell types they share with this
+  # workspace, come from their producers' flake outputs (effect-microvm,
+  # effect-readiness, systemfsoftware), never a registry.
+  "@systemfsoftware/effect-cell-types@*": file:.deps/effect-cell-types.tgz
+  "@systemfsoftware/effect-microsandbox@*": file:.deps/effect-microsandbox.tgz
+  "@systemfsoftware/effect-readiness@*": file:.deps/effect-readiness.tgz
   # Every package this repository releases resolves to the tarball of the release
   # pinned by the `stryker-published` flake input, wherever it appears outside
   # the workspace; workspace links are untouched. The runner is also reached
