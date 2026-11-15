@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-typescript-checker
 
+## 10.0.2
+
+Updated dependency @systemfsoftware/stryker-js to 23.2.1
+
 ## 10.0.1
 
 The workspace dogfoods @systemfsoftware/stryker-js 23.0.0 and the TypeScript checker 10.0.0, and every package resolves one @systemfsoftware/effect-cell-types (12.1.4). The TypeScript checker and the vitest runner bundle 12.1.4 in place of 12.0.0, and stryker-js and the checker bundle @jsr/std__jsonc 1.0.3 in place of 1.0.2. Every package that takes @systemfsoftware/effect-cell-types from the catalog publishes the range ^12.1.4 in place of ^12.0.0.

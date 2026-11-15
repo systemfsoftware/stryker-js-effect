@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-package
 
+## 0.0.6
+
+Updated dependency @systemfsoftware/stryker-js to 23.2.1
+
 ## 0.0.5
 
 Updated dependency @systemfsoftware/stryker-js to 23.2.0

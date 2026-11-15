@@ -1,5 +1,13 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 16.0.2
+
+Rebuilt against the span taxonomy that declares the html report write attribute; behaviour is unchanged. The html reporter test of that span is a trace-spec contract.
+
+Format resolution now decides only which format claims a file; the skip reason is built where the skip is recorded, byte for byte as before, and an unclaimed pinned format id is a decision the type-check disabler turns into its InstrumentError.
+
+Rebuilt against the span taxonomy that declares the checker compile counts; behaviour is unchanged. The span tests of the instrument phase, sandbox acquisition, worker trace propagation and importer shortcut are trace-spec contracts.
+
 ## 16.0.1
 
 Updated dependency @systemfsoftware/stryker-framework-interface to 0.0.3

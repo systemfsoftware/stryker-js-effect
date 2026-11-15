@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-html-reporter
 
+## 7.0.2
+
+Updated dependency @systemfsoftware/stryker-js to 23.2.1
+
 ## 7.0.1
 
 Updated dependency @systemfsoftware/stryker-ignorer-effect-schema-declarations to 0.3.2

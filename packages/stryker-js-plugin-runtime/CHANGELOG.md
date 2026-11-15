@@ -1,5 +1,13 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 9.0.2
+
+Trace.withLinkedSpan runs the wrapped effect under the linked span, so spans the asynchronous work starts nest beneath it in the linked trace.
+
+Rebuilt against the span taxonomy that declares the html report write attribute; behaviour is unchanged. The html reporter test of that span is a trace-spec contract.
+
+Rebuilt against the span taxonomy that declares the checker compile counts; behaviour is unchanged. The span tests of the instrument phase, sandbox acquisition, worker trace propagation and importer shortcut are trace-spec contracts.
+
 ## 9.0.1
 
 The workspace dogfoods @systemfsoftware/stryker-js 23.0.0 and the TypeScript checker 10.0.0, and every package resolves one @systemfsoftware/effect-cell-types (12.1.4). The TypeScript checker and the vitest runner bundle 12.1.4 in place of 12.0.0, and stryker-js and the checker bundle @jsr/std__jsonc 1.0.3 in place of 1.0.2. Every package that takes @systemfsoftware/effect-cell-types from the catalog publishes the range ^12.1.4 in place of ^12.0.0.
