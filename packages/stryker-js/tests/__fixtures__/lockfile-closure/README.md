@@ -4,7 +4,7 @@ Inputs for `tests/lockfile-closure-digest.integration.test.ts`. Every lockfile h
 
 ## `real/`
 
-The repository's root `pnpm-lock.yaml` at two commits, taken with `git show <sha>:pnpm-lock.yaml`, apart from the vendored tarball directory prefix, renamed in every `file:` entry (the closure walk reads the key, not the directory):
+The repository's root `pnpm-lock.yaml` at two commits, taken verbatim with `git show <sha>:pnpm-lock.yaml`:
 
 | File                          | Commit      | What it is                                                                        |
 | ----------------------------- | ----------- | --------------------------------------------------------------------------------- |
