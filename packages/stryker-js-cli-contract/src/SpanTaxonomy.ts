@@ -62,7 +62,7 @@ export const Spans = {
   frameworkClaimantList: { name: 'stryker.framework_claimant.list', attributes: {} },
   frameworkClaimantOf: { name: 'stryker.framework_claimant.of', attributes: {} },
   htmlReportReadBundleFromDisk: { name: 'html_report.read_bundle_from_disk', attributes: {} },
-  htmlReportWrite: { name: 'html_report.write', attributes: {} },
+  htmlReportWrite: { name: 'html_report.write', attributes: { 'stryker.html_report.file_name': SpanAttributeText } },
   htmlReportWriteBundleFromDisk: { name: 'html_report.write_bundle_from_disk', attributes: {} },
   htmlReportWriteFile: { name: 'html_report.write_file', attributes: {} },
   incrementalReuse: { name: 'stryker.incremental_reuse', attributes: {} },

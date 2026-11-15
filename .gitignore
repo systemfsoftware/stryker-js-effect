@@ -6,6 +6,7 @@ reports/
 e2e-telemetry/
 e2e-telemetry.tar.gz
 test/e2e/artifacts/
+packages/*/artifacts/
 *.tsbuildinfo
 
 .mcp.json
