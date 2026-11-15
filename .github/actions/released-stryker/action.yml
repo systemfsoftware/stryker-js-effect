@@ -1,0 +1,22 @@
+name: Released Stryker CLI
+description: >
+  Builds the flake package at the release tag of the @systemfsoftware/stryker-js the lockfile installs, and exports
+  its CLI as PUBLISHED_CLI. The npm release carries no bin since the CLI ships as the flake package, so the dogfood
+  runs the same release from the tag it was cut from.
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+      with:
+        extra_nix_config: |
+          extra-substituters = https://nix.systemfsoftware.com
+          extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
+    - name: Build the released CLI
+      shell: bash
+      run: |
+        version=$(jq -er .version packages/stryker-js/node_modules/@systemfsoftware/stryker-js/package.json)
+        out=$(nix build --no-link --print-out-paths \
+          "github:${GITHUB_REPOSITORY}?ref=refs/tags/@systemfsoftware/stryker-js@v${version}#stryker")
+        echo "PUBLISHED_CLI=$out/bin/stryker" >> "$GITHUB_ENV"
+        echo "Released Stryker CLI: @systemfsoftware/stryker-js@v${version} at $out" >> "$GITHUB_STEP_SUMMARY"

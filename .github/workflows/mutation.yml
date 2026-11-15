@@ -49,7 +49,6 @@ env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
   PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
-  PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
   INCREMENTAL_REPORTS: packages/**/reports/stryker-incremental.json
   BUDGET_BASELINE: .stryker/budget-baseline.json
@@ -186,6 +185,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
 
       # Planning loads every project's stryker config, and a config can load a plugin
       # through a workspace link (the instrumenter's effect-schema-declarations ignorer),
@@ -293,6 +293,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
       - uses: actions/download-artifact@v8
         with:
           name: shard-plan
@@ -394,6 +395,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
       - uses: actions/download-artifact@v8
         with:
           name: shard-plan

@@ -21,7 +21,6 @@ env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
   PROJECTS: ${{ inputs.projects }}
-  PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
   KILL_MATRIX_OUT: kill-matrix-out
   KILL_MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
@@ -45,6 +44,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
 
       # Planning loads every project's stryker config, and a config can load a plugin
       # through a workspace link (the instrumenter's effect-schema-declarations ignorer),
@@ -125,6 +125,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
       - uses: actions/download-artifact@v8
         with:
           name: kill-matrix-plan
@@ -195,6 +196,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/released-stryker
       - uses: actions/download-artifact@v8
         with:
           name: kill-matrix-plan
