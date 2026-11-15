@@ -44,15 +44,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       # Planning loads every project's stryker config, and a config can load a plugin
@@ -100,15 +91,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
 
       - name: Restore the build the mutation lane cached
@@ -142,15 +124,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
@@ -221,15 +194,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:

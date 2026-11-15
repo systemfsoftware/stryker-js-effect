@@ -16,4 +16,3 @@ result-*
 temp/
 .scratch/
 # the release tarballs the lockfile installs from, copied in from `nix build .#stryker-published`
-.deps

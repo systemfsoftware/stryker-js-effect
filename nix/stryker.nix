@@ -7,7 +7,6 @@
   makeWrapper,
   src,
   mitmCache,
-  deps,
 }:
 let
   composition = "@systemfsoftware/stryker-package";
@@ -19,8 +18,6 @@ stdenvNoCC.mkDerivation {
   inherit src mitmCache;
 
   postPatch = ''
-    mkdir -p .deps
-    cp -r ${deps}/. .deps/
     cat >> pnpm-workspace.yaml <<'YAML'
     supportedArchitectures:
       os: [current]

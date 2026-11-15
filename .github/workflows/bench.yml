@@ -56,15 +56,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
       - name: Install the bench harness
         run: pnpm install --frozen-lockfile
 
@@ -116,45 +107,17 @@ jobs:
           side_b="$RUNNER_TEMP/bench-b"
           git worktree add --detach "$side_a" "$BASE"
           git worktree add --detach "$side_b" HEAD
-          pin() { jq -c '.nodes["stryker-published"].locked' "$1/flake.lock"; }
           {
             echo "a=$side_a"
             echo "b=$side_b"
-            echo "same-pin=$([ "$(pin "$side_a")" = "$(pin .)" ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            extra-substituters = https://nix.systemfsoftware.com
-            extra-trusted-public-keys = nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
-      - name: Producer tarballs into .deps
-        run: |
-          rm -rf .deps && mkdir .deps
-          cp -rL --no-preserve=mode "$(nix build --no-link --print-out-paths .#stryker-published)/." .deps/
-
-      - name: Tarballs and install, both sides by one mechanism
+      - name: Install both sides
         env:
           SIDE_A: ${{ steps.sides.outputs.a }}
           SIDE_B: ${{ steps.sides.outputs.b }}
-          SAME_PIN: ${{ steps.sides.outputs.same-pin }}
           TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: |
-          started=$(date +%s%3N)
-          rm -rf "$SIDE_A/.deps"
-          if [ "$SAME_PIN" = true ]; then
-            cp -r .deps "$SIDE_A/.deps"
-          else
-            published=$(cd "$SIDE_A" && nix build --no-link --print-out-paths .#stryker-published)
-            mkdir "$SIDE_A/.deps"
-            cp "$published"/*.tgz "$SIDE_A/.deps/"
-            chmod u+w "$SIDE_A"/.deps/*.tgz
-          fi
-          printf 'side A: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
-          started=$(date +%s%3N)
-          rm -rf "$SIDE_B/.deps"
-          cp -r .deps "$SIDE_B/.deps"
-          printf 'side B: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           install() {
             local name=$1 root=$2 started
             started=$(date +%s%3N)

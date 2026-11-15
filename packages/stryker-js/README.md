@@ -7,19 +7,12 @@ typed `./config` authoring surface.
 
 ## Install
 
-The CLI ships as the flake's `stryker` package, with the vitest runner, the TypeScript checker, the instrumenter, the svelte framework and both Effect ignorers beside it. Pin a release commit:
-
 ```bash
-nix run github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -- run
+pnpm add -D @systemfsoftware/stryker-js vitest
+node node_modules/@systemfsoftware/stryker-js/dist/main.mjs run
 ```
 
-A bare plugin name in a config resolves from that install, so the project installs none of the plugins. To type `stryker.config.ts`, link the CLI package from the flake's output (`nix build github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -o .stryker`):
-
-```json
-{ "devDependencies": { "@systemfsoftware/stryker-js": "link:.stryker/lib/node_modules/@systemfsoftware/stryker-js" } }
-```
-
-A plugin the package does not ship is named by its `file:` URL, for example `import.meta.resolve('my-ignorer')`.
+Add the runner, the TypeScript checker and the ignorers you use from npm as well, for example `pnpm add -D @systemfsoftware/stryker-js-vitest-runner @systemfsoftware/stryker-js-typescript-checker`. A bare plugin name in a config resolves from your project's dependencies. A plugin the package does not ship is named by its `file:` URL, for example `import.meta.resolve('my-ignorer')`.
 
 ## Quick Start: Vitest Runner
 
