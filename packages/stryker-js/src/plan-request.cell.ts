@@ -24,7 +24,6 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
-import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
 import { diffScopeDecisionOf } from './git-diff.js'
 import {
   ChangedSince,
@@ -34,6 +33,7 @@ import {
   WholeProject,
 } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
+import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema, PlanShardsRefused } from './plan-request.schema.js'
 import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
