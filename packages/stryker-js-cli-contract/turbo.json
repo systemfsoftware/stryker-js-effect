@@ -1,6 +1,8 @@
 {
   "$schema": "https://v2-10-1.turborepo.dev/schema.json",
-  "extends": ["//"],
+  "extends": [
+    "//"
+  ],
   "tasks": {
     "test": {
       "inputs": [
@@ -10,7 +12,9 @@
         "$TURBO_ROOT$/test/*/package.json",
         "$TURBO_ROOT$/packages/*/package.json",
         "$TURBO_ROOT$/packages/*/*/package.json",
-        "$TURBO_ROOT$/packages/*/contract/**"
+        "$TURBO_ROOT$/packages/*/contract/**",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/packages/*/*/contract/**"
       ],
       "cache": false
     }

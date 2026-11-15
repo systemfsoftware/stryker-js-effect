@@ -57,6 +57,7 @@
     "//#test:scripts": {
       "outputLogs": "errors-only",
       "inputs": [
+        "package.json",
         "scripts/**",
         "test/bench/src/turbo-affected.ts",
         "test/bench/src/turbo-affected.schema.ts",
