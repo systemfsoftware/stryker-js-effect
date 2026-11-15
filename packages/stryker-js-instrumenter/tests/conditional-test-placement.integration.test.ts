@@ -1,16 +1,13 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
-import { afterAll } from '@systemfsoftware/vitest'
-import { Effect, FileSystem, Layer, Option } from 'effect'
+import { Effect, FileSystem, Layer, Option, Scope } from 'effect'
 import type { PlatformError } from 'effect'
 
 import { PlacementHarnessError } from './__fixtures__/conditional-test-placement.schema.js'
 import { stockOptions } from './__fixtures__/instrument.js'
 
 const SCRATCH_URL = new URL('../.scratch/placement-behaviour/', import.meta.url)
-const MUTANT_ROOT = new URL('mutant/', SCRATCH_URL)
-const REFERENCE_ROOT = new URL('reference/', SCRATCH_URL)
 const LABEL = 'label'
 const COUNTS: readonly (readonly number[])[] = [[1], [-1], [0]]
 
@@ -207,32 +204,35 @@ const observeWithMutant = (url: URL, id: string): Effect.Effect<readonly Observa
     activate(undefined),
   )
 
-const prepareScratch: Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> = Effect.flatMap(
-  FileSystem.FileSystem,
-  (fs) =>
-    Effect.andThen(
-      fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true }),
-      Effect.andThen(
-        Effect.andThen(
-          fs.makeDirectory(filePathOf(MUTANT_ROOT), { recursive: true }),
-          fs.makeDirectory(filePathOf(REFERENCE_ROOT), { recursive: true }),
-        ),
-        Effect.void,
-      ),
-    ),
-)
+/** The two directories one scenario writes its modules into. */
+interface Scratch {
+  readonly mutantRoot: URL
+  readonly referenceRoot: URL
+}
 
-const clearScratch: Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> = Effect.flatMap(
-  FileSystem.FileSystem,
-  (fs) => fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true }),
-)
+/**
+ * A directory of the scenario's own, removed when the scenario's scope closes. A fixed shared directory let one
+ * test run delete the modules another was writing (ENOENT, ENOTEMPTY), and let a reused worker import a module
+ * cached from an earlier run at the same URL.
+ */
+const scratchOfScenario: Effect.Effect<Scratch, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> =
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    yield* fs.makeDirectory(filePathOf(SCRATCH_URL), { recursive: true })
+    const directory = yield* fs.makeTempDirectoryScoped({ directory: filePathOf(SCRATCH_URL), prefix: 'run-' })
+    const root = new URL(`${directory}/`, 'file:///')
+    const scratch = { mutantRoot: new URL('mutant/', root), referenceRoot: new URL('reference/', root) }
+    yield* fs.makeDirectory(filePathOf(scratch.mutantRoot))
+    yield* fs.makeDirectory(filePathOf(scratch.referenceRoot))
+    return scratch
+  })
 
-const rowOf = (shape: Shape, mutant: CollectedMutant, content: string) =>
+const rowOf = (scratch: Scratch, shape: Shape, mutant: CollectedMutant, content: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const name = `${shape.id}-${mutant.id}.ts`
-    const mutantUrl = new URL(name, MUTANT_ROOT)
-    const referenceUrl = new URL(name, REFERENCE_ROOT)
+    const mutantUrl = new URL(name, scratch.mutantRoot)
+    const referenceUrl = new URL(name, scratch.referenceRoot)
     const reference = mutant.status === 'Ignored' && mutant.subsumption === undefined
       ? shape.source
       : spliceMutant(shape, mutant)
@@ -263,7 +263,7 @@ const armsOf = (mutants: readonly CollectedMutant[], content: string): readonly 
 
 const buildReport = (shape: Shape) =>
   Effect.gen(function*() {
-    yield* prepareScratch
+    const scratch = yield* scratchOfScenario
     const result = yield* Instrument.instrument(
       ALL_SHAPES.map((candidate) => ({ name: `${candidate.id}.ts`, content: candidate.source, mutate: true })),
       stockOptions({ ignorers: [], excludedMutations: [] }),
@@ -280,7 +280,9 @@ const buildReport = (shape: Shape) =>
       subject: shape.subject,
       ignoredCount: mutants.filter((mutant) => mutant.status === 'Ignored' && mutant.subsumption === undefined).length,
       arms: armsOf(mutants, instrumented.content),
-      rows: yield* Effect.forEach(mutants, (mutant) => rowOf(shape, mutant, instrumented.content), { concurrency: 1 }),
+      rows: yield* Effect.forEach(mutants, (mutant) => rowOf(scratch, shape, mutant, instrumented.content), {
+        concurrency: 1,
+      }),
     }
   })
 
@@ -311,9 +313,7 @@ const anomaliesIn = (shape: Shape, report: ShapeReport): readonly string[] => [
   ),
 ]
 
-const liveReport = (shape: Shape) => Effect.provide(buildReport(shape), NodeFileSystem.layer)
-
-afterAll(() => Effect.runPromise(Effect.provide(clearScratch, NodeFileSystem.layer)))
+const liveReport = (shape: Shape) => Effect.provide(Effect.scoped(buildReport(shape)), NodeFileSystem.layer)
 
 const Feature = makeFeature({ it })
 
