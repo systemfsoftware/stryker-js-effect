@@ -86,7 +86,46 @@ const assembleDocument = (document: JsonObject): JsonObject => {
   return { ...(promoteMembers(root) as JsonObject), definitions }
 }
 
-const contractDocument = (upstream: JsonObject): JsonObject => assembleDocument(withBreakThreshold(upstream))
+const TESTS_COMPLETED = {
+  description:
+    'The number of tests actually completed in order to test this mutant. Can differ from "coveredBy" because of bailing a mutant test run after first failing test.',
+  type: 'integer',
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER,
+} as const
+
+const withCountedTests = (document: JsonObject): JsonObject => {
+  const properties = objectAt(document, 'properties')
+  const files = objectAt(properties, 'files')
+  const file = objectAt(files, 'additionalProperties')
+  const mutants = objectAt(objectAt(file, 'properties'), 'mutants')
+  const mutant = objectAt(mutants, 'items')
+  return {
+    ...document,
+    properties: {
+      ...properties,
+      files: {
+        ...files,
+        additionalProperties: {
+          ...file,
+          properties: {
+            ...objectAt(file, 'properties'),
+            mutants: {
+              ...mutants,
+              items: {
+                ...mutant,
+                properties: { ...objectAt(mutant, 'properties'), testsCompleted: TESTS_COMPLETED },
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+}
+
+const contractDocument = (upstream: JsonObject): JsonObject =>
+  assembleDocument(withCountedTests(withBreakThreshold(upstream)))
 
 const liveSchema = (document: JsonObject): Schema.Top =>
   Representation.fromJsonSchemaDocument(JsonSchema.fromSchemaDraft07(document), { patterns: 'apply' })

@@ -1,6 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -11,27 +11,25 @@ import * as S from 'effect/Schema'
 const ProgressReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ProgressReport')
 type ProgressReportTypeId = typeof ProgressReportTypeId
 
-const ProgressTimingSchema = S.Struct({ net: S.Finite, overhead: S.Finite })
-
 const ProgressCapabilitiesSchema = S.Struct({ reloadEnvironment: S.Boolean })
 
 export const ProgressTallySchema = S.Struct({
-  survived: S.Finite,
-  timedOut: S.Finite,
-  tested: S.Finite,
-  mutants: S.Finite,
-  total: S.Finite,
-  ticks: S.Finite,
-  ticksByMutantId: S.Record(Mutant.MutantId, S.Finite),
-  timing: ProgressTimingSchema,
+  survived: Report.NonNegativeInt,
+  timedOut: Report.NonNegativeInt,
+  tested: Report.NonNegativeInt,
+  mutants: Report.NonNegativeInt,
+  total: Report.NonNegativeFinite,
+  ticks: Report.NonNegativeFinite,
+  ticksByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeFinite),
+  timing: Reporter.RunTimingSchema,
   capabilities: ProgressCapabilitiesSchema,
   startedAt: S.Finite,
 })
 export type ProgressTally = typeof ProgressTallySchema.Type
 
 export const ProgressBarStateSchema = S.Struct({
-  total: S.Finite,
-  curr: S.Finite,
+  total: Report.NonNegativeFinite,
+  curr: Report.NonNegativeFinite,
 })
 export type ProgressBarState = typeof ProgressBarStateSchema.Type
 

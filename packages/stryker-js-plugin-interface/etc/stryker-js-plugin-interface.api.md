@@ -46,7 +46,7 @@ export namespace Report {
 
 // @public (undocumented)
 export namespace Reporter {
-    export { DryRunCompleted, MutantTested, MutationTestReportReady, MutationTestingPlanReady, ReporterEvent, ReporterEventKind, ReporterEventSchema, ReporterEventUnion, ReporterFactory, ReporterFailed, ReporterInit, ReporterPlanDescriptor, ReporterPlanDescriptorSchema, ReporterPlanKind, RunTiming, RunTimingSchema };
+    export { DryRunCompleted, DurationMs, MutantTested, MutationTestReportReady, MutationTestingPlanReady, ReporterEvent, ReporterEventKind, ReporterEventSchema, ReporterEventUnion, ReporterFactory, ReporterFailed, ReporterInit, ReporterPlanDescriptor, ReporterPlanDescriptorSchema, ReporterPlanKind, RunTiming, RunTimingSchema };
 }
 
 // @public (undocumented)

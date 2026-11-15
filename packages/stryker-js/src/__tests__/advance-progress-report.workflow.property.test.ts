@@ -12,7 +12,6 @@ import {
   ProgressRecorded,
   ProgressReportCommand,
   ProgressStateSchema,
-  ProgressTallySchema,
 } from '../Reporter/advance-progress-report.workflow.js'
 
 const offsetArb = Arbitrary.schema(S.Literals([-2, -1, 0, 1, 2]))
@@ -39,7 +38,7 @@ describe('advanceProgressReport', () => {
     (subject, [[drawn, offset, now]]) => {
       const state = drawn.bar === null
         ? drawn
-        : { ...drawn, bar: { total: drawn.bar.total, curr: drawn.bar.total + offset } }
+        : { ...drawn, bar: { total: drawn.bar.total + 2, curr: drawn.bar.total + 2 + offset } }
       return Result.match(subject(ProgressReportCommand.make({ state, now, event: undefined })), {
         onFailure: () => false,
         onSuccess: (decision) => {
@@ -77,7 +76,7 @@ describe('advanceProgressReport', () => {
         Arbitrary.all([
           Arbitrary.schema(Reporter.MutantTested),
           Arbitrary.schema(ProgressStateSchema),
-          Arbitrary.schema(ProgressTallySchema.fields.ticks),
+          Arbitrary.schema(Reporter.RunTimingSchema),
           Arbitrary.schema(ProgressReportCommand.fields.now),
         ]),
       ],
@@ -89,7 +88,8 @@ describe('advanceProgressReport', () => {
         timedOut: [([event]) => event.status === 'Timeout', 0.05],
       },
     },
-    (subject, [[event, drawn, planned, now]]) => {
+    (subject, [[event, drawn, timing, now]]) => {
+      const planned = timing.net + timing.overhead
       const tally = { ...drawn.tally, ticksByMutantId: { ...drawn.tally.ticksByMutantId, [event.id]: planned } }
       const state = { ...drawn, tally }
       const expectedTally = {

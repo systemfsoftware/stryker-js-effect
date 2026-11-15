@@ -19,15 +19,19 @@ const UNDETECTED_STATUSES: ReadonlyArray<string> = ['Survived', 'NoCoverage']
 const SETTLED_STATUSES: ReadonlyArray<string> = ['Killed', 'Timeout', 'RuntimeError', 'CompileError']
 const UNTESTED_STATUSES: ReadonlyArray<string> = ['Ignored', 'Pending']
 
+const commandArb = Arbitrary.all({
+  reported: Arbitrary.schema(ClearTextReportCommand.fields.reported),
+  computed: Arbitrary.schema(ClearTextReportCommand.fields.computed),
+  static: Arbitrary.schema(ClearTextReportCommand.fields.static),
+  debug: Arbitrary.schema(ClearTextReportCommand.fields.debug),
+}).pipe(Arbitrary.map((fields) => ClearTextReportCommand.make(fields)))
+
 const presentCommandArb = Arbitrary.all({
-  command: Arbitrary.schema(ClearTextReportCommand),
   reported: Arbitrary.schema(Report.MutationTestResult),
   computed: Arbitrary.schema(Report.MetricsResultSchema),
-}).pipe(
-  Arbitrary.map(({ command, reported, computed }) =>
-    ClearTextReportCommand.make({ reported, computed, static: command.static, debug: command.debug })
-  ),
-)
+  static: Arbitrary.schema(ClearTextReportCommand.fields.static),
+  debug: Arbitrary.schema(ClearTextReportCommand.fields.debug),
+}).pipe(Arbitrary.map((fields) => ClearTextReportCommand.make(fields)))
 
 const isPresent = (command: ClearTextReportCommand): boolean =>
   command.reported !== undefined && command.computed !== undefined
@@ -109,13 +113,11 @@ describe('summarizeClearTextReport', () => {
   it.prop(
     '∀c_Command_≡TagTable',
     {
-      of: [ClearTextReportCommand],
+      of: [commandArb],
       subject: summarizeClearTextReport,
       cover: {
         noReport: [(command) => command.reported === undefined, 0.05],
         noMetrics: [(command) => command.reported !== undefined && command.computed === undefined, 0.05],
-        presentDebug: [(command) => isPresent(command) && command.debug, 0.05],
-        presentQuiet: [(command) => isPresent(command) && !command.debug, 0.05],
       },
     },
     (subject, [command]) =>

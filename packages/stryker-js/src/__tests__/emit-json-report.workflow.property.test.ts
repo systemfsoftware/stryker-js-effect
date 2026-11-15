@@ -12,7 +12,11 @@ import {
   JsonReportSuppressed,
 } from '../Reporter/emit-json-report.workflow.js'
 
-const commandArb = Arbitrary.schema(JsonReportCommand)
+const commandArb = Arbitrary.all({
+  reported: Arbitrary.schema(JsonReportCommand.fields.reported),
+  debug: Arbitrary.schema(JsonReportCommand.fields.debug),
+  fileName: Arbitrary.schema(JsonReportCommand.fields.fileName),
+}).pipe(Arbitrary.map((fields) => JsonReportCommand.make(fields)))
 
 describe('emitJsonReport', () => {
   it.prop(

@@ -1,5 +1,6 @@
 export {
   DryRunCompleted,
+  DurationMs,
   MutantTested,
   MutationTestingPlanReady,
   MutationTestReportReady,

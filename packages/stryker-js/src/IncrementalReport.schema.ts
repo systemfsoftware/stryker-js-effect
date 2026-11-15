@@ -17,7 +17,7 @@ const MutantResultLikeSchema = S.Struct({
   static: S.optional(S.Boolean),
   statusReason: S.optional(S.String),
   remembered: S.optional(S.Boolean),
-  testsCompleted: S.optional(S.Finite),
+  testsCompleted: S.optional(S.Natural),
   description: S.optional(S.String),
   duration: S.optional(S.Finite),
   subsumption: Mutant.Subsumption.pipe(S.toEncoded, S.optional),
