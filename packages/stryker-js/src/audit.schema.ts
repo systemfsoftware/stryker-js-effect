@@ -200,7 +200,13 @@ export const OrphanedTest = S.Struct({
   project: S.String,
   test: S.String,
   killed: S.NonEmptyArray(S.String),
-  reason: S.Literal('every-killed-mutant-dropped'),
+  /**
+   * `every-killed-mutant-dropped`: some mutant the test kills has a pair that is not a contained Pass, so the drop
+   * may lose a fault the full set detects; this fails the audit. `every-kill-held-by-a-kept-mutant`: every mutant the
+   * test kills is dropped for kept mutants whose every killer also kills it, so the kept set detects the same faults
+   * and the test only stops adding to the score; this is reported and does not fail the audit.
+   */
+  reason: S.Literals(['every-killed-mutant-dropped', 'every-kill-held-by-a-kept-mutant']),
   next: S.String,
 })
 export type OrphanedTest = typeof OrphanedTest.Type
