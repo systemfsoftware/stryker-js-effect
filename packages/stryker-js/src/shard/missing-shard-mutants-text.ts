@@ -21,12 +21,20 @@ if (import.meta.vitest !== void 0) {
   const idsArb = Mutant.MutantId.pipe(S.Array, Arbitrary.schema)
 
   it.prop(
-    '∀ids_Missing_≡NamesTheFirstFiveAndCountsTheRest',
+    '∀ids_AtMostFive_≡NamesEveryIdAndNoCount',
     { of: [idsArb], subject: missingShardMutantsTextOf },
-    (subject, [ids]) => {
-      const [a, b, c, d, e, ...rest] = ids
-      const named = [a, b, c, d, e].filter((id) => id !== undefined).join(', ')
-      return subject(ids) === (rest.length === 0 ? named : `${named}, +${rest.length} more`)
+    (subject, [drawn]) => {
+      const ids = drawn.slice(0, 5)
+      return subject(ids) === ids.join(', ')
     },
+  )
+
+  it.prop(
+    '∀ids_MoreThanFive_≡NamesTheFirstFiveThenCountsTheRest',
+    {
+      of: [Mutant.MutantId.pipe(S.Array, S.check(S.isMinLength(6)), Arbitrary.schema)],
+      subject: missingShardMutantsTextOf,
+    },
+    (subject, [ids]) => subject(ids) === `${ids.slice(0, 5).join(', ')}, +${ids.length - 5} more`,
   )
 }

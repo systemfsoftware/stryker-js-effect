@@ -67,7 +67,21 @@ const humanLineOf = (event: RunEvent.RunEvent): Option.Option<string> =>
     ),
     Match.tag('error', (e) => Option.some(`error ${e.error}`)),
     Match.tag('refused', (e) => Option.some(`refused ${e.rule}`)),
-    Match.orElse(() => Option.none()),
+    Match.tag(
+      'stream',
+      'mutantTested',
+      'worker',
+      'help',
+      'plugins',
+      'formats',
+      'skipped',
+      'reuse',
+      'tce',
+      'mutant-detail',
+      'feedback',
+      () => Option.none(),
+    ),
+    Match.exhaustive,
   )
 
 export const stderrLineOf = (decision: FrameRunEventDecision): Option.Option<string> =>
