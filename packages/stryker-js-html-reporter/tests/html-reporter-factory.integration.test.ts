@@ -9,6 +9,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
+import * as Tracer from 'effect/Tracer'
 
 const Feature = makeFeature({ it })
 
@@ -147,6 +148,17 @@ function toStream(events: readonly Reporter.ReporterEvent[]): AsyncIterable<Repo
   }
 }
 
+const FILE_NAME_ATTRIBUTE = 'stryker.html_report.file_name'
+
+const recordingTracer = (spans: Array<Tracer.NativeSpan>): Tracer.Tracer =>
+  Tracer.make({
+    span: (options) => {
+      const span = new Tracer.NativeSpan(options)
+      spans.push(span)
+      return span
+    },
+  })
+
 Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ scenario }) => {
   scenario(
     'A completed run writes a self-contained report',
@@ -218,6 +230,40 @@ Feature('Writing the html mutation report').withLayer(nodeFsPathLayer).body(({ s
         })),
       Then('a report is written and both documents are identical')((s, expect) =>
         expect({ existed: s.documents.existed, b: s.documents.b }).toEqual({ existed: true, b: s.documents.a })
+      ),
+    ),
+  )
+
+  scenario(
+    'The report write is traced with the file it writes',
+    { live: 'the scenario creates a real temporary directory and records the spans of a real write' },
+    Gherkin.Do.pipe(
+      Given('an output directory')('output', () =>
+        Effect.gen(function*() {
+          const dir = yield* Effect.promise(() => makeTempDir('html-span-'))
+          const fileName = yield* Effect.promise(() => joinPath(dir, 'report.html'))
+          return { dir, fileName }
+        })),
+      When('the reporter consumes a completed run under a recording tracer')('spans', (s) =>
+        Effect.gen(function*() {
+          const spans: Array<Tracer.NativeSpan> = []
+          try {
+            const options = yield* optionsWith(s.output.fileName)
+            const consume = HtmlReporter.makeHtmlReporter(options, {})
+            yield* consume(toStream(runEvents(reportFixture(), metricsFixture()))).pipe(
+              Effect.withTracer(recordingTracer(spans)),
+            )
+            return spans
+          } finally {
+            yield* Effect.promise(() => removeDir(s.output.dir))
+          }
+        })),
+      Then('exactly one span records the report file name')((s, expect) =>
+        expect(
+          s.spans.flatMap((span) =>
+            span.attributes.has(FILE_NAME_ATTRIBUTE) ? [span.attributes.get(FILE_NAME_ATTRIBUTE)] : []
+          ),
+        ).toEqual([s.output.fileName])
       ),
     ),
   )
