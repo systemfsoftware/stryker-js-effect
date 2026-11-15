@@ -23,6 +23,7 @@ import type { ParseFailed } from './Parser.schema.js'
 import { jsPrint, type PrinterContext, tsPrint } from './Printer.js'
 import {
   FormatAssigned,
+  FormatOverrideUnclaimed,
   FormatResolutionCommand,
   type FormatResolutionDecision,
   FormatSkipped,
@@ -218,9 +219,15 @@ const parsedOutcomeFor = (
       Effect.map(parseWithEntry(entry, file), (ast): FileOutcome => ({ kind: 'parsed', parsed: { file, ast } })),
   })
 
+const skipReasonOf = (skipped: FormatSkipped): string =>
+  `No installed format claims "${skipped.extension}". Install the framework plugin that claims this file type to instrument it.`
+
+export const overrideUnclaimedTextOf = (unclaimed: typeof FormatOverrideUnclaimed.Encoded): string =>
+  `Cannot instrument ${unclaimed.fileName}: No installed format carries the id "${unclaimed.formatId}" pinned for this file.`
+
 const skippedOutcomeFor = (file: InstrumentedFile, skipped: FormatSkipped): FileOutcome => ({
   kind: 'skipped',
-  record: InstrumentFileSkip.make({ file: file.name, extension: skipped.extension, reason: skipped.reason }),
+  record: InstrumentFileSkip.make({ file: file.name, extension: skipped.extension, reason: skipReasonOf(skipped) }),
 })
 
 const unclaimedOverrideError = (file: InstrumentedFile): InstrumentError =>
@@ -237,6 +244,7 @@ const outcomeFor = (
   Match.value(decision).pipe(
     Match.when(S.is(FormatAssigned), (assigned) => parsedOutcomeFor(registry, file, assigned)),
     Match.when(S.is(FormatSkipped), (skipped) => Effect.succeed(skippedOutcomeFor(file, skipped))),
+    Match.when(S.is(FormatOverrideUnclaimed), () => Effect.fail(unclaimedOverrideError(file))),
     Match.exhaustive,
   )
 
@@ -244,9 +252,9 @@ export const fileOutcome = (request: {
   readonly registry: FormatRegistry
   readonly file: InstrumentedFile
 }): Effect.Effect<FileOutcome, InstrumentError> =>
-  Match.value(resolveFile(request.registry, request.file.name)).pipe(
-    Match.when(Result.isSuccess, (resolved) => outcomeFor(request.registry, request.file, resolved.success)),
-    Match.orElse(() => Effect.fail(unclaimedOverrideError(request.file))),
+  Effect.flatMap(
+    Effect.fromResult(resolveFile(request.registry, request.file.name)),
+    (decision) => outcomeFor(request.registry, request.file, decision),
   )
 
 export const isParsedOutcome = (outcome: FileOutcome): outcome is Extract<FileOutcome, { kind: 'parsed' }> =>
@@ -322,3 +330,24 @@ export const spliceForAssigned = (request: {
     onNone: () => Effect.succeed(request.file),
     onSome: (entry) => spliceFileFor(request.file, entry),
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arbitrary = await import('effect/Arbitrary')
+
+  it.prop(
+    '∀s_Skipped_≡ReasonNamesTheExtensionAndTheRemedy',
+    { of: [Arbitrary.schema(FormatSkipped)], subject: skipReasonOf },
+    (subject, [skipped]) =>
+      subject(skipped) ===
+        `No installed format claims "${skipped.extension}". Install the framework plugin that claims this file type to instrument it.`,
+  )
+
+  it.prop(
+    '∀u_Unclaimed_≡TextNamesTheFileAndThePinnedId',
+    { of: [Arbitrary.schema(FormatOverrideUnclaimed)], subject: overrideUnclaimedTextOf },
+    (subject, [unclaimed]) =>
+      subject(unclaimed) ===
+        `Cannot instrument ${unclaimed.fileName}: No installed format carries the id "${unclaimed.formatId}" pinned for this file.`,
+  )
+}

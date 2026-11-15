@@ -2,10 +2,10 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 
-import { resolutionCommandOf, spliceForAssigned } from './Format.js'
+import { overrideUnclaimedTextOf, resolutionCommandOf, spliceForAssigned } from './Format.js'
 import type { FormatRegistry } from './Format.schema.js'
 import { type FileSchema, InstrumentError } from './Instrument.schema.js'
-import { FormatOverrideUnclaimed, type FormatResolutionCommand, resolveFormat } from './resolve-format.workflow.js'
+import { type FormatResolutionCommand, resolveFormat } from './resolve-format.workflow.js'
 
 export interface DisableTypeChecksInput {
   readonly file: typeof FileSchema.Type
@@ -36,7 +36,7 @@ const readDisable = (input: DisableTypeChecksInput): Effect.Effect<DisableTypeCh
 export const disableTypeChecksCell: Cell.Cell<
   DisableTypeChecksInput,
   typeof FileSchema.Type,
-  InstrumentError | FormatOverrideUnclaimed,
+  InstrumentError,
   never
 > = Sandwich.named(SpanTaxonomy.Spans.instrumentDisableTypeChecks.name)(
   (input: DisableTypeChecksInput) => readDisable(input),
@@ -46,6 +46,12 @@ export const disableTypeChecksCell: Cell.Cell<
     FormatAssigned: (assigned, raw): Effect.Effect<typeof FileSchema.Type, InstrumentError> =>
       spliceForAssigned({ file: raw.file, registry: raw.registry, formatId: assigned.formatId }),
     FormatSkipped: (_skipped, raw) => Effect.succeed(raw.file),
-    FormatOverrideUnclaimed: (failure) => Effect.fail(FormatOverrideUnclaimed.make(failure)),
+    FormatOverrideUnclaimed: (unclaimed, raw) =>
+      Effect.fail(
+        InstrumentError.make({
+          message: `No installed format owns ${raw.file.name}`,
+          cause: new Error(overrideUnclaimedTextOf(unclaimed)),
+        }),
+      ),
     CommandRejected: ({ issue }) => Effect.fail(InstrumentError.make({ message: issue, cause: new Error(issue) })),
   })

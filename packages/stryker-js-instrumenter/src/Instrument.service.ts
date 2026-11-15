@@ -60,11 +60,6 @@ const disableTypeChecksDataFirst = (
 ): Effect.Effect<File, InstrumentError> =>
   disableTypeChecksCell.run({ file: toSchemaFile(file), registry }).pipe(
     Effect.map((disabled: S.Schema.Type<typeof FileSchema>): File => ({ ...file, content: disabled.content })),
-    Effect.mapError((cause) =>
-      S.is(InstrumentError)(cause)
-        ? cause
-        : InstrumentError.make({ message: `No installed format owns ${file.name}`, cause })
-    ),
   )
 
 export const disableTypeChecks: {

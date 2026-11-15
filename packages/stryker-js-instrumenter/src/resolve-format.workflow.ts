@@ -43,24 +43,20 @@ export class FormatAssigned
 export class FormatSkipped extends S.TaggedClass<FormatSkipped, { readonly brand: unique symbol }>()('FormatSkipped', {
   fileName: S.String,
   extension: S.String,
-  reason: S.String,
 }) {
   readonly [FormatResolutionTypeId] = FormatResolutionTypeId
 }
 
-export type FormatResolutionDecision = FormatAssigned | FormatSkipped
-
 export class FormatOverrideUnclaimed
-  extends S.TaggedError<FormatOverrideUnclaimed, { readonly brand: unique symbol }>()('FormatOverrideUnclaimed', {
+  extends S.TaggedClass<FormatOverrideUnclaimed, { readonly brand: unique symbol }>()('FormatOverrideUnclaimed', {
     fileName: S.String,
     formatId: S.String,
-    reason: S.String,
   })
 {
-  override get message(): string {
-    return `Cannot instrument ${this.fileName}: ${this.reason}`
-  }
+  readonly [FormatResolutionTypeId] = FormatResolutionTypeId
 }
+
+export type FormatResolutionDecision = FormatAssigned | FormatSkipped | FormatOverrideUnclaimed
 
 const pinOf = (command: FormatResolutionCommand): Option.Option<string> => Option.fromUndefinedOr(command.formatId)
 
@@ -85,15 +81,12 @@ const skippedFrom = (command: FormatResolutionCommand): FormatSkipped =>
   FormatSkipped.make({
     fileName: command.fileName,
     extension: command.extension,
-    reason:
-      `No installed format claims "${command.extension}". Install the framework plugin that claims this file type to instrument it.`,
   })
 
 const overrideUnclaimedFrom = (command: FormatResolutionCommand, formatId: string): FormatOverrideUnclaimed =>
   FormatOverrideUnclaimed.make({
     fileName: command.fileName,
     formatId,
-    reason: `No installed format carries the id "${formatId}" pinned for this file.`,
   })
 
 const ClaimSelected = S.TaggedStruct('ClaimSelected', { claim: FormatClaimSchema })
@@ -114,12 +107,12 @@ const selectionFor = (command: FormatResolutionCommand): ClaimSelection =>
 
 export const resolveFormat = Workflow.make({
   command: FormatResolutionCommand,
-  decision: S.Union([FormatAssigned, FormatSkipped]),
-  error: FormatOverrideUnclaimed,
-  decide: (command): Result.Result<FormatResolutionDecision, FormatOverrideUnclaimed> =>
+  decision: S.Union([FormatAssigned, FormatSkipped, FormatOverrideUnclaimed]),
+  error: S.Never,
+  decide: (command): Result.Result<FormatResolutionDecision, never> =>
     Match.value(selectionFor(command)).pipe(
       Match.tag('ClaimSelected', ({ claim }) => Result.succeed(assignedFrom(claim, command))),
-      Match.tag('PinUnclaimed', ({ formatId }) => Result.fail(overrideUnclaimedFrom(command, formatId))),
+      Match.tag('PinUnclaimed', ({ formatId }) => Result.succeed(overrideUnclaimedFrom(command, formatId))),
       Match.tag('ExtensionUnclaimed', () => Result.succeed(skippedFrom(command))),
       Match.exhaustive,
     ),
