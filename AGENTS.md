@@ -10,21 +10,21 @@ An Effect-based fork of StrykerJS: mutation testing for TypeScript, shipped as t
 
 ## Layout
 
-| Path                                               | What it holds                                                                                             |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `packages/stryker-js`                              | The engine and the `stryker` CLI: plan, run, gate, merge, audit                                           |
-| `packages/stryker-js-instrumenter`                 | Parsing, mutators and mutant placement                                                                    |
-| `packages/stryker-js-vitest-runner`                | The Vitest test runner plugin (worker process)                                                            |
-| `packages/stryker-js-typescript-checker`           | The TypeScript checker plugin (worker process)                                                            |
-| `packages/stryker-js-cli-contract`                 | The machine stream, span taxonomy and CLI wire contract consumers decode                                  |
-| `packages/stryker-js-plugin-interface`, `-runtime` | What a plugin implements, and the runtime that hosts it                                                   |
-| `packages/stryker-js-html-reporter`                | The HTML report                                                                                           |
-| `packages/frameworks/*`, `packages/ignorers/*`     | Framework format plugins (Angular, Svelte) and ignorers that drop equivalent mutants                      |
-| `packages/toolchain/*`                             | Shared tsdown, vitest, oxlint and Stryker presets                                                         |
-| `test/e2e`, `test/e2e-core`                        | The end-to-end lane: the shipped `stryker` package run in microVMs against fixtures                       |
-| `test/checker-parity`, `test/bench`                | The branch checker's verdicts and type-query answers compared with main's, and report-only A/B benchmarks |
-| `repos/`                                           | Vendored reference subtrees (`subtrees.toml`); read them for upstream source, never edit or build them    |
-| `docs/plans`, `docs/solutions`, `docs/adr`         | Plans (point-in-time records), solved problems, and decisions                                             |
+| Path                                               | What it holds                                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `packages/stryker-js`                              | The engine and the `stryker` CLI: plan, run, gate, merge, audit                                        |
+| `packages/stryker-js-instrumenter`                 | Parsing, mutators and mutant placement                                                                 |
+| `packages/stryker-js-vitest-runner`                | The Vitest test runner plugin (worker process)                                                         |
+| `packages/stryker-js-typescript-checker`           | The TypeScript checker plugin (worker process)                                                         |
+| `packages/stryker-js-cli-contract`                 | The machine stream, span taxonomy and CLI wire contract consumers decode                               |
+| `packages/stryker-js-plugin-interface`, `-runtime` | What a plugin implements, and the runtime that hosts it                                                |
+| `packages/stryker-js-html-reporter`                | The HTML report                                                                                        |
+| `packages/frameworks/*`, `packages/ignorers/*`     | Framework format plugins (Angular, Svelte) and ignorers that drop equivalent mutants                   |
+| `packages/toolchain/*`                             | Shared tsdown, vitest, oxlint and Stryker presets                                                      |
+| `test/e2e`, `test/e2e-core`                        | The end-to-end lane: the shipped `stryker` package run in microVMs against fixtures                    |
+| `test/bench`                                       | Report-only A/B benchmarks                                                                             |
+| `repos/`                                           | Vendored reference subtrees (`subtrees.toml`); read them for upstream source, never edit or build them |
+| `docs/plans`, `docs/solutions`, `docs/adr`         | Plans (point-in-time records), solved problems, and decisions                                          |
 
 ## Commands
 
@@ -44,12 +44,12 @@ A check that fails prints what failed and the command that reproduces it locally
 
 ## Boundaries
 
-| Surface        | Target                                                                                        | Rule                                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Read-only      | `CONSTITUTION.md`, `subtrees.toml`, `repos/**`, `commitlint.config.ts`                        | Change only on an explicit request; `repos/` moves only through a subtree update                                         |
-| Dogfood        | The `@systemfsoftware/stryker-*` devDependencies the mutation and checker-parity runs install | Caret ranges on released npm versions, never `workspace:^`: those runs test the released CLI; a release moves the ranges |
-| Human approval | Releases, publishing, credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`        | Ask first                                                                                                                |
-| Editable       | Workspace source, tests, fixtures, workflows, documentation                                   | Edit freely; see "CI" below before changing a workflow                                                                   |
+| Surface        | Target                                                                                 | Rule                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Read-only      | `CONSTITUTION.md`, `subtrees.toml`, `repos/**`, `commitlint.config.ts`                 | Change only on an explicit request; `repos/` moves only through a subtree update                                         |
+| Dogfood        | The `@systemfsoftware/stryker-*` devDependencies the mutation runs install             | Caret ranges on released npm versions, never `workspace:^`: those runs test the released CLI; a release moves the ranges |
+| Human approval | Releases, publishing, credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | Ask first                                                                                                                |
+| Editable       | Workspace source, tests, fixtures, workflows, documentation                            | Edit freely; see "CI" below before changing a workflow                                                                   |
 
 This repository is public. Nothing from a private repository enters it: no private repository, package or product name, host, path, person, private link or issue id, in files, commit messages or PR text (pack: public-repository).
 
@@ -66,5 +66,5 @@ This repository is public. Nothing from a private repository enters it: no priva
 ## CI
 
 - `ci.yml` calls the organization's shared CI workflow; its `check` job runs `pnpm check:ci` on a pull request and `pnpm check:full` on main, and is the required status check. Renaming or splitting that job renames the required check in the same change.
-- The e2e, checker-parity, bench and mutation lanes each run in their own workflow and never inside `check`: they need KVM, a collector or a released CLI that `check` does not have.
+- The e2e, bench and mutation lanes each run in their own workflow and never inside `check`: they need KVM, a collector or a released CLI that `check` does not have.
 - What a CI job may check follows the ci-workflows pack.
