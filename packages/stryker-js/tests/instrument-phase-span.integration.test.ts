@@ -1,9 +1,10 @@
-import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
-import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Contract, ObservationWindow, Rel, Stimulus } from '@systemfsoftware/trace-spec'
+import { type Span, Taxonomy } from '@systemfsoftware/trace-taxonomy'
 import type * as Cause from 'effect/Cause'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -16,14 +17,24 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 
+import {
+  InstrumentGather as Gather,
+  InstrumentPhase,
+  PhaseEntered,
+  SandboxAcquire as Acquire,
+} from './__fixtures__/declared-spans.fixture.js'
+import { finishedBeforeStart, withinTime, withinTimeOfCount } from './__fixtures__/trace-relations.fixture.js'
+
 const PACKAGE_MODULES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
 
 const Feature = makeFeature({ it })
 
-const PHASE = 'instrument'
-const GATHER = 'stryker.instrument.gather'
-const ACQUIRE = 'stryker.sandbox.acquire'
-const MARK = 'stryker.phase.entered'
+const InstrumentTaxonomy = Taxonomy.make('instrument-phase').pipe(
+  Taxonomy.add(InstrumentPhase),
+  Taxonomy.add(Gather),
+  Taxonomy.add(Acquire),
+  Taxonomy.add(PhaseEntered),
+)
 
 const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
 
@@ -52,13 +63,6 @@ const PLAN_REQUEST = {
   out: 'plan.json',
   full: false,
 } satisfies Engine.PlanRequestInput['request']
-
-interface PhaseObservation {
-  readonly succeeded: boolean
-  readonly phaseSpans: number
-  readonly insidePhase: ReadonlyArray<string>
-  readonly markEndsBeforeGather: boolean
-}
 
 const configTextOf = S.encodeEffect(S.fromJsonString(S.Unknown))
 
@@ -96,31 +100,6 @@ const insideProject = <A, R>(
     (previous) => Effect.sync(() => globalThis.process.chdir(previous)),
   ).pipe(Effect.ensuring(removeProject(root)))
 
-const nanosOf = ([seconds, nanos]: ReadableSpan['startTime']): number => seconds * 1e9 + nanos
-
-const within = (span: ReadableSpan, outer: ReadableSpan): boolean =>
-  nanosOf(outer.startTime) <= nanosOf(span.startTime) && nanosOf(span.endTime) <= nanosOf(outer.endTime)
-
-const observationOf = (
-  succeeded: boolean,
-  spans: ReadonlyArray<ReadableSpan>,
-  watched: ReadonlyArray<string>,
-): PhaseObservation => {
-  const phases = spans.filter((span) => span.name === PHASE)
-  const insidePhase = (span: ReadableSpan): boolean => phases.some((phase) => within(span, phase))
-  const gathers = spans.filter((span) => span.name === GATHER)
-  const marks = spans.filter((span) => span.name === MARK && insidePhase(span))
-  const [mark] = marks
-  const [gather] = gathers
-  return {
-    succeeded,
-    phaseSpans: phases.length,
-    insidePhase: watched.filter((name) => spans.some((span) => span.name === name && insidePhase(span))),
-    markEndsBeforeGather: marks.length === 1 && gathers.length === 1 && mark !== undefined &&
-      gather !== undefined && nanosOf(mark.endTime) <= nanosOf(gather.startTime),
-  }
-}
-
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FB0',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
@@ -156,37 +135,7 @@ const commandOf = (
       )
     })
 
-const spanCapture = () => {
-  const exporter = new InMemorySpanExporter()
-  const layer = NodeSdk.layer(() => ({
-    resource: { serviceName: 'instrument-phase-test' },
-    spanProcessor: new SimpleSpanProcessor(exporter),
-  }))
-  return { exporter, layer }
-}
-
-const observe = (
-  command: Command,
-  watched: ReadonlyArray<string>,
-  root: string,
-): Effect.Effect<PhaseObservation, never, Engine.EnginePorts | FileSystem.FileSystem> => {
-  const telemetry = spanCapture()
-  return insideProject(
-    root,
-    commandOf(command, root).pipe(
-      Effect.map((succeeded) => observationOf(succeeded, telemetry.exporter.getFinishedSpans(), watched)),
-      Effect.provide(telemetry.layer),
-    ),
-  )
-}
-
 type RunFailure = { readonly stage: string; readonly reason: string } | 'none'
-
-interface FailedRunObservation {
-  readonly failure: RunFailure
-  readonly phases: ReadonlyArray<string>
-  readonly spanRun: { readonly failure: RunFailure; readonly spans: PhaseObservation }
-}
 
 const FAILING_BUILD_OPTIONS = { ...PROJECT_OPTIONS, buildCommand: 'exit 1' } as const
 
@@ -216,76 +165,113 @@ const failedRunEventsOf = (root: string) =>
     }
   })
 
-const failedRunSpansOf = (): Effect.Effect<FailedRunObservation['spanRun'], never, Engine.EnginePorts> => {
-  const telemetry = spanCapture()
-  return Effect.result(Engine.strykerCell({ dryRunOnly: true })).pipe(
-    Effect.map((result) => ({
-      failure: failureOf(result),
-      spans: observationOf(Result.isSuccess(result), telemetry.exporter.getFinishedSpans(), [GATHER, ACQUIRE]),
-    })),
-    Effect.provide(telemetry.layer),
-  )
+interface InstrumentRun {
+  readonly failure: RunFailure
 }
 
-const observeFailedBuild = (
-  root: string,
-): Effect.Effect<FailedRunObservation, never, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const events = yield* insideProject(root, failedRunEventsOf(root))
-    const spanRoot = yield* Effect.orDie(writeProject(FAILING_BUILD_OPTIONS))
-    const spanRun = yield* insideProject(spanRoot, failedRunSpansOf())
-    return { ...events, spanRun }
-  })
+const dryRunInstrument = Stimulus.make({
+  name: 'stryker.dry_run_instrument',
+  run: (
+    { input }: { readonly input: { readonly command: Command; readonly root: string } },
+  ): Effect.Effect<InstrumentRun, never, Engine.EnginePorts | FileSystem.FileSystem> =>
+    insideProject(
+      input.root,
+      commandOf(input.command, input.root).pipe(
+        Effect.map((succeeded): InstrumentRun => ({ failure: succeeded ? 'none' : { stage: 'platform', reason: '' } })),
+      ),
+    ),
+})
 
-const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
+const dryRunFailingBuild = Stimulus.make({
+  name: 'stryker.dry_run_failing_build',
+  run: (
+    _context: { readonly input: null },
+  ): Effect.Effect<InstrumentRun, never, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
+    Effect.gen(function*() {
+      const root = yield* Effect.orDie(writeProject(FAILING_BUILD_OPTIONS))
+      return yield* insideProject(
+        root,
+        Effect.result(Engine.strykerCell({ dryRunOnly: true })).pipe(
+          Effect.map((result): InstrumentRun => ({ failure: failureOf(result) })),
+        ),
+      )
+    }),
+})
+
+const gatheredInsideInstrumentPhase = (watched: ReadonlyArray<Span.Span>) =>
+  Rel.all(
+    Rel.unique(InstrumentPhase),
+    ...watched.map((span) => withinTime({ container: InstrumentPhase, spec: span })),
+    withinTimeOfCount({ container: InstrumentPhase, spec: PhaseEntered, count: 1 }),
+    Rel.unique(Gather),
+    finishedBeforeStart({ container: InstrumentPhase, before: PhaseEntered, after: Gather }),
+  )
+
+const instrumentContractFor = (watched: ReadonlyArray<Span.Span>) =>
+  Contract.of(InstrumentTaxonomy).stimulate(dryRunInstrument).holds(gatheredInsideInstrumentPhase(watched))
+
+const runContract = instrumentContractFor([Gather, Acquire])
+const planContract = instrumentContractFor([Gather])
+
+const failedBuildContract = Contract.of(InstrumentTaxonomy).stimulate(dryRunFailingBuild).holds(
+  gatheredInsideInstrumentPhase([Gather, Acquire]),
+)
+
+const runLayer = Layer.mergeAll(
+  Engine.nodePlatformLayer,
+  Stdio.layerTest({}),
+  ObservationWindow.make('instrument-phase-test').layer,
+  NodeFileSystem.layer,
+)
 
 Feature('Timing the instrument phase over the instrumenter and the sandbox copy')
   .withLayer(runLayer)
   .live(
-    'the scenarios run real dry-run-only runs and plans in a real project directory, so no mutant executes, and the OpenTelemetry span exporter schedules its export on a real timer',
+    'the scenarios run real dry-run-only runs and plans in a real project directory, so no mutant executes, and the trace observation window reads spans back from an OpenTelemetry exporter that schedules its export on a real timer',
   )
   .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
       'A <command> enters the instrument phase before it instruments, so <watched> fall inside the phase',
       [
-        { command: 'run', watched: [GATHER, ACQUIRE] },
-        { command: 'plan', watched: [GATHER] },
+        { command: 'run', watched: 'the gathering and the sandbox acquisition', contract: runContract },
+        { command: 'plan', watched: 'the gathering', contract: planContract },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
           Given('a project with one mutated source file and one passing test')('root', () =>
             writeProject(PROJECT_OPTIONS)),
-          When(`stryker ${row.command} finishes its dry run`)('observed', (s) =>
-            observe(row.command, row.watched, s.root)),
+          When(`stryker ${row.command} finishes its dry run`)('judged', (s) =>
+            Contract.judge(row.contract, { command: row.command, root: s.root })),
           Then(
             'one instrument phase span holds the instrumenter and sandbox work, and its phase mark is entered before instrumentation starts',
           )((s, expect) =>
-            expect(s.observed).toEqual({
-              succeeded: true,
-              phaseSpans: 1,
-              insidePhase: row.watched,
-              markEndsBeforeGather: true,
-            })
+            Contract.verdictCheck(row.contract, expect, s.judged)
           ),
+          When('the outcome of the command is read back')('run', (s) =>
+            Effect.succeed(s.judged.run.output)),
+          Then('the command succeeded')((s, expect) => expect(s.run).toEqual({ failure: 'none' })),
         ),
     )
     scenario(
       'A run whose sandbox build fails stops in the instrument phase it has already entered',
       Gherkin.Do.pipe(
         Given('a project whose build command fails')('root', () => writeProject(FAILING_BUILD_OPTIONS)),
-        When('stryker run starts its dry run')('observed', (s) => observeFailedBuild(s.root)),
+        When('stryker run starts its dry run')('events', (s) => insideProject(s.root, failedRunEventsOf(s.root))),
         Then(
-          'the run fails building its sandbox in the instrument stage, after reporting the instrument phase entered, and the failed gathering and sandbox work stay inside the one instrument phase span',
-        )(
-          (s, expect) =>
-            expect(s.observed).toEqual({
-              failure: { stage: 'instrument', reason: 'Sandbox initialization failed' },
-              phases: ['prepare', 'instrument'],
-              spanRun: {
-                failure: { stage: 'instrument', reason: 'Sandbox initialization failed' },
-                spans: { succeeded: false, phaseSpans: 1, insidePhase: [GATHER, ACQUIRE], markEndsBeforeGather: true },
-              },
-            }),
+          'the run fails building its sandbox in the instrument stage, after reporting the instrument phase entered',
+        )((s, expect) =>
+          expect(s.events).toEqual({
+            failure: { stage: 'instrument', reason: 'Sandbox initialization failed' },
+            phases: ['prepare', 'instrument'],
+          })
+        ),
+        When('the same failing run is traced')('judged', () => Contract.judge(failedBuildContract, null)),
+        Then(
+          'the failed gathering and sandbox work stay inside the one instrument phase span, with its phase mark entered before the gathering',
+        )((s, expect) => Contract.verdictCheck(failedBuildContract, expect, s.judged)),
+        When('the outcome of the traced run is read back')('run', (s) => Effect.succeed(s.judged.run.output)),
+        Then('the traced run fails building its sandbox in the instrument stage')((s, expect) =>
+          expect(s.run).toEqual({ failure: { stage: 'instrument', reason: 'Sandbox initialization failed' } })
         ),
       ),
     )

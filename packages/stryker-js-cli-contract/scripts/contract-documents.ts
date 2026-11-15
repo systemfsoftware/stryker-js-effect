@@ -23,7 +23,12 @@ export const spanDocumentOf = (member: SpanMember) => ({
   id: member.name,
   name: member.name,
   attributes: Object.fromEntries(
-    Object.entries(member.attributes).map(([key, schema]) => [key, Schema.toJsonSchemaDocument(schema).schema]),
+    Object.entries(member.attributes).map((
+      [key, schema],
+    ) => [key, {
+      ...Schema.toJsonSchemaDocument(schema).schema,
+      ...(schema.ast.context?.isOptional === true ? { optional: true } : {}),
+    }]),
   ),
 })
 

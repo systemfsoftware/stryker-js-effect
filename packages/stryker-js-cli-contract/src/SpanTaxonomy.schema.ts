@@ -29,8 +29,38 @@ export const SpanAttributeText = S.String
 
 export const SpanAttributeCount = S.Finite
 
+export const SpanAttributeCountWhenRecorded = S.optionalKey(SpanAttributeCount)
+
 export const SpanRunStatus = S.Literals(['success', 'failure', 'timed_out', 'aborted', 'skipped'])
 export type SpanRunStatus = typeof SpanRunStatus.Type
+
+/**
+ * What one checker compile records about the importer shortcut: how many mutants took it, and, for the mutants that
+ * did not, how many fell back for each reason. The counts are recorded when the compile completes, so a compile that
+ * fails first records none, and a reason's count is recorded only when some mutant fell back for it.
+ */
+export const ImporterShortcutAttributes = {
+  'typescript.importer_shortcut.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.outside-function-body.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.body-dependent-signature.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.not-typescript-module.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.module-reference.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.syntax-error.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.original.shared-file.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.outside-function-body.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.body-dependent-signature.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.not-typescript-module.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.module-reference.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.syntax-error.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.mutated.shared-file.count': SpanAttributeCountWhenRecorded,
+  'typescript.importer_shortcut.fallback.unread.count': SpanAttributeCountWhenRecorded,
+} as const
+
+export const CompilerCheckAttributes = {
+  'typescript.snapshot_updates.count': SpanAttributeCountWhenRecorded,
+  'typescript.resplices.count': SpanAttributeCountWhenRecorded,
+  ...ImporterShortcutAttributes,
+} as const
 
 export const SpanDocument = S.Struct({
   id: SpanName,

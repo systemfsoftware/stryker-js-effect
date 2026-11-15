@@ -148,8 +148,8 @@ export const withLinkedSpan: {
   ): Effect.Effect<A, E, R> =>
     Effect.flatMap(Effect.context<never>(), (context) =>
       Option.match(remoteSpanOf(context), {
-        onNone: () => Effect.useSpan(spanName, { attributes }, () => effect),
+        onNone: () => Effect.withSpan(effect, spanName, { attributes }),
         onSome: (linked) =>
-          Effect.useSpan(spanName, { attributes, root: true, links: [{ span: linked, attributes: {} }] }, () => effect),
+          Effect.withSpan(effect, spanName, { attributes, root: true, links: [{ span: linked, attributes: {} }] }),
       })),
 )
