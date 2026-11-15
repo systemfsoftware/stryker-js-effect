@@ -17,6 +17,7 @@
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-svelte": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
-    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^"
+    "@systemfsoftware/stryker-js-vitest-runner": "workspace:^",
+    "effect": "catalog:"
   }
 }

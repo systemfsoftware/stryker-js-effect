@@ -32,8 +32,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
-    "effect": "catalog:"
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
   },
   "devDependencies": {
     "@effect/platform-node-shared": "catalog:",
@@ -48,6 +47,7 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "effect": "catalog:",
     "mutation-testing-report-schema": "catalog:stryker",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
@@ -81,5 +81,8 @@
     "./contract/report.schema.json": {
       "default": "./contract/report.schema.json"
     }
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
   }
 }
