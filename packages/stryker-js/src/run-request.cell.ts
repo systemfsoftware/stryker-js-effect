@@ -549,7 +549,7 @@ const gateReport = (
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
     const report = yield* readGateReport(path.resolve(basePath, GATE_REPORT_FILE))
-    yield* Effect.forEach(
+    const newSurvivors = yield* Effect.forEach(
       Option.toArray(Option.fromUndefinedOr(gate.baseline)),
       (baselineFlag) =>
         Effect.gen(function*() {
@@ -569,9 +569,27 @@ const gateReport = (
           yield* reportUnchecked(decision.unchecked)
         }),
       { discard: true },
+    ).pipe(
+      Effect.as(Option.none<GateRejected>()),
+      Effect.catchTag('GateRejected', (rejected) => Effect.succeedSome(rejected)),
     )
-    yield* runBudgetGate(gate, report, basePath)
-    yield* runScoreBreakGate(report)
+    const overBudget = yield* runBudgetGate(gate, report, basePath).pipe(
+      Effect.as(Option.none<BudgetExceeded>()),
+      Effect.catchTag('BudgetExceeded', (exceeded) => Effect.succeedSome(exceeded)),
+    )
+    const belowBreak = yield* runScoreBreakGate(report).pipe(
+      Effect.as(Option.none<ScoreBelowBreak>()),
+      Effect.catchTag('ScoreBelowBreak', (breach) => Effect.succeedSome(breach)),
+    )
+    const [exitVerdict, ...alsoFailed] = [
+      ...Option.toArray(belowBreak),
+      ...Option.toArray(newSurvivors),
+      ...Option.toArray(overBudget),
+    ]
+    yield* Effect.forEach(alsoFailed, (failed) => Effect.logInfo(failed.message), { discard: true })
+    yield* Effect.forEach(Option.toArray(Option.fromUndefinedOr(exitVerdict)), (failed) => Effect.fail(failed), {
+      discard: true,
+    })
   })
 
 const SURFACING_DEFAULTS: SurfacingCaps = { perLine: 1, perFile: 7 }

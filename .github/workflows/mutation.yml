@@ -452,10 +452,10 @@ jobs:
           key: ${{ needs.plan.outputs.incrementalKey }}
 
       # What the published CLI's gate command exits with: 0 when the run holds, 1 for a failed
-      # verdict, 2 for unusable input. Two verdicts exit 1. A budget breach prints "run took Ns,
-      # over the Ns budget" and a thresholds.break breach prints "scored below thresholds.break".
-      # The step below downgrades only the budget breach to a warning. Any other non-zero
-      # status, the score-break exit 1 included, fails the job.
+      # verdict, 2 for unusable input. The gate judges and prints every verdict, and exits on the
+      # break when both fail, so its exit line reads "exit 1 (VerdictFail): stryker gate: run took
+      # Ns, over the Ns budget" only when the budget is the sole failing verdict. The step below
+      # downgrades exactly that exit line to a warning. Any other non-zero status fails the job.
       - id: gate
         name: Gate the merged report
         run: |
@@ -472,8 +472,8 @@ jobs:
           set -e
           [ "$status" -ne 0 ] || exit 0
           # A CLI that rewords this message stops matching, so its exit 1 fails the job instead of warning.
-          budget='run took ([0-9.]+)s, over the ([0-9.]+)s budget'
-          if [ "$status" -ne 1 ] || ! [[ "$(cat "$RUNNER_TEMP/gate.log")" =~ $budget ]]; then
+          budget='^exit 1 \(VerdictFail\): stryker gate: run took ([0-9.]+)s, over the ([0-9.]+)s budget'
+          if [ "$status" -ne 1 ] || ! [[ "$(grep -m1 '^exit 1 (VerdictFail): ' "$RUNNER_TEMP/gate.log")" =~ $budget ]]; then
             exit "$status"
           fi
           actual=${BASH_REMATCH[1]} allowed=${BASH_REMATCH[2]}
