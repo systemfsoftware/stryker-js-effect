@@ -516,6 +516,9 @@ jobs:
         run: |
           git worktree add "$RUNNER_TEMP/main-side" "$BASE"
           cd "$RUNNER_TEMP/main-side"
+          # Both sides install the branch's dependency set, so the parity run compares checker code alone.
+          git -C "$GITHUB_WORKSPACE" ls-files -z -- pnpm-lock.yaml pnpm-workspace.yaml ':(glob)**/package.json' \
+            | rsync -a --from0 --files-from=- "$GITHUB_WORKSPACE/" ./
           pnpm install --frozen-lockfile
           pnpm turbo build --filter @systemfsoftware/stryker-js-typescript-checker
       - name: Restore verdict cache
