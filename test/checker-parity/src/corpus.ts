@@ -13,7 +13,7 @@ export const ISOLATED_DECLARATIONS_PROJECT = 'test/checker-parity/__fixtures__/i
 export const CHECKER_PLUGIN = '@systemfsoftware/stryker-js-typescript-checker'
 
 const E2E_CHECKER_CONFIG = /^test\/e2e\/testResources\/[^/]+\/stryker[^/]*\.config\.ts$/u
-const WORKSPACE_TSCONFIG_APP = /(?:^|\/)tsconfig\.app\.json$/u
+const WORKSPACE_TSCONFIG_APP = 'tsconfig.app.json'
 const TSCONFIG_FILE = /tsconfigFile\s*:\s*['"`]([^'"`]+)['"`]/gu
 const DECLARATION_FILE = /\.d\.(?:ts|mts|cts)$/u
 
@@ -24,9 +24,21 @@ export interface CorpusEntries {
 
 const distinctSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> => Arr.sort(Arr.dedupe(values), Str.Order)
 
-export const corpusEntries = (tracked: ReadonlyArray<string>): CorpusEntries => ({
-  workspaceTsconfigs: distinctSorted(tracked.filter((file) => WORKSPACE_TSCONFIG_APP.test(file))),
-  e2eConfigs: distinctSorted(tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
+/**
+ * The corpus: the `tsconfig.app.json` of every workspace package, by the directories pnpm reports, and every
+ * checker config of the e2e fixtures. A tracked file outside the workspace, such as a vendored subtree under
+ * `repos/`, is not a project of this repository even when its name matches.
+ */
+export const corpusEntries = (input: {
+  readonly tracked: ReadonlyArray<string>
+  readonly packageDirectories: ReadonlyArray<string>
+}): CorpusEntries => ({
+  workspaceTsconfigs: distinctSorted(
+    input.tracked.filter((file) =>
+      Arr.contains(input.packageDirectories.map((dir) => `${dir}/${WORKSPACE_TSCONFIG_APP}`), file)
+    ),
+  ),
+  e2eConfigs: distinctSorted(input.tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
 })
 
 const checkedOnEveryPullRequest = (project: string): boolean => project === ISOLATED_DECLARATIONS_PROJECT

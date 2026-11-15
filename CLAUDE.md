@@ -1,2 +1,1 @@
-@AGENTS.md
-@subtrees.toml
+AGENTS.md

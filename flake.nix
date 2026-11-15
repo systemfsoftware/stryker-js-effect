@@ -19,9 +19,6 @@
     # Its nixpkgs is not followed: gritlint's CI proved the build against its
     # own lock. Only the `gritlint` package and the dev shell reference it.
     gritlint.url = "github:systemfsoftware/gritlint";
-    # `repo-checks`. Only that package references this input, so building
-    # any other package never fetches it.
-    systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
     # One `pnpm pack` tarball per workspace package, built offline from the
     # lockfile by the same builder systemfsoftware uses.
     pnpm-release-management = {
@@ -30,7 +27,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, pnpm-release-management }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -67,9 +64,6 @@
             # namespaces, which Ubuntu 24.04 runners refuse without a workflow
             # step this repo's read-only workflows cannot add.
             gritlint = gritlint.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
-            # Repository invariants for any pnpm workspace; `pnpm gate:repo` and
-            # `.husky/pre-push` run its `single-plan` check.
-            repo-checks = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.repo-checks;
             default = dprint;
           };
           clashes = builtins.attrNames (builtins.intersectAttrs own workspace);
