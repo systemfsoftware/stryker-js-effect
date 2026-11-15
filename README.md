@@ -9,7 +9,8 @@
 Stryker introduces synthetic bugs (mutants) into source code to verify whether test suites catch behavioral regressions or merely pad line coverage metrics.
 
 ```bash
-nix run github:systemfsoftware/stryker-js-effect/<release-commit>#stryker -- run
+pnpm add -D @systemfsoftware/stryker-js @systemfsoftware/stryker-js-vitest-runner vitest
+node node_modules/@systemfsoftware/stryker-js/dist/main.mjs run
 ```
 
 The default `vm` runner loads your suites through your project's `vitest`, so `vitest` must be installed next to your tests.
