@@ -7,7 +7,6 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { capSurvivors, CapSurvivorsCommand } from './cap-survivors.workflow.js'
-import { type RenderAnnotationsDecision } from './render-annotations.workflow.js'
 import { type SurfacingCaps, SurvivorRef } from './surfacing.schema.js'
 
 const isSurvivor = (mutant: Report.MutantResult): boolean =>
@@ -39,12 +38,3 @@ export const surfacedSurvivorsOf: {
       Match.exhaustive,
     ),
 )
-
-export const annotationLinesOf = (decision: RenderAnnotationsDecision): ReadonlyArray<string> =>
-  Match.value(decision).pipe(
-    Match.tag('AnnotationsRendered', (rendered) => rendered.lines),
-    Match.tag('NothingToAnnotate', (nothing): ReadonlyArray<string> => [
-      `stryker annotate: no survivors to annotate (${nothing.survivorCount} survivors in the report)`,
-    ]),
-    Match.exhaustive,
-  )

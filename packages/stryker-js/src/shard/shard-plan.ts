@@ -12,10 +12,7 @@ import * as S from 'effect/Schema'
 import type { GitCommandFailed } from '../git-diff.schema.js'
 import { GitDiff } from '../git-diff.service.js'
 import { admitPlanHead, AdmitPlanHeadCommand, type AdmitPlanHeadError } from './admit-plan-head.workflow.js'
-import {
-  describeMissingShardMutants,
-  DescribeMissingShardMutantsCommand,
-} from './describe-missing-shard-mutants.workflow.js'
+import { missingShardMutantsTextOf } from './missing-shard-mutants-text.js'
 import { ShardPlanInvalid, ShardPlanMutantsMissing } from './shard-plan.schema.js'
 
 export interface LoadedShardPlan {
@@ -23,12 +20,6 @@ export interface LoadedShardPlan {
   readonly file: string
   readonly directory: string
 }
-
-const missingIdsTextOf = (missingIds: ReadonlyArray<string>): string =>
-  Result.getOrElse(
-    describeMissingShardMutants(DescribeMissingShardMutantsCommand.make({ missingIds: [...missingIds] })),
-    (neverError) => neverError,
-  ).text
 
 export const missingPlannedMutants: (input: {
   readonly planFile: string
@@ -43,7 +34,7 @@ export const missingPlannedMutants: (input: {
       ShardPlanMutantsMissing.make({
         planFile,
         missingIds,
-        missingIdsText: missingIdsTextOf(missingIds),
+        missingIdsText: missingShardMutantsTextOf(missingIds),
       }),
   )
 }

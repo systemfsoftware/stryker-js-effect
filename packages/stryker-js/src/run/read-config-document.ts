@@ -30,7 +30,8 @@ import {
   ConfigModuleUnloadable,
 } from '../ConfigError.schema.js'
 import { StrykerError } from '../stryker-error.schema.js'
-import { DescribeConfigImportCommand, describeConfigModuleFailure } from './describe-config-module-failure.workflow.js'
+import { ClassifyConfigImportCommand, classifyConfigImportFailure } from './classify-config-import-failure.workflow.js'
+import { configImportFailureTextOf } from './config-import-failure-text.js'
 import {
   ConfigDiscoveryCommand,
   type ConfigDiscoveryDecision,
@@ -241,17 +242,15 @@ const resolveExtendsSpecifier = (specifier: string): Effect.Effect<string, Confi
 const configImportCauseOf = (configFile: string, failure: StrykerError): StrykerError | ConfigModuleUnloadable =>
   Match.value(
     Result.getOrElse(
-      describeConfigModuleFailure(
-        DescribeConfigImportCommand.make({ file: configFile, message: failure.message, cause: failure.cause }),
-      ),
+      classifyConfigImportFailure(ClassifyConfigImportCommand.make({ file: configFile, cause: failure.cause })),
       (neverError) => neverError,
     ),
   ).pipe(
-    Match.tag('ConfigImportDescribed', (described) =>
+    Match.tag('ConfigImportClassified', (classified) =>
       ConfigModuleUnloadable.make({
-        code: described.code,
+        code: classified.code,
         file: configFile,
-        message: described.message,
+        message: configImportFailureTextOf(classified),
         cause: failure.cause,
       })),
     Match.tag('ConfigImportUnclassified', () => failure),
