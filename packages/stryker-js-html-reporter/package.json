@@ -46,6 +46,8 @@
     "@systemfsoftware/stryker-js": "^23.0.0",
     "@systemfsoftware/stryker-js-typescript-checker": "^10.0.0",
     "@systemfsoftware/stryker-js-vitest-runner": "^10.1.0",
+    "@systemfsoftware/trace-spec": "catalog:",
+    "@systemfsoftware/trace-taxonomy": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest": "catalog:",
