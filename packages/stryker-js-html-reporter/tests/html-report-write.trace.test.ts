@@ -45,7 +45,7 @@ const writeReport = Stimulus.make({
 })
 
 const directoryUnderTest = decodeURIComponent(
-  new URL(`../artifacts/html-report-write-${crypto.randomUUID()}`, import.meta.url).pathname,
+  new URL('../artifacts/html-report-write', import.meta.url).pathname,
 )
 
 const writeTracedWithItsFile = Contract.of(HtmlReporterTaxonomy)

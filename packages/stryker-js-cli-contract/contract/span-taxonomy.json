@@ -200,7 +200,11 @@
   {
     "id": "html_report.write",
     "name": "html_report.write",
-    "attributes": {}
+    "attributes": {
+      "stryker.html_report.file_name": {
+        "type": "string"
+      }
+    }
   },
   {
     "id": "html_report.write_bundle_from_disk",
