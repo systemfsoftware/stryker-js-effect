@@ -36,7 +36,7 @@
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "^0.3.1",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "^0.1.3",
-    "@systemfsoftware/stryker-js": "^22.0.0",
+    "@systemfsoftware/stryker-js": "^23.0.0",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "^10.1.0",

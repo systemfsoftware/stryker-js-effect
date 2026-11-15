@@ -50,7 +50,7 @@ catalogs:
       version: 0.150.0
     '@std/jsonc':
       specifier: jsr:^1
-      version: 1.0.2
+      version: 1.0.3
     '@systemfsoftware/arethetypeswrong-cli':
       specifier: ^4.2.0
       version: 4.2.0
@@ -58,8 +58,8 @@ catalogs:
       specifier: ^1.0.1
       version: 1.0.1
     '@systemfsoftware/effect-cell-types':
-      specifier: ^12.0.0
-      version: 12.0.0
+      specifier: ^12.1.4
+      version: 12.1.4
     '@systemfsoftware/effect-gherkin-spec':
       specifier: ^7.0.0
       version: 7.0.0
@@ -695,7 +695,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-vm-runner':
         specifier: workspace:@systemfsoftware/stryker-js-vitest-runner@^
         version: link:../stryker-js-vitest-runner
@@ -717,7 +717,7 @@ importers:
         version: 0.150.0
       '@std/jsonc':
         specifier: 'catalog:'
-        version: '@jsr/std__jsonc@1.0.2'
+        version: '@jsr/std__jsonc@1.0.3'
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
@@ -749,8 +749,8 @@ importers:
         specifier: workspace:^
         version: link:../ignorers/interface
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -767,8 +767,8 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-runtime
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: ^9.0.1
-        version: 9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: ^10.0.0
+        version: 10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: ^10.1.0
         version: 10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)
@@ -907,7 +907,7 @@ importers:
         version: 4.1.2(effect@4.1.2)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -946,11 +946,11 @@ importers:
         specifier: ^0.1.3
         version: 0.1.3(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: ^9.0.1
-        version: 9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: ^10.0.0
+        version: 10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: ^10.1.0
         version: 10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)
@@ -1004,7 +1004,7 @@ importers:
         version: 0.150.0
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-framework-interface':
         specifier: workspace:^
         version: link:../frameworks/interface
@@ -1055,11 +1055,11 @@ importers:
         specifier: workspace:^
         version: link:../ignorers/interface
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: ^9.0.1
-        version: 9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: ^10.0.0
+        version: 10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: ^10.1.0
         version: 10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)
@@ -1174,7 +1174,7 @@ importers:
         version: 1.9.1
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -1253,7 +1253,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -1284,7 +1284,7 @@ importers:
         version: 7.59.1(@types/node@24.13.3)
       '@std/jsonc':
         specifier: 'catalog:'
-        version: '@jsr/std__jsonc@1.0.2'
+        version: '@jsr/std__jsonc@1.0.3'
       '@systemfsoftware/arethetypeswrong-cli':
         specifier: 'catalog:'
         version: 4.2.0
@@ -1310,11 +1310,11 @@ importers:
         specifier: ^0.1.3
         version: 0.1.3(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: ^9.0.1
-        version: 9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: ^10.0.0
+        version: 10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: ^10.1.0
         version: 10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)
@@ -1368,7 +1368,7 @@ importers:
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
     devDependencies:
       '@effect/platform-node':
         specifier: 4.1.2
@@ -1395,8 +1395,8 @@ importers:
         specifier: ^0.1.3
         version: 0.1.3(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
@@ -1410,8 +1410,8 @@ importers:
         specifier: workspace:^
         version: link:../stryker-js-plugin-runtime
       '@systemfsoftware/stryker-js-typescript-checker':
-        specifier: ^9.0.1
-        version: 9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)
+        specifier: ^10.0.0
+        version: 10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: ^10.1.0
         version: 10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)
@@ -1597,7 +1597,7 @@ importers:
         version: 0.63.0
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 5.0.0(@systemfsoftware/vitest@2.0.0(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1))(effect@4.1.2)(vitest@5.0.1)
@@ -1720,7 +1720,7 @@ importers:
     dependencies:
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
-        version: 12.0.0(effect@4.1.2)
+        version: 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../../packages/stryker-js-cli-contract
@@ -1759,8 +1759,8 @@ importers:
         specifier: ^0.1.3
         version: 0.1.3(rolldown@1.2.8)
       '@systemfsoftware/stryker-js':
-        specifier: ^22.0.0
-        version: 22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+        specifier: ^23.0.0
+        version: 23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../../packages/stryker-js-instrumenter
@@ -2269,8 +2269,8 @@ packages:
   '@jsr/std__json@1.1.0':
     resolution: {integrity: sha512-a9Eylh7ox33tFn5RxhESnvI4akpefQP5Qn+ePz3Ih4IJ/EPA8p0SKq0aztRfN1sGDhfyWMPWwlUcwNxONt+Ncg==, tarball: https://npm.jsr.io/~/11/@jsr/std__json/1.1.0.tgz}
 
-  '@jsr/std__jsonc@1.0.2':
-    resolution: {integrity: sha512-Lva9lY0UPvvgmS8INUHU8Tqijq2SPfdlnSAvofOYUBiB6ALPxo0rTMznRlY5Wt30nMW+rhMTha1x5RGpMBKUoQ==, tarball: https://npm.jsr.io/~/11/@jsr/std__jsonc/1.0.2.tgz}
+  '@jsr/std__jsonc@1.0.3':
+    resolution: {integrity: sha512-NALyuVr8/MJsdKnVFCXKNyWzCJTbLlXASTF/4YyfQN2evCRWaZoTeQ17estdejU5a/xhdPfJ4aDv6MP0b17UHQ==, tarball: https://npm.jsr.io/~/11/@jsr/std__jsonc/1.0.3.tgz}
 
   '@jsr/std__streams@1.1.2':
     resolution: {integrity: sha512-TNg+Mr/vE2Wg+JDdZpVj9umEyzcmSAOtcp0ildlyVCjHy0/fJ2BJZgO8PQXA/SwJOchvKLaMafZzfFkm9PO13A==, tarball: https://npm.jsr.io/~/11/@jsr/std__streams/1.1.2.tgz}
@@ -3145,11 +3145,6 @@ packages:
   '@systemfsoftware/differential-spec@1.0.1':
     resolution: {integrity: sha512-rjNEtDhJdIi0ZGjxzwezjpPo67Vzr7sJddAFeBbwtVHV7fwGDD4qzdEgpS+Ehk4okWA20kMVM+uOcapn7QplUg==}
 
-  '@systemfsoftware/effect-cell-types@12.0.0':
-    resolution: {integrity: sha512-KyUO/9yAxgoyTEpd76/mdjEQzIRk9pZgTRZuZOUtYkBfxeKcKJM0rX6wrIPZqwSNCBmxrRy/V7iGWDDvd1KRrA==}
-    peerDependencies:
-      effect: 4.1.2
-
   '@systemfsoftware/effect-cell-types@12.1.4':
     resolution: {integrity: sha512-/wV3smgMgEfrxsbCJhBWVKtmQJk3U2eQYcaSXGI5LcTmpVuf0Foi2GKMI+8tmevbLTTB9/xJWrT0mFXmekHYtQ==}
     peerDependencies:
@@ -3164,12 +3159,6 @@ packages:
 
   '@systemfsoftware/effect-microsandbox@6.1.0':
     resolution: {integrity: sha512-YTeMvbwzVdz0FyKXRKo0IqXIWz7P5NKLVu9fMTEiE69sKyh1qvC20ZOd42QWGOBaxAvuE4rp3BNVR2TkZnOBwQ==}
-    peerDependencies:
-      effect: 4.1.2
-      typescript: '>=7.0.0'
-
-  '@systemfsoftware/effect-readiness@1.1.2':
-    resolution: {integrity: sha512-NXiDvH2FsakgQZKuu++NJjz+L6fTg23yDm0chP8qTkrhBTRW00Ypgov6TfkndPFVQoCxVsEfSdWElZQjKby80Q==}
     peerDependencies:
       effect: 4.1.2
       typescript: '>=7.0.0'
@@ -3275,24 +3264,34 @@ packages:
   '@systemfsoftware/stryker-ignorer-kit@0.1.3':
     resolution: {integrity: sha512-Xytd13yQi6CQRX5DAnZ9Tpskn/3CpJbLewcmCmjvMA4aB/7rzPqQUk4jhMnVSVxr1jnbtLiWT6iFkhrBND2hEw==}
 
-  '@systemfsoftware/stryker-js-cli-contract@2.0.0':
-    resolution: {integrity: sha512-b9x0bZTOEp+9n0PagDGFz5KDeeUbHlMyi76JRjlUaWCCKAUhajzE0ogttNXAFlAsKO7FqVcu/M2ibuRKyxxBnw==}
+  '@systemfsoftware/stryker-js-cli-contract@3.0.0':
+    resolution: {integrity: sha512-qM+XVQxsnhYffmbI2OaWn17m/not3gPTWkdRCYtspZO/g+BdMdiq/ZWOJNyWhZnowfxCmXPWshYZcCe8GiCFkA==}
     engines: {node: '>=20.0.0'}
+    peerDependencies:
+      effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-instrumenter@15.0.0':
-    resolution: {integrity: sha512-i2i9cJHgWP4q7AlQG/FfiadRi3DuwO70meLcC3VgEx7JihdepsEV/gsPM5/qOvFDKrr2GucqZq+gChkcpTKGpA==}
+  '@systemfsoftware/stryker-js-instrumenter@16.0.0':
+    resolution: {integrity: sha512-7Sc3X57xcfpvbTA7LbEwVg7OOZV4sEH4lICKbFD/dMw3xHAExfYyYR011QDv3IWOUwWobHnS2MowEuwE9uCy1g==}
     engines: {node: '>=20.0.0'}
+    peerDependencies:
+      effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-plugin-interface@18.0.0':
-    resolution: {integrity: sha512-HryJO0EhEgtwB9bHQfi9z5lNO8lvDnX8RPbb5hU+eQbqUNqrOaoHDLtqaApsnHhiXQnwozoQgTlR+NdI4JTmog==}
+  '@systemfsoftware/stryker-js-plugin-interface@19.0.0':
+    resolution: {integrity: sha512-0SsRISdQDok5Q/ptgvLqr+AByi32+j0l7ygKHGkRkC4mVwfuib0pH4R0AzpPv6HuKeE9D12YmNAMk74ALdUxtA==}
     engines: {node: '>=20.0.0'}
+    peerDependencies:
+      effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-plugin-runtime@8.0.1':
-    resolution: {integrity: sha512-0e+K4c96+Xr5ZZZ1oZp27QC7Xk5s7cXetAPsqZdkLyhOD5ohx9Rln++iXKID6haZRjDDSo9UC0/Jp1cWhFey/g==}
+  '@systemfsoftware/stryker-js-plugin-runtime@9.0.0':
+    resolution: {integrity: sha512-pb00SoQHk/lUekrezQdLjf+VcFAWZuG/NU8EbRYW2JBmMl4tUhTfbRBhpHUfSC1s9uVpb5BmKNqWzvFcp5/z5w==}
     engines: {node: '>=22.18.0'}
+    peerDependencies:
+      effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-typescript-checker@9.0.1':
-    resolution: {integrity: sha512-2vqB5AXdr1A4fo3KxcIpdJMcSAq0yrlZJ5JDYSjXRFLrD8JK2GgywGARNHyD3yStSO81/b0MLL0RF9T0kXTDVw==}
+  '@systemfsoftware/stryker-js-typescript-checker@10.0.0':
+    resolution: {integrity: sha512-K8R2YCd6MYDKyzSCtnW7WagWr3IhhhSel0b4oObe+UDtpAhgW3pbQ2c2lXXeo7/iw4ebrPSL8M2oFlAf7mxvrA==}
+    peerDependencies:
+      effect: 4.1.2
 
   '@systemfsoftware/stryker-js-vitest-runner@10.1.0':
     resolution: {integrity: sha512-wKneBGZwOc8Ciw8+cKBaxQ/8j4qVoBZs4A264dPaoXMqomAWJbHueScSXQemivUoLqq8GIyy0GG2GTeLuvgHOg==}
@@ -3300,8 +3299,8 @@ packages:
     peerDependencies:
       vitest: ^5
 
-  '@systemfsoftware/stryker-js@22.0.0':
-    resolution: {integrity: sha512-iH5R5QMc73JWQgN/ygRma4tGxwHBQwvT2gMHj0F37VmZ+WqFmAZNLMMzWCiOiyLPnyZEjUf794kTYp+wdgaoPA==}
+  '@systemfsoftware/stryker-js@23.0.0':
+    resolution: {integrity: sha512-HpOEqgTDOxTvnYXHfCz4B8Tvg787AveGg8eEfywCjRde3UCu0c+vd+tKP/kE0c1Dpj/tgBdbsU7j6GKkDmtnug==}
     engines: {node: '>=24.13.1'}
     peerDependencies:
       effect: 4.1.2
@@ -4247,10 +4246,6 @@ packages:
 
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
-
-  lru-cache@11.5.2:
-    resolution: {integrity: sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==}
-    engines: {node: 20 || >=22}
 
   lru-cache@11.5.3:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
@@ -5257,7 +5252,7 @@ snapshots:
     dependencies:
       '@jsr/std__streams': 1.1.2
 
-  '@jsr/std__jsonc@1.0.2':
+  '@jsr/std__jsonc@1.0.3':
     dependencies:
       '@jsr/std__json': 1.1.0
 
@@ -5898,7 +5893,7 @@ snapshots:
 
   '@systemfsoftware/differential-spec@1.0.1(patch_hash=e976436ae352fe9fcf978ef1d4dabae26df9728372562b28e5ca60d7cde9f9ee)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1)':
     dependencies:
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
       '@systemfsoftware/effect-sim-kernel': 1.0.0(effect@4.1.2)
       '@systemfsoftware/vitest': 2.0.0(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1)
       effect: 4.1.2
@@ -5908,10 +5903,6 @@ snapshots:
       - redis
       - utf-8-validate
       - vitest
-
-  '@systemfsoftware/effect-cell-types@12.0.0(effect@4.1.2)':
-    dependencies:
-      effect: 4.1.2
 
   '@systemfsoftware/effect-cell-types@12.1.4(effect@4.1.2)':
     dependencies:
@@ -5928,20 +5919,9 @@ snapshots:
     dependencies:
       '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
-      '@systemfsoftware/effect-readiness': 1.1.2(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
+      '@systemfsoftware/effect-readiness': 1.1.3(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
       effect: 4.1.2
       microsandbox: 0.7.8
-      typescript: 7.0.2
-    transitivePeerDependencies:
-      - bufferutil
-      - redis
-      - utf-8-validate
-
-  '@systemfsoftware/effect-readiness@1.1.2(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)':
-    dependencies:
-      '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
-      effect: 4.1.2
       typescript: 7.0.2
     transitivePeerDependencies:
       - bufferutil
@@ -6091,51 +6071,51 @@ snapshots:
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-js-cli-contract@2.0.0':
+  '@systemfsoftware/stryker-js-cli-contract@3.0.0(effect@4.1.2)':
     dependencies:
-      '@systemfsoftware/stryker-js-plugin-interface': 18.0.0
+      '@systemfsoftware/stryker-js-plugin-interface': 19.0.0(effect@4.1.2)
       effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-instrumenter@15.0.0(rolldown@1.2.8)':
+  '@systemfsoftware/stryker-js-instrumenter@16.0.0(effect@4.1.2)(rolldown@1.2.8)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
       '@noble/hashes': 2.4.0
       '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-framework-interface': 0.0.2
-      '@systemfsoftware/stryker-js-cli-contract': 2.0.0
-      '@systemfsoftware/stryker-js-plugin-interface': 18.0.0
+      '@systemfsoftware/stryker-js-cli-contract': 3.0.0(effect@4.1.2)
+      '@systemfsoftware/stryker-js-plugin-interface': 19.0.0(effect@4.1.2)
       effect: 4.1.2
       oxc-parser: 0.150.0
       oxc-walker: 1.1.1(@oxc-project/types@0.150.0)(oxc-parser@0.150.0)(rolldown@1.2.8)
     transitivePeerDependencies:
       - rolldown
 
-  '@systemfsoftware/stryker-js-plugin-interface@18.0.0':
+  '@systemfsoftware/stryker-js-plugin-interface@19.0.0(effect@4.1.2)':
     dependencies:
       '@systemfsoftware/stryker-ignorer-interface': 0.1.3
       effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-plugin-runtime@8.0.1':
+  '@systemfsoftware/stryker-js-plugin-runtime@9.0.0(effect@4.1.2)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
-      '@systemfsoftware/stryker-js-cli-contract': 2.0.0
-      '@systemfsoftware/stryker-js-plugin-interface': 18.0.0
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
+      '@systemfsoftware/stryker-js-cli-contract': 3.0.0(effect@4.1.2)
+      '@systemfsoftware/stryker-js-plugin-interface': 19.0.0(effect@4.1.2)
       effect: 4.1.2
 
-  '@systemfsoftware/stryker-js-typescript-checker@9.0.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(rolldown@1.2.8)(supports-color@10.2.2)':
+  '@systemfsoftware/stryker-js-typescript-checker@10.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(rolldown@1.2.8)(supports-color@10.2.2)':
     dependencies:
       '@effect/opentelemetry': 4.1.2(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)
       '@noble/hashes': 2.4.0
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.222.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
-      '@systemfsoftware/stryker-js-cli-contract': 2.0.0
-      '@systemfsoftware/stryker-js-instrumenter': 15.0.0(rolldown@1.2.8)
-      '@systemfsoftware/stryker-js-plugin-interface': 18.0.0
-      '@systemfsoftware/stryker-js-plugin-runtime': 8.0.1
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
+      '@systemfsoftware/stryker-js-cli-contract': 3.0.0(effect@4.1.2)
+      '@systemfsoftware/stryker-js-instrumenter': 16.0.0(effect@4.1.2)(rolldown@1.2.8)
+      '@systemfsoftware/stryker-js-plugin-interface': 19.0.0(effect@4.1.2)
+      '@systemfsoftware/stryker-js-plugin-runtime': 9.0.0(effect@4.1.2)
       effect: 4.1.2
       typescript: 7.0.2
     transitivePeerDependencies:
@@ -6156,7 +6136,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node': 0.222.0(@opentelemetry/api@1.9.1)(supports-color@10.2.2)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
       vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
     transitivePeerDependencies:
       - '@opentelemetry/api'
@@ -6170,7 +6150,7 @@ snapshots:
       - effect
       - supports-color
 
-  '@systemfsoftware/stryker-js@22.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)':
+  '@systemfsoftware/stryker-js@23.0.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)':
     dependencies:
       '@effect/opentelemetry': 4.1.2(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)
       '@effect/platform-node': 4.1.2(effect@4.1.2)(redis@6.2.1(@opentelemetry/api@1.9.1))
@@ -6181,7 +6161,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-metrics': 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
-      '@systemfsoftware/effect-cell-types': 12.0.0(effect@4.1.2)
+      '@systemfsoftware/effect-cell-types': 12.1.4(effect@4.1.2)
       '@systemfsoftware/stryker-js-vm-runner': '@systemfsoftware/stryker-js-vitest-runner@10.1.0(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.1.2)(supports-color@10.2.2)(vitest@5.0.1)'
       effect: 4.1.2
       yaml: 2.9.1
@@ -6963,8 +6943,6 @@ snapshots:
 
   long@5.3.2: {}
 
-  lru-cache@11.5.2: {}
-
   lru-cache@11.5.3: {}
 
   magic-string@0.30.21:
@@ -7125,7 +7103,7 @@ snapshots:
 
   path-scurry@2.0.2:
     dependencies:
-      lru-cache: 11.5.2
+      lru-cache: 11.5.3
       minipass: 7.1.3
 
   pathe@2.0.3: {}
