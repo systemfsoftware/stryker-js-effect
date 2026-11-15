@@ -1,5 +1,17 @@
 # @systemfsoftware/stryker-js
 
+## 23.2.1
+
+Rebuilt against the instrumenter whose format resolution now decides only the claim; behaviour and output are unchanged.
+
+Rebuilt against the span taxonomy that declares the html report write attribute; behaviour is unchanged. The html reporter test of that span is a trace-spec contract.
+
+Rebuilt against the span taxonomy that declares the checker compile counts; behaviour is unchanged. The span tests of the instrument phase, sandbox acquisition, worker trace propagation and importer shortcut are trace-spec contracts.
+
+Tests only: the vitest runner pins the status real vitest gives each test modifier; the vm-parity differential test, which after the vm runner became the vitest runner compared vitest with itself, is removed.
+
+Decisions that framed stream events, chose survivors to annotate and classified an unloadable config module now carry only their domain outcome, and the config error and missing-shard-mutant descriptions are plain formatters; the stderr lines, annotation lines and error text are built at the edge, byte for byte as before.
+
 ## 23.2.0
 
 `stryker gate` judges and prints every verdict: new survivors against `--baseline`, the budget against `--budget-baseline`, and each project's `thresholds.break`. When several verdicts fail, it prints each one once and exits 1 on the first in this order: the break, then new survivors, then the budget. Before, the gate stopped at the first failing verdict, so a new survivor or a budget breach hid a break. Unusable input (exit 2) still stops the gate at once.
