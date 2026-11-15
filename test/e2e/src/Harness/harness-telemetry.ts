@@ -5,11 +5,7 @@ export const COMPONENT_ATTRIBUTE = 'e2e.component'
 export const SpanNames = {
   setup: 'e2e.setup',
   prune: 'e2e.setup.prune',
-  pack: 'e2e.setup.pack',
-  packBuild: 'e2e.setup.pack.build',
-  packTarballs: 'e2e.setup.pack.tarballs',
-  packsKey: 'e2e.setup.key.packs',
-  packsKeyUnpack: 'e2e.setup.key.packs.unpack',
+  packageBuild: 'e2e.setup.package.build',
   fixtureKeys: 'e2e.setup.key.fixtures',
   fixtureKey: 'e2e.setup.key.fixtures.fixture',
   bake: 'e2e.setup.bake',

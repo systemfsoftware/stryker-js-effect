@@ -14,7 +14,8 @@ import type { CheckerCrash } from '../Checker/Checker.handle.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { requireDryRun } from '../require-dry-run.workflow.js'
 import { requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
-import type { StageError } from '../Run.schema.js'
+import { StageError } from '../Run.schema.js'
+import { missingPlannedMutants } from '../shard/shard-plan.js'
 import { currentRootCoveragesOf, requireDryRunCommandOf } from './dry-run-choice.js'
 import { dryRunCell, type TestBasis } from './dry-run.cell.js'
 import { incrementalReportTextsOf } from './incremental-reuse.js'
@@ -26,6 +27,22 @@ import { mutationTestCell, type MutationTestDone } from './mutation-test.cell.js
 import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
+
+const plannedMutantsRefusalOf = (command: InstrumentDone): Effect.Effect<void, StageError> =>
+  Option.match(
+    Option.all([Option.fromUndefinedOr(command.plannedMutantsFile), requestedIdsOf(command.options)]),
+    {
+      onNone: () => Effect.void,
+      onSome: ([planFile, planned]) =>
+        Option.match(
+          missingPlannedMutants({ planFile, planned, discovered: command.mutants.map((mutant) => mutant.id) }),
+          {
+            onNone: () => Effect.void,
+            onSome: (refused) => Effect.fail(StageError.make({ stage: 'prepare', reason: refused.message })),
+          },
+        ),
+    },
+  )
 
 const plannableOf = (command: InstrumentDone) =>
   partitionPlannable(restrictedToRequestedIds({ mutants: command.mutants, requested: requestedIdsOf(command.options) }))
@@ -105,6 +122,7 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
 })
 
 const enterDryRun = Effect.fnUntraced(function*(command: InstrumentDone) {
+  yield* plannedMutantsRefusalOf(command)
   yield* phaseEntered('dry-run')
   const env = yield* RunEnvironment
   const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })

@@ -1,13 +1,15 @@
 /**
  * effect-imports — the import table, callee resolution and shadow analysis the
- * opt-in concurrency and arid rules share.
+ * Effect concurrency mutators and the arid rules share.
  *
  * It answers, from a file's own `effect` imports, which module and export a
  * visited callee resolves to (an aliased namespace or a named import counts; a
  * local look-alike, an unimported name, a shadowed binding or a rebound global
  * does not) and how each `effect` module a replacement needs is reached from
  * that file. Pure and total: one expression per decision, no I/O, no throwing,
- * no module-level state — the table is built once per Program and passed down.
+ * no module-level state. The arid path builds the table once per Program and
+ * passes it down; a concurrency decision rebuilds it from the Program's imports,
+ * so no state outlives that decision.
  */
 import type {
   ArrowFunctionExpression,

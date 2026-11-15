@@ -15,7 +15,7 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
-import type { PooledTestRunnerError } from './TestRunner.schema.js'
+import { type PooledTestRunnerError, WorkerNeverStartedReason } from './TestRunner.schema.js'
 import { WORKER_BOOT_TIMEOUT } from './worker-client.blueprint.js'
 import { OutOfMemoryError } from './Worker.schema.js'
 
@@ -55,6 +55,11 @@ type RunPolicy<A, E> = (self: Effect.Effect<A, E, never>) => Effect.Effect<A, E,
 const wallClockTimeoutResult: TestRunner.MutantRunResult = {
   status: 'timeout',
   reason: TestRunner.WallClockTimeoutReason.literal,
+}
+
+const neverStartedResult: TestRunner.MutantRunResult = {
+  status: 'timeout',
+  reason: WorkerNeverStartedReason.literal,
 }
 
 const endedWithoutResult = (): PooledTestRunnerError =>
@@ -99,7 +104,7 @@ export const deadlineArmedMutantRun: {
         Effect.timeoutOption(WORKER_BOOT_TIMEOUT),
         Effect.flatMap(
           Option.match({
-            onNone: () => Effect.succeed(wallClockTimeoutResult),
+            onNone: () => Effect.succeed(neverStartedResult),
             onSome: (began) =>
               began
                 ? Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as(wallClockTimeoutResult))
@@ -153,13 +158,18 @@ export const withTimeout: {
       ),
   })
 
+const workerReplacingReasons: ReadonlyArray<string | undefined> = [
+  TestRunner.WallClockTimeoutReason.literal,
+  WorkerNeverStartedReason.literal,
+]
+
 export const invalidatesRunnerPool: {
   (status: string, reason: string | undefined): boolean
   (reason: string | undefined): (status: string) => boolean
 } = dual(
   2,
   (status: string, reason: string | undefined): boolean =>
-    status === 'timeout' && reason === TestRunner.WallClockTimeoutReason.literal,
+    status === 'timeout' && workerReplacingReasons.includes(reason),
 )
 const maxRetries = 2
 

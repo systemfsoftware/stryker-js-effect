@@ -120,11 +120,7 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
 const instrumentSource = (source: string) =>
   instrument(
     [{ name: '/tmp/sync-removal-probe.ts', content: source, mutate: true }],
-    stockOptions({
-      ignorers: [],
-      excludedMutations: [],
-      optInMutations: [SYNCHRONIZATION_REMOVAL],
-    }),
+    stockOptions({ ignorers: [], excludedMutations: [] }),
   )
 
 const removalCount = (result: Instrument.InstrumentResult): number =>
@@ -149,7 +145,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
         title,
         Gherkin.Do.pipe(
           Given(givenText)('sources', () => Effect.succeed(sources)),
-          When('the files are instrumented with only synchronization removal enabled')(
+          When('the files are instrumented with the default mutators')(
             'counts',
             ({ sources }: { sources: readonly string[] }) =>
               Effect.forEach(sources, (source) => Effect.map(instrumentSource(source), removalCount)),
@@ -168,7 +164,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'fixtures',
           () => effectConcurrencyFixtureFiles,
         ),
-        When('the files are instrumented with only synchronization removal enabled')(
+        When('the files are instrumented with the default mutators')(
           'report',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
@@ -177,7 +173,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
                 content: fixture.content,
                 mutate: true,
               })),
-              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [SYNCHRONIZATION_REMOVAL] }),
+              stockOptions({ ignorers: [], excludedMutations: [] }),
             ),
         ),
         Then(
@@ -237,7 +233,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
       'Dropping the guard leaves only the guarded work behind',
       Gherkin.Do.pipe(
         Given('a module guarding an effect with a counting semaphore')('source', () => Effect.succeed(GUARDED_SOURCE)),
-        When('the file is instrumented with only synchronization removal enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
@@ -258,7 +254,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'source',
           () => Effect.succeed(FROZEN_PIPE_SOURCE),
         ),
-        When('the file is instrumented with only synchronization removal enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
@@ -279,7 +275,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'source',
           () => Effect.succeed(MASKED_SOURCE),
         ),
-        When('the file is instrumented with only synchronization removal enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
         ),
@@ -300,17 +296,13 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'content',
           () => effectConcurrencyFixtureContent('finalizer-escape.ts'),
         ),
-        When('the file is instrumented with only synchronization removal enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ content }: { content: string }) =>
             Effect.map(
               instrument(
                 [{ name: 'effect-concurrency/finalizer-escape.ts', content, mutate: true }],
-                stockOptions({
-                  ignorers: [],
-                  excludedMutations: [],
-                  optInMutations: [SYNCHRONIZATION_REMOVAL],
-                }),
+                stockOptions({ ignorers: [], excludedMutations: [] }),
               ),
               removalMutantsOf,
             ),
@@ -338,7 +330,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'source',
           () => Effect.succeed(SUPPRESSED_SOURCE),
         ),
-        When('the file is instrumented with only synchronization removal enabled')(
+        When('the file is instrumented with the default mutators')(
           'report',
           ({ source }: { source: string }) => instrumentSource(source),
         ),

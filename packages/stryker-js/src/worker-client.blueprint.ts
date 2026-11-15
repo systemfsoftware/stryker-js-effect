@@ -32,6 +32,12 @@ export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 
+/**
+ * The span taxonomy names each worker call `RpcClient.<method>`. effect 4.0.0 used that prefix by
+ * default; later releases name the span after the method alone.
+ */
+const RPC_CLIENT_SPAN_PREFIX = 'RpcClient'
+
 const WorkerClients = <Rpcs extends Rpc.Any>() =>
   Blueprint.make<WorkerClientParams<Rpcs>>()(TypeId).steps({
     steps: {},
@@ -57,7 +63,7 @@ const WorkerClients = <Rpcs extends Rpc.Any>() =>
         )
         const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
 
-        return yield* RpcClient.make(params.rpcs).pipe(
+        return yield* RpcClient.make(params.rpcs, { spanPrefix: RPC_CLIENT_SPAN_PREFIX }).pipe(
           Effect.provideContext(Context.merge(protocol, traceContext)),
         )
       }),

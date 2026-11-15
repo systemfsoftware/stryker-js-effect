@@ -1,2 +1,2 @@
 export { StockCatalog } from '../StockCatalog.js'
-export { StockDefaultName, StockMutatorName, StockOptInName } from '../StockCatalog.schema.js'
+export { StockDefaultName } from '../StockCatalog.schema.js'

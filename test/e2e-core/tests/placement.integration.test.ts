@@ -379,7 +379,7 @@ Feature('The in-process placement check', { timeout: 600_000 })
     )
 
     scenario(
-      'Placement closure holds over the stock catalog, the opt-in tier and the sample provider',
+      "Placement closure holds over the stock catalog and the sample provider's opt-in entry",
       Gherkin.Do.pipe(
         Given('the annotated sample slice is instrumented in-process')('placement', () => placementOf(sampleFixture())),
         Then('no catalog entry is unwitnessed and no closure refusal is raised')((s, expect) => {

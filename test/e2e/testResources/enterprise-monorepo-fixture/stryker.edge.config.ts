@@ -4,7 +4,7 @@ export default defineConfig({
   testRunner: 'vm',
   checkers: [
     {
-      plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+      plugin: '@systemfsoftware/stryker-js-typescript-checker',
     },
   ],
   reporters: ['json'],

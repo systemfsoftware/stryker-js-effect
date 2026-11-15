@@ -1,5 +1,19 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 15.0.0
+
+The repository's own mutation and test tooling now installs the v20.0.0 release tarballs; the published code and the dependencies a consumer installs are unchanged.
+
+Nothing you configure or import changes: the instrumenter's behaviour and published API stay the same.
+
+Every `Mutant` now carries a required `probeEligibility`: `Probed { kind }` when a dry run could compute the mutant's value from operands the original code already evaluates (`arithmetic`, `relational`, `unary` or `constant`), otherwise `Unprobed { reason }`. A mutant decoded or constructed without the field reads `Unprobed` with reason `not-decided`. The `Mutant` namespace exports the new schemas.
+
+The instrumenter marks `Probed` the `-`, `*`, `/` and `%` arithmetic swaps, swaps of a `<`, `<=`, `>` or `>=` comparison, `+x`/`-x` sign flips, and `true`/`false` replacements of a comparison between two literals. Nothing reads the field yet: mutant statuses and the tests each mutant runs are unchanged.
+
+Migration: code that builds a `Mutant` object literal must set `probeEligibility`.
+
+AtomicUpdateSplit, SynchronizationRemoval and FinalizerEscape are now default mutators, so a run with no mutator option plants Effect concurrency faults; mutation scores and the set of mutants change. Mutator.optInMutators is removed and stockRegistry.optIn is empty; opt-in is a plugin catalog tier. The replacements use Effect 4 APIs and @systemfsoftware/stryker-js declares effect ^4.0.0 as a peer dependency, so a repository on Effect 3 must list the three in mutator.excludedMutations.
+
 ## 14.0.0
 
 Arid rules now resolve the callee through the file's `effect` imports instead of matching its text. `E.logInfo('x')` after `import * as E from 'effect/Effect'` or `import * as E from 'effect'` (as `E.Effect.logInfo`) is Ignored as `arid-logging: Effect.logInfo`. A bare named import from `effect/Logger`, `effect/Metric`, `effect/Schedule` or `effect/Duration` now counts like the namespace form: `counter('requests')` after `import { counter } from 'effect/Metric'` is Ignored as `arid-telemetry: Metric.counter`. A local or imported `Effect`, `console` or `Date`, or an `Effect` that is never imported, is no longer arid, so its arguments are mutated again.

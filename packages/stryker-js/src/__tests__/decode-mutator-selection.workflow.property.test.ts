@@ -24,7 +24,7 @@ import {
 const stock: MergedCatalog = Effect.runSync(S.decodeEffect(MutatorCatalog.Catalog)(StockCatalog.StockCatalog))
 
 const pluginEntryArb = Arbitrary.schema(
-  S.Struct({ provider: MutatorCatalog.Provider, bareName: StockCatalog.StockMutatorName }),
+  S.Struct({ provider: MutatorCatalog.Provider, bareName: StockCatalog.StockDefaultName }),
 ).pipe(
   Arbitrary.map(({ provider, bareName }) => {
     const namespace = Boolean.match(provider === 'stryker', {
@@ -34,17 +34,11 @@ const pluginEntryArb = Arbitrary.schema(
     return { namespace, name: `${namespace}/${bareName}` }
   }),
 )
-const undeclaredNameArb = Arbitrary.schema(StockCatalog.StockMutatorName).pipe(
+const undeclaredNameArb = Arbitrary.schema(StockCatalog.StockDefaultName).pipe(
   Arbitrary.map((name) => `probe/${name}`),
 )
-const stockNameArb = Arbitrary.schema(StockCatalog.StockMutatorName)
-const stockDefaultNameArb = Arbitrary.schema(StockCatalog.StockDefaultName)
-const acceptedSelectionArb = Arbitrary.schema(
-  S.Struct({
-    excludedMutations: S.Array(StockCatalog.StockMutatorName),
-    optInMutations: S.Array(StockCatalog.StockOptInName),
-  }),
-)
+const stockNameArb = Arbitrary.schema(StockCatalog.StockDefaultName)
+const excludedStockNamesArb = StockCatalog.StockDefaultName.pipe(S.Array, Arbitrary.schema)
 
 const emptyCatalog: MergedCatalog = { provider: MutatorCatalog.Provider.make('stryker'), entries: [] }
 
@@ -59,13 +53,16 @@ const commandOf = (input: {
     optInMutations: [...(input.optInMutations ?? [])],
   })
 
-const providerOf = (entry: { readonly namespace: string; readonly name: string }): ProviderCatalog => ({
+const providerOf = (
+  entry: { readonly namespace: string; readonly name: string },
+  tier: MutatorCatalog.Tier,
+): ProviderCatalog => ({
   moduleName: `${entry.namespace}-provider.mjs`,
   namespace: MutatorCatalog.Provider.make(entry.namespace),
   entries: [{
     id: MutatorCatalog.Id.make(`${entry.namespace}-probe`),
     name: MutatorCatalog.Name.make(entry.name),
-    tier: 'default',
+    tier,
     definition: 'a probe definition',
     examples: [{ before: 'probe', after: ['probe'] }],
   }],
@@ -117,7 +114,7 @@ describe('decodeMutatorSelection', () => {
 
   it.prop(
     '∀n_StockDefaultName_≡RefusedAsANonOptInNamingTheEntry',
-    { of: [stockDefaultNameArb], subject: decodeMutatorSelection },
+    { of: [stockNameArb], subject: decodeMutatorSelection },
     (subject, [name]) => refusalNaming(subject(commandOf({ optInMutations: [name] })), name, 'NotOptInTier'),
   )
 
@@ -125,7 +122,7 @@ describe('decodeMutatorSelection', () => {
     '∀e_ProviderEntry_≡ExcludedDecodesOnlyWhileTheProviderIsMerged',
     { of: [pluginEntryArb], subject: decodeMutatorSelection },
     (subject, [entry]) => {
-      const catalogs = catalogsWith([providerOf(entry)])
+      const catalogs = catalogsWith([providerOf(entry, 'default')])
       return catalogs !== undefined &&
         sameNames(excludedNamesOf(subject(commandOf({ catalogs, excludedMutations: [entry.name] }))), [entry.name]) &&
         refusalNaming(subject(commandOf({ excludedMutations: [entry.name] })), entry.name, 'UnknownName')
@@ -133,17 +130,16 @@ describe('decodeMutatorSelection', () => {
   )
 
   it.prop(
-    '∀s_DeclaredSelection_≡DecodedUnchanged',
-    { of: [acceptedSelectionArb], subject: decodeMutatorSelection },
-    (subject, [selection]) => {
-      const outcome = subject(
-        commandOf({
-          excludedMutations: selection.excludedMutations,
-          optInMutations: selection.optInMutations,
-        }),
-      )
-      return sameNames(excludedNamesOf(outcome), selection.excludedMutations) &&
-        sameNames(optInNamesOf(outcome), selection.optInMutations)
+    '∀s_StockExclusionsBesideAProviderOptIn_≡DecodedUnchanged',
+    { of: [excludedStockNamesArb, pluginEntryArb], subject: decodeMutatorSelection },
+    (subject, [excludedMutations, entry]) => {
+      const catalogs = catalogsWith([providerOf(entry, 'optIn')])
+      const outcome = catalogs === undefined
+        ? undefined
+        : subject(commandOf({ catalogs, excludedMutations, optInMutations: [entry.name] }))
+      return outcome !== undefined &&
+        sameNames(excludedNamesOf(outcome), excludedMutations) &&
+        sameNames(optInNamesOf(outcome), [entry.name])
     },
   )
 

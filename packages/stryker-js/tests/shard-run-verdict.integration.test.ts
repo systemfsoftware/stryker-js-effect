@@ -1,118 +1,33 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
-import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
-import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
-import * as S from 'effect/Schema'
-import * as Scope from 'effect/Scope'
-import * as Stream from 'effect/Stream'
+import type * as Scope from 'effect/Scope'
+import { type CliOutcome, runCli } from './__fixtures__/cli-project.fixture.js'
+import {
+  CONFIG,
+  configOf,
+  decodePlan,
+  encodePlan,
+  singleShardPlanOf,
+  SOURCE,
+} from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
-
-const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
 
 const PROJECTS = ['first', 'second'] as const
 
 const CONSUMER_PACKAGE = '{ "name": "shard-run-consumer", "type": "module", "private": true }\n'
 
-const configOf = (breakThreshold: number): string =>
-  `export default {
-  testRunner: 'command',
-  commandRunner: { command: 'true' },
-  mutate: ['src/**/*.js'],
-  coverageAnalysis: 'off',
-  concurrency: 1,
-  reporters: [],
-  thresholds: { high: 80, low: 60, break: ${breakThreshold} },
-}
-`
-
-const CONFIG = configOf(100)
-
-const SOURCE = 'export const add = (a, b) => a + b\nexport const sub = (a, b) => a - b\n'
-
 const STREAM_FILE = 'mutation-stream.jsonl'
 const INCREMENTAL_FILE = 'stryker-incremental.json'
-
-interface CliOutcome {
-  readonly exitCode: number
-  readonly stdout: string
-  readonly stderr: string
-}
-
-const spawnCli = (
-  root: string,
-  args: ReadonlyArray<string>,
-  mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-      const handle = yield* spawner.spawn(
-        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, ...args], {
-          cwd: root,
-          stdin: 'ignore',
-          stdout: 'pipe',
-          stderr: 'pipe',
-          env: { STRYKER_MODE: mode, NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
-          extendEnv: true,
-        }),
-      )
-      const stdout = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
-      const stderr = yield* Effect.forkScoped(handle.stderr.pipe(Stream.decodeText, Stream.mkString))
-      const exitCode = yield* handle.exitCode
-      return {
-        exitCode: Number(exitCode),
-        stdout: yield* Fiber.join(stdout),
-        stderr: yield* Fiber.join(stderr),
-      }
-    }),
-  ).pipe(Effect.orDie)
-
-const decodePlan = S.decodeUnknownOption(S.fromJsonString(ShardPlan))
-
-const encodePlan = (plan: ShardPlan): Effect.Effect<string> =>
-  Effect.orDie(S.encodeEffect(S.fromJsonString(ShardPlan, { space: 2 }))(plan))
-
-const projectLabelsOf = (plan: ShardPlan): ReadonlyArray<string> =>
-  Arr.dedupe(plan.shards.flatMap((shard) => shard.projects.map((entry) => entry.project)))
-
-const mutantsOf = (plan: ShardPlan, project: string): ReadonlyArray<string> =>
-  plan.shards.flatMap((shard) =>
-    shard.projects.filter((entry) => entry.project === project).flatMap((entry) => entry.mutants)
-  )
-
-const singleShardPlanOf = (plan: ShardPlan): ShardPlan => ({
-  version: 1,
-  targetSeconds: 1,
-  shards: [{
-    index: 1,
-    count: 1,
-    predictedSeconds: 1,
-    projects: projectLabelsOf(plan).map((project) => ({ project, mutants: mutantsOf(plan, project) })),
-  }],
-  matrix: { include: [{ shard: '1/1', predictedSeconds: 1 }] },
-})
 
 interface Fixture {
   readonly root: string
 }
-
-const requireBinary = (): Effect.Effect<void, never, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const binaryPresent = yield* fs.exists(STRYKER_BIN)
-    yield* Effect.when(
-      Effect.die(new Error('dist/main.mjs is missing — build the package first')),
-      Effect.succeed(!binaryPresent),
-    )
-  }).pipe(Effect.orDie)
 
 const prepareFixture = (): Effect.Effect<
   Fixture,
@@ -122,7 +37,6 @@ const prepareFixture = (): Effect.Effect<
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    yield* requireBinary()
     const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-run-' }))
     yield* Effect.forEach(
       PROJECTS,
@@ -135,11 +49,11 @@ const prepareFixture = (): Effect.Effect<
         }),
       { discard: true },
     )
-    const planned = yield* spawnCli(
+    const planned = yield* runCli({
       root,
-      ['plan', '--target-seconds', '1', '--projects', PROJECTS.join(','), '--out', 'plan.json'],
-      'machine',
-    )
+      args: ['plan', '--target-seconds', '1', '--projects', PROJECTS.join(','), '--out', 'plan.json'],
+      mode: 'machine',
+    })
     yield* Effect.when(
       Effect.die(new Error(`planning exited ${planned.exitCode}: ${planned.stdout}${planned.stderr}`)),
       Effect.succeed(planned.exitCode !== 0),
@@ -156,15 +70,14 @@ const prepareFixture = (): Effect.Effect<
 const prepareEmptyRoot = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    yield* requireBinary()
     return yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-shard-run-' }))
   }).pipe(Effect.orDie)
 
 const runSingleShard = (
   root: string,
   mode: 'human' | 'machine',
-): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
-  spawnCli(root, ['run', '--plan', 'plan-single.json', '--shard', '1/1', '--out', 'reports/shard-1'], mode)
+): Effect.Effect<CliOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
+  runCli({ root, args: ['run', '--plan', 'plan-single.json', '--shard', '1/1', '--out', 'reports/shard-1'], mode })
 
 interface ProjectOutputs {
   readonly stream: boolean
@@ -216,19 +129,19 @@ interface GateOutcome {
 
 const runMergeAndGate = (
   root: string,
-): Effect.Effect<GateOutcome, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+): Effect.Effect<GateOutcome, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const shard = yield* runSingleShard(root, 'machine')
-    const merged = yield* spawnCli(
+    const merged = yield* runCli({
       root,
-      ['merge', '--plan', 'plan-single.json', 'reports/shard-1', '--out', 'reports/mutation'],
-      'machine',
-    )
+      args: ['merge', '--plan', 'plan-single.json', 'reports/shard-1', '--out', 'reports/mutation'],
+      mode: 'machine',
+    })
     yield* Effect.when(
       Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.stdout}${merged.stderr}`)),
       Effect.succeed(merged.exitCode !== 0),
     )
-    return { shardExitCode: shard.exitCode, gate: yield* spawnCli(root, ['gate'], 'human') }
+    return { shardExitCode: shard.exitCode, gate: yield* runCli({ root, args: ['gate'], mode: 'human' }) }
   })
 
 Feature('Running one shard of a shard plan', { timeout: 180_000 })
@@ -277,7 +190,7 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
               return yield* runSingleShard(s.fixture.root, 'human')
             }).pipe(Effect.orDie),
         ),
-        Then('the run fails with the runtime class, naming the second project, its exit class and its error')(
+        Then('the run fails with the configuration class, naming the second project, its exit class and its error')(
           (s, expect) =>
             expect({
               exitCode: s.ran.exitCode,
@@ -285,11 +198,54 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
               namesTheChildReason: s.ran.stderr.includes('the second fixture config is broken'),
               namesTheChildClass: s.ran.stderr.includes('exit 2 (ConfigError)'),
             }).toStrictEqual({
-              exitCode: 3,
+              exitCode: 2,
               namesTheProject: true,
               namesTheChildReason: true,
               namesTheChildClass: true,
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      "A shard whose child dies outside configuration exits with the child's runtime class",
+      Gherkin.Do.pipe(
+        Given('a fixture whose two projects are planned into one shard')('fixture', () => prepareFixture()),
+        When("the second project's test command fails and the shard runs for a person")(
+          'ran',
+          (s) =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              yield* fs.writeFileString(
+                path.join(s.fixture.root, 'second', 'stryker.config.mjs'),
+                `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'exit 7' },
+  mutate: ['src/**/*.js'],
+  coverageAnalysis: 'off',
+  concurrency: 1,
+  reporters: [],
+  thresholds: { high: 80, low: 60, break: 100 },
+}
+`,
+              )
+              return yield* runSingleShard(s.fixture.root, 'human')
+            }).pipe(Effect.orDie),
+        ),
+        Then('the run fails with the runtime class, naming the second project, its exit class and its error')((
+          s,
+          expect,
+        ) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheProject: s.ran.stderr.includes('shard child for second failed with exit code 3'),
+            namesTheChildClass: s.ran.stderr.includes('exit 3 (RuntimeError)'),
+          }).toStrictEqual({
+            exitCode: 3,
+            namesTheProject: true,
+            namesTheChildClass: true,
+          })
         ),
       ),
     )
@@ -300,14 +256,26 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
         Given('a directory that holds no plan')('root', () => prepareEmptyRoot()),
         When('stryker runs a shard of a plan file that is not there')(
           'ran',
-          (s) => spawnCli(s.root, ['run', '--plan', 'missing-plan.json', '--shard', '1/1'], 'human'),
+          (s) =>
+            runCli({ root: s.root, args: ['run', '--plan', 'missing-plan.json', '--shard', '1/1'], mode: 'human' }),
         ),
-        Then('the run fails with the configuration class and names the reason')((s, expect) =>
+        Then('the run fails with the configuration class and names the reason, its code and the next step')((
+          s,
+          expect,
+        ) =>
           expect({
             exitCode: s.ran.exitCode,
             namesTheReason: s.ran.stderr.includes('cannot read the plan file'),
+            namesTheCode: s.ran.stderr.includes('plan-unreadable'),
+            namesTheNext: s.ran.stderr.includes('next: check the --plan path'),
             namesTheClass: s.ran.stderr.includes('exit 2 (ConfigError)'),
-          }).toStrictEqual({ exitCode: 2, namesTheReason: true, namesTheClass: true })
+          }).toStrictEqual({
+            exitCode: 2,
+            namesTheReason: true,
+            namesTheCode: true,
+            namesTheNext: true,
+            namesTheClass: true,
+          })
         ),
       ),
     )

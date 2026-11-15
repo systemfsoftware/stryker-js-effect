@@ -19,9 +19,11 @@ permissions:
   actions: write
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   release:
     uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@main
     with:
       ci-workflow: ci.yml
+      npm-publish: true

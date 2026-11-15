@@ -48,6 +48,9 @@ export {
   MutantRunOptionsSchema,
   MutantStatusSchema,
   MutatorName,
+  Probed,
+  ProbeEligibility,
+  ProbeKind,
   ReadmitCauseCode,
   Readmitted,
   RememberedStatusSchema,
@@ -59,6 +62,8 @@ export {
   subsumptionMatchesStatus,
   SurvivorStatusSchema,
   uncoveredBlockStatusReason,
+  Unprobed,
+  UnprobedReason,
 } from '../Mutant.schema.js'
 export type {
   ActionableStatus,

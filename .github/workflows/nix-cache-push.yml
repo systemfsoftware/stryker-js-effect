@@ -12,8 +12,8 @@ env:
   NIX_CACHE_PUBLIC_KEY: nix-cache-1:wXA8I4DayNW9q6enUyQA/P/nT38pGSTLt374t3gsn7M=
   EXTRA_OUTPUTS: >-
     dprint
-    stryker-published
-    repo-checks
+    stryker
+    pnpm-store
 
 jobs:
   push:
@@ -54,7 +54,6 @@ jobs:
             access-tokens = github.com=${{ github.token }}
             extra-substituters = ${{ env.NIX_CACHE_URL }}
             extra-trusted-public-keys = ${{ env.NIX_CACHE_PUBLIC_KEY }}
-            fallback = true
 
       - name: The signing key is the cache's key
         env:

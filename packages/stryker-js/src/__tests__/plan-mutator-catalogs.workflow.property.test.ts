@@ -55,7 +55,7 @@ const namesOf = (
   catalogs: readonly { readonly entries: readonly { readonly name: string }[] }[],
 ): readonly string[] => catalogs.flatMap((catalog) => catalog.entries.map((entry) => entry.name))
 
-const stockNameArb = Arbitrary.schema(StockCatalog.StockMutatorName)
+const stockNameArb = Arbitrary.schema(StockCatalog.StockDefaultName)
 
 describe('planMutatorCatalogs', () => {
   it.prop(

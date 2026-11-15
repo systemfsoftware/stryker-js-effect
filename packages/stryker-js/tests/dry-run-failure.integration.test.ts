@@ -15,6 +15,8 @@ import * as Stdio from 'effect/Stdio'
 
 import { DryRunFailedCause, type DryRunFailedView } from './__fixtures__/dry-run-failure.schema.js'
 
+const PACKAGE_MODULES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
+
 const Feature = makeFeature({ it })
 
 const PASSING_TEST = 'accepts a correct sum'
@@ -58,6 +60,7 @@ const writeProject = (): Effect.Effect<ProjectFixture, PlatformError, FileSystem
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.makeTempDirectory()
+    yield* fs.symlink(PACKAGE_MODULES, path.join(root, 'node_modules'))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.makeDirectory(path.join(root, 'test'), { recursive: true })
     yield* fs.writeFileString(path.join(root, SOURCE_FILE), SOURCE_CONTENT)

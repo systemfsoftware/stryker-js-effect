@@ -1,6 +1,6 @@
 {
   "name": "@systemfsoftware/stryker-js-plugin-interface",
-  "version": "17.0.0",
+  "version": "18.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",

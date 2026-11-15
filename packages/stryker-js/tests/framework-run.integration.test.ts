@@ -18,6 +18,9 @@ const FRAMEWORK_FIXTURES = `${globalThis.process.cwd()}/tests/__fixtures__/frame
 const pluginUrlOf = (moduleName: string): string =>
   globalThis.process.getBuiltinModule('node:url').pathToFileURL(`${FRAMEWORK_FIXTURES}/${moduleName}`).href
 
+const installedUrlOf = (directory: string, entry: string): string =>
+  globalThis.process.getBuiltinModule('node:url').pathToFileURL(`${directory}/node_modules/${entry}`).href
+
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
@@ -569,9 +572,9 @@ Feature('Framework plugins joining a mutation run')
     )
 
     scenario(
-      'A framework named by its package joins the run from the workspace install',
+      'A framework named by the file URL of its workspace install joins the run',
       Gherkin.Do.pipe(
-        Given('a workspace whose component framework is installed under its package name')(
+        Given('a workspace whose component framework is installed in its own node_modules')(
           'workspace',
           () =>
             writeWorkspace([
@@ -581,7 +584,11 @@ Feature('Framework plugins joining a mutation run')
               ['node_modules/fixture-framework/package.json', INSTALLED_FIXTURE_MANIFEST],
               ['node_modules/fixture-framework/index.mjs', INSTALLED_FIXTURE_ENTRY],
             ]).pipe(
-              Effect.map((directory) => workspaceOf(directory, ['fixture-framework'], ['src/**/*.fixture'])),
+              Effect.map((directory) =>
+                workspaceOf(directory, [installedUrlOf(directory, 'fixture-framework/index.mjs')], [
+                  'src/**/*.fixture',
+                ])
+              ),
               Effect.provide(filePorts),
             ),
         ),
@@ -589,7 +596,7 @@ Feature('Framework plugins joining a mutation run')
           'observation',
           (s) => runOver(s.workspace),
         ),
-        Then('the resolved-formats report gives the component type to the named package')((s, expect) => {
+        Then('the resolved-formats report gives the component type to the configured URL')((s, expect) => {
           const formats = s.observation.events.find(
             (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
           )
@@ -601,7 +608,7 @@ Feature('Framework plugins joining a mutation run')
           }).toEqual({
             formatId: 'fixture',
             formatLanguage: 'fixture',
-            formatOwner: 'fixture-framework',
+            formatOwner: installedUrlOf(s.workspace.directory, 'fixture-framework/index.mjs'),
           })
         }),
       ),

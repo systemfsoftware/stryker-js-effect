@@ -5,7 +5,7 @@ export default defineConfig({
   testFiles: ['src/first.vm.test.ts'],
   checkers: [
     {
-      plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+      plugin: '@systemfsoftware/stryker-js-typescript-checker',
     },
   ],
   tsconfigFile: 'tsconfig.extends.json',

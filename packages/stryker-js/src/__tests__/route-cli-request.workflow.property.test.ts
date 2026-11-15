@@ -5,6 +5,8 @@ import * as Result from 'effect/Result'
 import { CliRouteCommand } from '../Cli.schema.js'
 import { routeCliRequest } from '../route-cli-request.workflow.js'
 
+const REFUSED = 'RunPlanWithoutShardRefused'
+
 const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
   Match.value(command.route).pipe(
     Match.tag('help', () => tag === 'CliHelpRequested'),
@@ -18,7 +20,9 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
     Match.tag('feedback', () => tag === 'CliFeedbackRequested'),
     Match.tag('mcp', () => tag === 'CliMcpRequested'),
     Match.tag('run', (run) =>
-      run.plan !== undefined && run.shard !== undefined
+      run.plan !== undefined && run.shard === undefined
+        ? tag === REFUSED
+        : run.plan !== undefined && run.shard !== undefined
         ? (run.project !== undefined ? tag === 'CliShardLeafRequested' : tag === 'CliShardRunRequested')
         : run.mutants !== undefined && run.mutants.length > 0
         ? tag === 'CliRerunRequested'
@@ -26,9 +30,13 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
     Match.exhaustive,
   )
 
-const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): string | undefined =>
+const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): string =>
   Result.match(subject(command), {
-    onFailure: () => undefined,
+    onFailure: (refusal) =>
+      Match.value(refusal).pipe(
+        Match.tag('RunPlanWithoutShardRefused', () => REFUSED),
+        Match.exhaustive,
+      ),
     onSuccess: (decision) =>
       Match.value(decision).pipe(
         Match.tag('CliHelpRequested', () => 'CliHelpRequested'),
@@ -54,9 +62,6 @@ describe('routeCliRequest', () => {
   it.prop(
     '∀r_Request_≡RouteFollowsSubcommand',
     { of: [CliRouteCommand], subject: routeCliRequest },
-    (subject, [command]) => {
-      const decided = decides(subject, command)
-      return decided !== undefined && matchesRoute(command, decided)
-    },
+    (subject, [command]) => matchesRoute(command, decides(subject, command)),
   )
 })

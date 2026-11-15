@@ -34,6 +34,12 @@ export interface StrykerCliRunnerShape {
     Config.ConfigError | SandboxForkFailure,
     SecureRandom.SecureRandom | Scope.Scope
   >
+  readonly guest: (
+    argv: readonly [string, ...Array<string>],
+    warm: Warm.WarmSandbox,
+    label: string,
+    runEnvironment?: Readonly<Record<string, string>> | undefined,
+  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, SecureRandom.SecureRandom | Scope.Scope>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(

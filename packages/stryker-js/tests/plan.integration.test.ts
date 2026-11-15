@@ -176,6 +176,7 @@ Feature('Planning mutation shards across projects', { timeout: 180_000 })
             return expect({
               exitCodes: [s.ran.first.exitCode, s.ran.second.exitCode],
               version: s.ran.firstPlan.version,
+              scope: s.ran.firstPlan.scope,
               targetSeconds: s.ran.firstPlan.targetSeconds,
               byteIdentical: s.ran.firstBytes === s.ran.secondBytes,
               projects: projectLabelsOf(s.ran.firstPlan),
@@ -191,7 +192,8 @@ Feature('Planning mutation shards across projects', { timeout: 180_000 })
               partitioned: distinctScheduledOf(s.ran.firstPlan) === scheduled && scheduled > 0,
             }).toStrictEqual({
               exitCodes: [0, 0],
-              version: 1,
+              version: 2,
+              scope: { _tag: 'Unscoped' },
               targetSeconds: 1,
               byteIdentical: true,
               projects: ['proj-a', 'proj-b'],

@@ -65,15 +65,6 @@ export class FixtureMissingFailure extends Schema.TaggedError<FixtureMissingFail
   }
 }
 
-export class PackFailure extends Schema.TaggedError<PackFailure>()('PackFailure', {
-  step: Schema.String,
-  detail: Schema.String,
-}) {
-  override get message(): string {
-    return `${this.step}: ${this.detail}`
-  }
-}
-
 export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()('SandboxForkFailure', {
   step: Schema.String,
   sandboxName: Schema.String,
@@ -90,7 +81,6 @@ export type HarnessFailure =
   | GuestJobFailure
   | GuestSignaledFailure
   | MalformedFixtureManifest
-  | PackFailure
   | SandboxForkFailure
   | UnresolvedCatalogSpec
 

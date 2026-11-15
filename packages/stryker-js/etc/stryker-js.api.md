@@ -21,12 +21,12 @@ export namespace Engine {
 
 // @public (undocumented)
 export namespace GitDiff {
-    export { GitDiff, GitDiffInput, GitDiffShape };
+    export { GitDiff, GitDiffInput, GitDiffShape, GitSourceDigestInput };
 }
 
 // @public (undocumented)
 export namespace GitDiffSchema {
-    export { DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved };
+    export { ChangedSince, DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved, PlannedDiff, StageInput, WholeProject };
 }
 
 // @public (undocumented)

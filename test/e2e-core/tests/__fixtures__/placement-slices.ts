@@ -20,7 +20,7 @@ export const enterpriseLifecycleSlice: PlacementSliceEncoded = {
   ],
   packageGlobs: ENTERPRISE_PACKAGE_GLOBS,
   excludedMutations: [],
-  optInMutations: ['FinalizerEscape'],
+  optInMutations: [],
   providerModules: ['provider.mjs'],
   coverageAnalysis: 'perTest',
   waivers: [],

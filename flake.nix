@@ -3,8 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # The release manifest (`nix/release-hashes.json`) rides in this input, so
-    # Dependabot's bump of it is also the version and digest bump.
     comment-checker = {
       url = "github:systemfsoftware/comment-checker";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -21,41 +19,25 @@
     # Its nixpkgs is not followed: gritlint's CI proved the build against its
     # own lock. Only the `gritlint` package and the dev shell reference it.
     gritlint.url = "github:systemfsoftware/gritlint";
-    # `repo-checks`. Only that package references this input, so building
-    # any other package never fetches it.
-    systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
     # One `pnpm pack` tarball per workspace package, built offline from the
     # lockfile by the same builder systemfsoftware uses.
     pnpm-release-management = {
       url = "github:systemfsoftware/pnpm-release-management";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v20.0.0`
-    # (b11828050b15d23bdbfb78c11bfe294956914272).
-    # The packages the workspace dogfoods (the mutation CLI, its runner,
-    # checker and ignorers) come from its tarballs, never from a registry.
-    # Nothing follows: its own lock reproduces the released tarballs byte for
-    # byte, the integrity each release tag records.
-    stryker-published.url = "github:systemfsoftware/stryker-js-effect/b11828050b15d23bdbfb78c11bfe294956914272";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, pnpm-release-management }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
-      # The tarballs of the latest release, as `<attr>.tgz` under `.deps/`.
-      producerTarballsOf = pkgs: pnpm-release-management.lib.mkProducerTarballs {
-        inherit pkgs;
-        producers = { inherit stryker-published; };
-      };
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
           inherit pkgs;
           src = self;
           pname = "stryker-js-effect";
           pnpm = pkgs.pnpm_11;
-          files.".deps" = producerTarballsOf pkgs;
         };
     in
     {
@@ -63,16 +45,18 @@
         let
           pkgs' = pkgs.extend importPnpmLock.overlays.default;
           dprint = pkgs.callPackage ./nix/dprint.nix { };
-          unwrapped = pkgs.callPackage ./nix/comment-checker.nix {
-            hashes = "${comment-checker}/nix/release-hashes.json";
-          };
+          unwrapped = comment-checker.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker;
           sandboxed = pkgs.callPackage ./nix/comment-checker-sandbox.nix {
             comment-checker = unwrapped;
           };
           workspace = workspaceOf pkgs;
           own = {
             inherit dprint;
-            stryker-published = producerTarballsOf pkgs;
+            stryker = pkgs.callPackage ./nix/stryker.nix {
+              inherit (importPnpmLock.legacyPackages.${pkgs.stdenv.hostPlatform.system}) iplConfigHook;
+              inherit (workspace) mitmCache;
+              src = self;
+            };
             deno = pkgs.deno;
             comment-checker = sandboxed;
             comment-checker-unwrapped = unwrapped;
@@ -80,9 +64,6 @@
             # namespaces, which Ubuntu 24.04 runners refuse without a workflow
             # step this repo's read-only workflows cannot add.
             gritlint = gritlint.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
-            # Repository invariants for any pnpm workspace; `pnpm gate:repo` and
-            # `.husky/pre-push` run its `single-plan` check.
-            repo-checks = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.repo-checks;
             default = dprint;
           };
           clashes = builtins.attrNames (builtins.intersectAttrs own workspace);
@@ -114,10 +95,6 @@
               # The changeset check (`devshell: true`) runs inside it
               pnpm-release-management.packages.${system}.sandbox
             ];
-            # The lockfile names the producer tarballs under `.deps/`. The hook copies
-            # them in as real files: the sandbox cannot read a store path outside its
-            # own closure.
-            shellHook = self.packages.${system}.stryker-published.shellHook;
           };
         });
     };

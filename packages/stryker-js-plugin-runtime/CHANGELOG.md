@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 8.0.1
+
+Updated dependency @systemfsoftware/stryker-js-cli-contract to 2.0.0
+
 ## 8.0.0
 
 Nothing you import changes: `Trace.layerTraceContextClient` and `Trace.layerTraceContextServer` keep their names, types and behaviour.

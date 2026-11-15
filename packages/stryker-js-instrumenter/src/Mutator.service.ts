@@ -7,6 +7,12 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import {
+  assessProbeEligibility,
+  AssessProbeEligibilityCommand,
+  type ProbeDecision,
+  type ProbeSite,
+} from './assess-probe-eligibility.workflow.js'
 import type {
   ArrayExpression,
   ArrowFunctionExpression,
@@ -151,6 +157,59 @@ const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
     () => Option.map(Option.fromUndefinedOr(mutant.subsumption), ApiMutant.subsumedStatusReason),
   )
 
+const isPrimitiveLiteral = (node: Node): boolean => node.type === 'Literal' && !Predicate.hasProperty(node, 'regex')
+
+const operandKindOf = (node: Node): 'literal' | 'other' => isPrimitiveLiteral(node) ? 'literal' : 'other'
+
+const constantReplacementOf = (original: Node): ProbeSite =>
+  isBinaryExpression(original)
+    ? {
+      _tag: 'ConstantReplacement',
+      comparedOperator: original.operator,
+      left: operandKindOf(original.left),
+      right: operandKindOf(original.right),
+    }
+    : { _tag: 'ConstantReplacement', comparedOperator: null, left: 'other', right: 'other' }
+
+const unarySwapOf = (original: UnaryExpression, replacement: Node): ProbeSite => ({
+  _tag: 'UnarySwap',
+  originalOperator: original.operator,
+  replacementOperator: isPrefixUnaryExpression(replacement) ? replacement.operator : null,
+})
+
+const probeSiteOf = (original: Node, replacement: Node): ProbeSite =>
+  Match.value({ original, replacement }).pipe(
+    Match.when({ replacement: isBooleanLiteral }, () => constantReplacementOf(original)),
+    Match.when(
+      { original: isBinaryExpression, replacement: isBinaryExpression },
+      (pair): ProbeSite => ({
+        _tag: 'BinarySwap',
+        originalOperator: pair.original.operator,
+        replacementOperator: pair.replacement.operator,
+      }),
+    ),
+    Match.when({ original: isPrefixUnaryExpression }, (pair) => unarySwapOf(pair.original, pair.replacement)),
+    Match.orElse((): ProbeSite => ({ _tag: 'UnrecognizedShape' })),
+  )
+
+const probeEligibilityOf = (mutant: Mutant): ApiMutant.ProbeEligibility =>
+  Result.match(
+    assessProbeEligibility(AssessProbeEligibilityCommand.make({
+      mutatorName: mutant.mutatorName,
+      site: probeSiteOf(mutant.original, mutant.replacement),
+    })),
+    {
+      onFailure: (never) => never,
+      onSuccess: (decision: ProbeDecision) =>
+        Match.value(decision).pipe(
+          Match.tagsExhaustive({
+            MutantProbed: (decided) => ApiMutant.Probed.make({ kind: decided.kind }),
+            MutantUnprobed: (decided) => ApiMutant.Unprobed.make({ reason: decided.reason }),
+          }),
+        ),
+    },
+  )
+
 export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
@@ -160,6 +219,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
     ...guardFieldOf(mutant),
+    probeEligibility: probeEligibilityOf(mutant),
   }
   return S.decodeResult(ApiMutant.Mutant)(
     Option.match(statusReasonOf(mutant), {
@@ -1406,8 +1466,12 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  * Naming each mutator here costs one line when a mutator is added and makes
  * that line a compile-checked import instead of a runtime effect.
  *
- * `optInMutators` below follows the same hand-written rule, for the same
- * reason: a mutator exists for a run only when a human named it here.
+ * Every stock mutator is default-tier: the stock registry declares no opt-in
+ * entries, so `stockRegistry.optIn` is empty. Opt-in is a tier only a plugin
+ * catalog declares for its own entries; a stock name placed in a run's
+ * `mutator.optInMutations` is refused before instrumentation as a config
+ * failure (`NotOptInTier`), because naming a default-tier entry as opt-in
+ * would silently select nothing.
  */
 export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
@@ -1426,9 +1490,6 @@ export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mut
   StringLiteral: stringLiteralMutator,
   UnaryOperator: unaryOperatorMutator,
   UpdateOperator: updateOperatorMutator,
-})
-
-export const optInMutators: Readonly<Record<StockCatalog.StockOptInName, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
@@ -1441,7 +1502,7 @@ export interface MutatorRegistry {
   readonly optIn: Readonly<Record<string, Mutator>>
 }
 
-export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: {} }
 
 export interface RegistryCatalog {
   readonly entries: ReadonlyArray<{ readonly name: string; readonly tier: MutatorCatalog.Tier }>
@@ -1457,7 +1518,6 @@ const registryOfDataFirst = (
 ): MutatorRegistry => {
   const implementations = new Map<string, Mutator>([
     ...Object.entries(defaultMutators),
-    ...Object.entries(optInMutators),
     ...contributions.flatMap(({ entries }) => entries.map((entry) => [entry.name, entry.implementation] as const)),
   ])
   const entries = catalogs.flatMap((catalog) => catalog.entries)
@@ -1493,9 +1553,12 @@ export interface MutatorSelection {
  * of the defaults and removes none. Selection walks the registry's declared
  * order, not the order the run listed its names in, so a mutant's identity
  * never depends on how a config happened to spell the list; a name listed
- * twice selects its entry once. An unknown name selects nothing here —
- * `instrument` refuses it before any file is parsed, because a typo that
- * silently enables nothing removes mutants and raises the score.
+ * twice selects its entry once. A name the loaded catalogs do not declare
+ * opt-in selects nothing here; the refusal lives in `decodeMutatorSelection`
+ * (packages/stryker-js/src/decode-mutator-selection.workflow.ts), which runs
+ * before instrumentation and fails the run for an unknown or default-tier
+ * name, because a typo that silently enables nothing removes mutants and
+ * raises the score.
  *
  * Pure: a registry and a run's names in, entries and names out.
  */

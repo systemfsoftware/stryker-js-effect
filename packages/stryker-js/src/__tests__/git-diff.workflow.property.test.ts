@@ -100,6 +100,35 @@ describe('gitDiff', () => {
   )
 
   it.prop(
+    '∀p_DiffScope_≡ASiblingDirectorysManifestOrConfigKeepsTheDiffScope',
+    { of: [Arbitrary.all({ name: segmentArb, line: lineArb })], subject: gitDiff },
+    (subject, [draw]) => {
+      const poison = ['package.json', 'pnpm-lock.yaml', 'stryker.config.ts', 'vitest.config.ts'][draw.line % 4]
+      const command = DiffScopeCommand.make({
+        hunks: [changeHunk(`../${draw.name}/${poison}`, 1, 1), changeHunk('src/a.ts', draw.line, 1)],
+        untrackedFiles: [],
+      })
+      return decidedWith(
+        subject,
+        command,
+        (decision) => S.is(DiffScoped)(decision) && decision.ranges.includes(`src/a.ts:${draw.line}-${draw.line}`),
+      )
+    },
+  )
+
+  it.prop(
+    '∀p_DiffScope_≡AnAncestorsLockfileOrManifestFallsBackToFull',
+    { of: [Arbitrary.all({ name: segmentArb, line: lineArb })], subject: gitDiff },
+    (subject, [draw]) => {
+      const file = `${'../'.repeat(1 + (draw.line % 3))}${
+        draw.name.length % 2 === 0 ? 'package.json' : 'pnpm-lock.yaml'
+      }`
+      const command = DiffScopeCommand.make({ hunks: [changeHunk(file, 1, 1)], untrackedFiles: [] })
+      return decidedWith(subject, command, S.is(FullScope))
+    },
+  )
+
+  it.prop(
     '∀f_DiffScope_≡AnUntrackedFileBecomesItsWholeFileRange',
     { of: [Arbitrary.all({ file: segmentArb })], subject: gitDiff },
     (subject, [draw]) => {

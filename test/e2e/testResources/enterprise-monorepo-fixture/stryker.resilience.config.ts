@@ -2,14 +2,14 @@ import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 export default defineConfig({
   testRunner: {
-    plugin: import.meta.resolve('@systemfsoftware/stryker-js-vitest-runner'),
+    plugin: '@systemfsoftware/stryker-js-vitest-runner',
     options: {
       timeoutTrapFile: 'packages/services/src/nontermination.ts',
     },
   },
   checkers: [
     {
-      plugin: import.meta.resolve('@systemfsoftware/stryker-js-typescript-checker'),
+      plugin: '@systemfsoftware/stryker-js-typescript-checker',
     },
   ],
   reporters: ['json'],

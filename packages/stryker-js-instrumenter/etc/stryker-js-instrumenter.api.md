@@ -38,7 +38,7 @@ export const locationOf: {
 
 // @public (undocumented)
 export namespace Mutator {
-    export { Mutator, MutatorContext, MutatorEntry, MutatorRegistry, MutatorSelection, RegistryCatalog, RegistryContribution, defaultMutators, optInMutators, registryOf, selectMutators, stockRegistry };
+    export { Mutator, MutatorContext, MutatorEntry, MutatorRegistry, MutatorSelection, RegistryCatalog, RegistryContribution, defaultMutators, registryOf, selectMutators, stockRegistry };
 }
 
 // @public (undocumented)

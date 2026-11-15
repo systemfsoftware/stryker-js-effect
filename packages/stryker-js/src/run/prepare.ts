@@ -86,6 +86,7 @@ export type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
+  readonly plannedMutantsFile: string | undefined
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly mutatorSelection: MutatorSelectionDecoded
@@ -147,7 +148,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     },
   }
   const descriptors: readonly string[] = pluginUrlsFromOptions(options)
-  const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
+  const loaded = yield* loadPlugins(descriptors).pipe(
     Effect.tapError((error) =>
       Clock.currentTimeMillis.pipe(
         Effect.flatMap((failedAt) => pluginLoadFailureEvents(error, failedAt - env.runStartedAt)),
@@ -238,6 +239,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     options,
     loaded,
     project: command.project,
+    plannedMutantsFile: command.plannedMutantsFile,
     ignorers,
     mutatorCatalogs,
     mutatorSelection,

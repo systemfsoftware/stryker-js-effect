@@ -15,20 +15,27 @@ const LogSourceStub = Layer.succeed(Readiness.LogSource, { entries: Effect.succe
 
 const SetupLive = Layer.merge(HarnessPlatformLive, LogSourceStub)
 
-const tempoEndpointOf = (baseUrl: string): { readonly host: string; readonly port: number } => {
+const tempoEndpointOf = (
+  baseUrl: string,
+): { readonly host: string; readonly port: number; readonly readyPath: string } => {
   const parsed = new URL(baseUrl)
-  const port = parsed.port === '' ? (parsed.protocol === 'https:' ? 443 : 80) : Number.parseInt(parsed.port, 10)
-  return { host: parsed.hostname, port }
+  // The readiness probe speaks plain HTTP over a socket, so an https Tempo would be probed in plaintext and never answer.
+  if (parsed.protocol !== 'http:') {
+    throw new Error(`TEMPO_URL must be an http: URL, got ${parsed.protocol} in ${baseUrl}`)
+  }
+  const port = parsed.port === '' ? 80 : Number.parseInt(parsed.port, 10)
+  // A base URL may carry a path (Tempo behind Grafana's datasource proxy), and the probe keeps it.
+  return { host: parsed.hostname, port, readyPath: `${parsed.pathname.replace(/\/+$/u, '')}${TEMPO_PROBE_PATH}` }
 }
 
 const probeTempo = Effect.gen(function*() {
   const baseUrl = yield* tempoBaseUrl
-  const { host, port } = tempoEndpointOf(baseUrl)
+  const { host, port, readyPath } = tempoEndpointOf(baseUrl)
   const target = Readiness.target([{ guest: port, host, hostPort: port }], {
     timeoutMs: TEMPO_PROBE_TIMEOUT_MS,
     pollMs: TEMPO_PROBE_POLL_MS,
   })
-  const verdict = yield* target.awaitCondition(Readiness.Wait.forHttp(TEMPO_PROBE_PATH, port))
+  const verdict = yield* target.awaitCondition(Readiness.Wait.forHttp(readyPath, port))
   if (verdict._tag === 'TimedOut') {
     return yield* Effect.die(
       new Error(

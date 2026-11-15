@@ -10,6 +10,8 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as Stdio from 'effect/Stdio'
 
+const PACKAGE_MODULES = decodeURIComponent(new URL('../node_modules', import.meta.url).pathname)
+
 const Feature = makeFeature({ it })
 
 const TEMP_DIR_NAME = '.stryker-tmp'
@@ -33,6 +35,7 @@ const writeProject = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.makeTempDirectory()
+    yield* fs.symlink(PACKAGE_MODULES, path.join(root, 'node_modules'))
     yield* fs.makeDirectory(path.join(root, 'src'), { recursive: true })
     yield* fs.makeDirectory(path.join(root, 'test'), { recursive: true })
     yield* fs.writeFileString(

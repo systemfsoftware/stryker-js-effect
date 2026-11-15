@@ -16,14 +16,14 @@ pnpm add @systemfsoftware/stryker-js-cli-contract
 
 The package groups its exports into namespaces. `RunEvent` holds the machine
 stream: the `RunEvent` union of every event kind the CLI emits, each event's
-class, two newline-delimited JSON codecs, and `StreamSchemaVersion` (`9.0`, the
+class, two newline-delimited JSON codecs, and `StreamSchemaVersion` (`10.0`, the
 version the stream declares). `RunEventWireLine` reads one line. `RunEventWireText`
 reads a whole stdout: it skips blank and whitespace-only lines, and it refuses the
 first other line that is not an event, at that line's 0-based position.
 `OutputMode` holds the output mode and its signal (`OutputMode`, `ModeSignal`) as
-the stream header carries them. `StockCatalog` holds the stock mutator catalog
-and its name vocabulary (`StockCatalog`, `StockMutatorName`, `StockDefaultName`,
-`StockOptInName`). `SpanTaxonomy` holds the names the CLI's traces use and each
+the stream header carries them. `StockCatalog` holds the stock mutator catalog,
+every entry of which is default-tier, and its name vocabulary (`StockCatalog`,
+`StockDefaultName`). `SpanTaxonomy` holds the names the CLI's traces use and each
 member's attributes (`Spans`, `SpanName`, `SpanMember`, `spanMembers`), plus
 `rpcServedSpanOf` for the RPC method spans a plugin worker serves.
 
