@@ -16,7 +16,13 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
-import { Recorded } from './__fixtures__/real-code-corpus.fixture.js'
+import {
+  Recorded,
+  RecordedCheck,
+  RecordedJson,
+  RecordedMutant,
+  RecordedTypeAnswer,
+} from './__fixtures__/real-code-corpus.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -41,30 +47,37 @@ const UPDATE_ENV = 'STRYKER_CORPUS_UPDATE'
 
 const TYPE_QUERY_VERSION = 2
 
-const COMPILE_ERROR = 'compileError'
-
 type ImporterCheck = 'always' | 'location-rule'
 
 type Ports = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 
 type Wire = Checker.CheckerMutantWire
 
+type FileRefused = TypeQuery.FileRefused
+
 interface TypeAnswerOf {
   readonly wire: Wire
-  readonly answer: string
+  readonly answer: TypeQuery.TypeAnswer
 }
 
 interface TypeAnswers {
   readonly answers: ReadonlyArray<TypeAnswerOf>
-  readonly refusedFiles: ReadonlyArray<string>
+  readonly refusedFiles: ReadonlyArray<FileRefused>
+}
+
+interface NotAssignableButCompiles {
+  readonly mutant: RecordedMutant
+  readonly answer: TypeQuery.TypeAnswer
+  readonly fullStatus: Checker.CheckStatus
 }
 
 interface Observation {
-  readonly full: Recorded
-  readonly shortcutChecks: ReadonlyArray<string>
-  readonly notAssignableButCompiles: ReadonlyArray<string>
-  readonly refusedFiles: ReadonlyArray<string>
-  readonly expected: Option.Option<Recorded>
+  readonly full: typeof Recorded.Encoded
+  readonly shortcutChecks: ReadonlyArray<RecordedCheck>
+  readonly fullChecks: ReadonlyArray<RecordedCheck>
+  readonly notAssignableButCompiles: ReadonlyArray<NotAssignableButCompiles>
+  readonly refusedFiles: ReadonlyArray<FileRefused>
+  readonly expected: Option.Option<typeof Recorded.Encoded>
 }
 
 const instrumenterOptions: Instrument.InstrumenterOptions = {
@@ -107,7 +120,7 @@ const statusesWith = (
   directory: string,
   wires: ReadonlyArray<Wire>,
   importerCheck: ImporterCheck,
-): Effect.Effect<HashMap.HashMap<string, string>, never, Ports> =>
+): Effect.Effect<HashMap.HashMap<string, Checker.CheckStatus>, never, Ports> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
@@ -119,16 +132,39 @@ const statusesWith = (
       const checker = yield* Effect.orDie(runtime.checker)
       return yield* checker.check([...wires])
     }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
-    return HashMap.map(results, (result): string => result.status)
+    return HashMap.map(results, (result): Checker.CheckStatus => result.status)
   }).pipe(Effect.orDie)
 
-const statusOf = (statuses: HashMap.HashMap<string, string>, wire: Wire): string =>
-  Option.getOrElse(HashMap.get(statuses, wire.id), () => 'missing')
+const mutantOf = (pathService: Path.Path, wire: Wire): RecordedMutant =>
+  RecordedMutant.make({
+    file: pathService.basename(wire.fileName),
+    line: wire.location.start.line,
+    column: wire.location.start.column,
+    mutator: wire.mutatorName,
+    replacement: wire.replacement,
+  })
 
-const mutantLabelOf = (pathService: Path.Path, wire: Wire): string =>
-  `${
-    pathService.basename(wire.fileName)
-  }:${wire.location.start.line}:${wire.location.start.column} ${wire.mutatorName} ${JSON.stringify(wire.replacement)}`
+const statusOf = (
+  pathService: Path.Path,
+  statuses: HashMap.HashMap<string, Checker.CheckStatus>,
+  wire: Wire,
+): Effect.Effect<Checker.CheckStatus> =>
+  Option.match(HashMap.get(statuses, wire.id), {
+    onNone: () => Effect.die(`the checker returned no result for ${JSON.stringify(mutantOf(pathService, wire))}`),
+    onSome: Effect.succeed,
+  })
+
+const checksOf = (
+  pathService: Path.Path,
+  statuses: HashMap.HashMap<string, Checker.CheckStatus>,
+  wires: ReadonlyArray<Wire>,
+): Effect.Effect<ReadonlyArray<RecordedCheck>> =>
+  Effect.forEach(
+    wires,
+    (wire) =>
+      Effect.map(statusOf(pathService, statuses, wire), (status) =>
+        RecordedCheck.make({ mutant: mutantOf(pathService, wire), status })),
+  )
 
 const siteIdOf = (wire: Wire): string =>
   `${wire.location.start.line}:${wire.location.start.column}:${wire.location.end.line}:${wire.location.end.column}`
@@ -138,13 +174,6 @@ const siteKindOf = (atSite: ReadonlyArray<Wire>): TypeQuery.TypeQuerySiteKind =>
     ? 'function-body'
     : 'expression'
 
-const answerText = (answer: TypeQuery.TypeAnswer): string =>
-  Match.valueTags(answer, {
-    Assignable: (assignable) => `Assignable ${assignable.candidateType}`,
-    NotAssignable: (notAssignable) => `NotAssignable ${notAssignable.candidateType} to ${notAssignable.contextualType}`,
-    Unknown: (unknown) => `Unknown ${unknown.reason}`,
-  })
-
 const answersOf = (wires: ReadonlyArray<Wire>, outcome: TypeQuery.FileOutcome): ReadonlyArray<TypeAnswerOf> =>
   Match.valueTags(outcome, {
     FileRefused: () => [],
@@ -153,10 +182,16 @@ const answersOf = (wires: ReadonlyArray<Wire>, outcome: TypeQuery.FileOutcome): 
         Arr.getSomes(site.candidates.map((candidate) =>
           Option.map(
             Option.fromUndefinedOr(wires.find((wire) => wire.id === candidate.candidateId)),
-            (wire) => ({ wire, answer: answerText(candidate.answer) }),
+            (wire) => ({ wire, answer: candidate.answer }),
           )
         ))
       ),
+  })
+
+const refusedOf = (outcome: TypeQuery.FileOutcome): ReadonlyArray<FileRefused> =>
+  Match.valueTags(outcome, {
+    FileRefused: (refused) => [refused],
+    FileAnswered: () => [],
   })
 
 const typeAnswersOf = (
@@ -203,14 +238,37 @@ const typeAnswersOf = (
     }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)), Effect.orDie)
     return {
       answers: response.files.flatMap((outcome) => answersOf(wires, outcome)),
-      refusedFiles: response.files.flatMap((outcome) =>
-        Match.valueTags(outcome, {
-          FileRefused: (refused) => [`${pathService.basename(refused.fileName)} ${refused.reason}`],
-          FileAnswered: () => [],
-        })
-      ),
+      refusedFiles: response.files.flatMap(refusedOf),
     }
   })
+
+const entryLines = <A>(entries: ReadonlyArray<A>): string =>
+  entries.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n')
+
+const snapshotText = (encoded: typeof Recorded.Encoded): string =>
+  `{\n  "checks": [\n${entryLines(encoded.checks)}\n  ],\n  "typeAnswers": [\n${
+    entryLines(encoded.typeAnswers)
+  }\n  ]\n}\n`
+
+const notAssignableButCompilesOf = (
+  pathService: Path.Path,
+  full: HashMap.HashMap<string, Checker.CheckStatus>,
+  answers: ReadonlyArray<TypeAnswerOf>,
+): Effect.Effect<ReadonlyArray<NotAssignableButCompiles>> =>
+  Effect.map(
+    Effect.forEach(
+      answers.filter(({ answer }) =>
+        Match.valueTags(answer, { NotAssignable: () => true, Assignable: () => false, Unknown: () => false })
+      ),
+      ({ wire, answer }) =>
+        Effect.map(statusOf(pathService, full, wire), (fullStatus) => ({
+          mutant: mutantOf(pathService, wire),
+          answer,
+          fullStatus,
+        })),
+    ),
+    (entries) => entries.filter((entry) => entry.fullStatus !== 'compileError'),
+  )
 
 const observe: Effect.Effect<Observation, never, Ports> = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
@@ -220,27 +278,32 @@ const observe: Effect.Effect<Observation, never, Ports> = Effect.gen(function*()
   const full = yield* statusesWith(directory, wires, 'always')
   const shortcut = yield* statusesWith(directory, wires, 'location-rule')
   const { answers, refusedFiles } = yield* typeAnswersOf(directory, wires)
-  const label = (wire: Wire) => mutantLabelOf(pathService, wire)
-  const recorded: Recorded = {
-    checks: wires.map((wire) => `${label(wire)} -> ${statusOf(full, wire)}`),
-    typeAnswers: answers.map(({ wire, answer }) => `${label(wire)} -> ${answer}`),
-  }
+  const fullChecks = yield* checksOf(pathService, full, wires)
+  const typeAnswers = answers.map(({ wire, answer }) =>
+    RecordedTypeAnswer.make({ mutant: mutantOf(pathService, wire), answer })
+  )
+  const encoded = yield* Effect.orDie(S.encodeEffect(Recorded)(Recorded.make({ checks: fullChecks, typeAnswers })))
   const expectedPath = pathService.join(directory, EXPECTED_FILE)
   const update = yield* Config.Boolean(UPDATE_ENV).pipe(Config.withDefault(false), Effect.orDie)
   yield* Boolean.match(update, {
-    onTrue: () => Effect.orDie(fs.writeFileString(expectedPath, `${JSON.stringify(recorded, null, 2)}\n`)),
+    onTrue: () => Effect.orDie(fs.writeFileString(expectedPath, snapshotText(encoded))),
     onFalse: () => Effect.void,
   })
-  const expected = yield* fs.readFileString(expectedPath).pipe(
-    Effect.map((text) => S.decodeUnknownSync(Recorded)(JSON.parse(text))),
-    Effect.option,
-  )
+  const expectedText = yield* Effect.option(fs.readFileString(expectedPath))
+  const expected = yield* Option.match(expectedText, {
+    onNone: () => Effect.succeed(Option.none<typeof Recorded.Encoded>()),
+    onSome: (text) =>
+      S.decodeEffect(RecordedJson)(text).pipe(
+        Effect.flatMap(S.encodeEffect(Recorded)),
+        Effect.asSome,
+        Effect.orDie,
+      ),
+  })
   return {
-    full: recorded,
-    shortcutChecks: wires.map((wire) => `${label(wire)} -> ${statusOf(shortcut, wire)}`),
-    notAssignableButCompiles: answers
-      .filter(({ wire, answer }) => answer.startsWith('NotAssignable') && statusOf(full, wire) !== COMPILE_ERROR)
-      .map(({ wire, answer }) => `${label(wire)} -> ${answer}, but the full check says ${statusOf(full, wire)}`),
+    full: encoded,
+    fullChecks,
+    shortcutChecks: yield* checksOf(pathService, shortcut, wires),
+    notAssignableButCompiles: yield* notAssignableButCompilesOf(pathService, full, answers),
     refusedFiles,
     expected,
   }
@@ -267,7 +330,7 @@ Feature('Checking real code against recorded verdicts', { timeout: 600_000 })
               refusedFiles: s.seen.refusedFiles,
               recorded: Option.getOrNull(s.seen.expected),
             }).toEqual({
-              importerShortcut: s.seen.full.checks,
+              importerShortcut: s.seen.fullChecks,
               notAssignableButCompiles: [],
               refusedFiles: [],
               recorded: s.seen.full,
