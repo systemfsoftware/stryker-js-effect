@@ -359,7 +359,40 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
     )
 
     scenario(
-      'A run that is over the committed budget baseline and below its break fails on the budget before the break',
+      'A run with a new survivor and below its break names both verdicts and exits on the break',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose baseline lists the three already-accepted survivors and whose report scores 0 under a break of 50',
+        )(
+          'project',
+          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C]), null, reportJsonOf(BELOW_BREAK)),
+        ),
+        When('stryker gates against that baseline')(
+          'ran',
+          (s) => runGate(s.project.root, 'human', ['--baseline', COMMITTED_BASELINE]),
+        ),
+        Then('the process names the new survivor once and the break verdict, and exits 1 on the break')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesOnlyTheNewSurvivor: namesOnlyTheNewSurvivor(s.ran.stderr),
+            newIdAppearances: s.ran.stderr.split(NEW_SURVIVOR).length - 1,
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+            exitsOnTheBreak: s.ran.stderr.includes(
+              'exit 1 (VerdictFail): stryker gate: 1 of 1 project(s) scored below thresholds.break',
+            ),
+          }).toStrictEqual({
+            exitCode: 1,
+            namesOnlyTheNewSurvivor: true,
+            newIdAppearances: 1,
+            emitsBreakVerdict: true,
+            exitsOnTheBreak: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run that is over the committed budget baseline and below its break names both verdicts and exits on the break',
       Gherkin.Do.pipe(
         Given(
           'a project whose survivors are all committed, whose committed budget baseline is 3 seconds and whose report scores 0 under a break of 50',
@@ -382,13 +415,24 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
               COMMITTED_BUDGET_BASELINE,
             ]),
         ),
-        Then('the process exits 1 naming the budget and no break verdict')((s, expect) =>
+        Then('the process prints the budget verdict and the break verdict and exits 1 on the break')((s, expect) =>
           expect({
             exitCode: s.ran.exitCode,
             namesBaseline: s.ran.stderr.includes('3.00'),
             namesActual: s.ran.stderr.includes('4.00'),
             emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
-          }).toStrictEqual({ exitCode: 1, namesBaseline: true, namesActual: true, emitsBreakVerdict: false })
+            exitsOnTheBreak: s.ran.stderr.includes(
+              'exit 1 (VerdictFail): stryker gate: 1 of 1 project(s) scored below thresholds.break',
+            ),
+            exitsOnTheBudget: s.ran.stderr.includes('exit 1 (VerdictFail): stryker gate: run took'),
+          }).toStrictEqual({
+            exitCode: 1,
+            namesBaseline: true,
+            namesActual: true,
+            emitsBreakVerdict: true,
+            exitsOnTheBreak: true,
+            exitsOnTheBudget: false,
+          })
         ),
       ),
     )
@@ -539,27 +583,6 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
             exitCode: s.ran.exitCode,
             namesUndecodableReport: s.ran.stderr.includes('cannot decode the finished mutation report'),
           }).toStrictEqual({ exitCode: 2, namesUndecodableReport: true })
-        ),
-      ),
-    )
-
-    scenario(
-      'A new survivor fails on the baseline verdict before the break is judged',
-      Gherkin.Do.pipe(
-        Given('a project whose report scores 0 under a break of 50 and whose baseline misses one survivor')(
-          'project',
-          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C]), null, reportJsonOf(BELOW_BREAK)),
-        ),
-        When('stryker gates against that baseline')(
-          'ran',
-          (s) => runGate(s.project.root, 'human', ['--baseline', COMMITTED_BASELINE]),
-        ),
-        Then('the process exits 1 naming the new survivor and no break verdict')((s, expect) =>
-          expect({
-            exitCode: s.ran.exitCode,
-            namesOnlyTheNewSurvivor: namesOnlyTheNewSurvivor(s.ran.stderr),
-            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
-          }).toStrictEqual({ exitCode: 1, namesOnlyTheNewSurvivor: true, emitsBreakVerdict: false })
         ),
       ),
     )
