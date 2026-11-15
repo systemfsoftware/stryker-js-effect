@@ -16,6 +16,8 @@ export const ConfigImportFailureCode = S.Literals([
 ])
 export type ConfigImportFailureCode = typeof ConfigImportFailureCode.Type
 
+export const ConfigImportCodedFailure = S.Struct({ code: ConfigImportFailureCode })
+
 export class ClassifyConfigImportCommand
   extends S.TaggedClass<ClassifyConfigImportCommand, { readonly brand: unique symbol }>()(
     'ClassifyConfigImportCommand',
@@ -49,7 +51,7 @@ export type ConfigImportFailureDecision = ConfigImportClassified | ConfigImportU
 const thrownErrorOf = <A>(cause: A): Option.Option<Error> => S.decodeUnknownOption(S.instanceOf(Error))(cause)
 
 const knownCodeOf = (error: Error): Option.Option<ConfigImportFailureCode> =>
-  Option.map(S.decodeUnknownOption(S.Struct({ code: ConfigImportFailureCode }))(error), (coded) => coded.code)
+  Option.map(S.decodeUnknownOption(ConfigImportCodedFailure)(error), (coded) => coded.code)
 
 const classifiedOf = (command: ClassifyConfigImportCommand) => (error: Error): Option.Option<ConfigImportClassified> =>
   Option.map(

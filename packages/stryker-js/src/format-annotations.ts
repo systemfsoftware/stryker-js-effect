@@ -49,7 +49,6 @@ export const annotationLinesOf = (decision: SelectAnnotationsDecision): Readonly
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const { Mutant } = await import('@systemfsoftware/stryker-js-plugin-interface')
   const Arbitrary = await import('effect/Arbitrary')
   const S = await import('effect/Schema')
   const { AnnotationsSelected, NothingToAnnotate } = await import('./select-annotations.workflow.js')
@@ -65,23 +64,6 @@ if (import.meta.vitest !== void 0) {
 
   const escapedWith = (table: Readonly<Record<string, string>>) => (value: string): string =>
     Array.from(value, (char) => table[char] ?? char).join('')
-
-  const textArb = Arbitrary.schema(S.String.check(S.isPattern(/^[a-z%:,\r\n ]{0,12}$/)))
-
-  const annotationArb = Arbitrary.all({
-    fileName: textArb,
-    status: Arbitrary.schema(Mutant.SurvivorStatusSchema),
-    id: Arbitrary.schema(Mutant.MutantId),
-    mutatorName: textArb,
-    location: Arbitrary.schema(Mutant.Location),
-    description: S.String.check(S.isPattern(/^[a-z%:,\r\n ]{0,12}$/)).pipe(S.UndefinedOr, Arbitrary.schema),
-  }).pipe(
-    Arbitrary.map(({ fileName, status, id, mutatorName, location, description }): SurvivorAnnotation => ({
-      fileName,
-      status,
-      mutant: { id, mutatorName, location, status, ...(description === undefined ? {} : { description }) },
-    })),
-  )
 
   const LEVELS = { Survived: 'warning', NoCoverage: 'notice' } as const
 
@@ -100,21 +82,22 @@ if (import.meta.vitest !== void 0) {
   it.prop(
     '∀a_Selected_≡OneEscapedWorkflowCommandPerAnnotationInOrder',
     {
-      of: [annotationArb, Arbitrary.array(annotationArb, { maxLength: 3 })],
+      of: [AnnotationsSelected],
       subject: annotationLinesOf,
     },
-    (subject, [first, rest]) => {
-      const lines = subject(AnnotationsSelected.make({ annotations: [first, ...rest] }))
-      const expected = [first, ...rest].map(expectedLineOf)
+    (subject, [selected]) => {
+      const lines = subject(selected)
+      const expected = selected.annotations.map(expectedLineOf)
       return lines.length === expected.length && lines.every((line, index) => line === expected[index])
     },
   )
 
   it.prop(
     '∀n_Nothing_≡OneLineNamingTheSurvivorCount',
-    { of: [Arbitrary.schema(S.Natural)], subject: annotationLinesOf },
-    (subject, [survivorCount]) => {
-      const lines = subject(NothingToAnnotate.make({ survivorCount }))
+    { of: [NothingToAnnotate], subject: annotationLinesOf },
+    (subject, [nothing]) => {
+      const lines = subject(nothing)
+      const survivorCount = nothing.survivorCount
       return lines.length === 1 &&
         lines[0] === `stryker annotate: no survivors to annotate (${survivorCount} survivors in the report)`
     },

@@ -16,8 +16,9 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arbitrary = await import('effect/Arbitrary')
   const S = await import('effect/Schema')
+  const { Mutant } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
-  const idsArb = Arbitrary.array(Arbitrary.schema(S.String.check(S.isPattern(/^[0-9a-f]{4}$/))), { maxLength: 12 })
+  const idsArb = Mutant.MutantId.pipe(S.Array, Arbitrary.schema)
 
   it.prop(
     '∀ids_Missing_≡NamesTheFirstFiveAndCountsTheRest',

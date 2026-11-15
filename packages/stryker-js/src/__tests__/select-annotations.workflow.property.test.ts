@@ -1,4 +1,4 @@
-import { Mutant, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
@@ -12,17 +12,15 @@ import {
   NothingToAnnotate,
   selectAnnotations,
   SelectAnnotationsCommand,
-  type SurvivorAnnotation,
+  SurvivorAnnotation,
 } from '../select-annotations.workflow.js'
 import { SurvivorRef } from '../surfacing.schema.js'
 
 const isSurvivorStatus = (status: string): boolean => status === 'Survived' || status === 'NoCoverage'
 type Subject = typeof selectAnnotations
 
-const keyArb = Arbitrary.schema(
-  S.String.check(S.isMinLength(1), S.isMaxLength(6), S.isPattern(/^[\x21-\x5B\x5D-\x7E]+(\/[\x21-\x5B\x5D-\x7E]+)*$/)),
-)
-const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(32), S.isPattern(/^[\x20-\x7E\n]*$/)))
+const keyArb = Arbitrary.schema(SurvivorAnnotation.fields.fileName)
+const fileFields = Report.FileResult.schema.fields
 
 const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.Arbitrary<Report.MutantResult> =>
   Arbitrary.all({
@@ -36,8 +34,8 @@ const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.
   )
 
 const survivorFileArb: Arbitrary.Arbitrary<Report.FileResult> = Arbitrary.all({
-  language: Arbitrary.Constant('javascript'),
-  source: sourceArb,
+  language: Arbitrary.schema(fileFields.language),
+  source: Arbitrary.schema(fileFields.source),
   others: Arbitrary.array(Mutant.MutantStatusSchema.pipe(Arbitrary.schema, mutantArb), { maxLength: 2 }),
   survivor: Mutant.SurvivorStatusSchema.pipe(Arbitrary.schema, mutantArb),
 }).pipe(Arbitrary.map(({ language, source, others, survivor }) => ({
