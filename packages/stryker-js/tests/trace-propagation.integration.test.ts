@@ -3,7 +3,7 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Plugin } from '@systemfsoftware/stryker-js'
 import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
-import { Contract, ObservationWindow, Rel, Stimulus } from '@systemfsoftware/trace-spec'
+import { Contract, Graph, Observation, ObservationWindow, Rel, Stimulus } from '@systemfsoftware/trace-spec'
 import { Span, Taxonomy } from '@systemfsoftware/trace-taxonomy'
 import * as Effect from 'effect/Effect'
 import * as Headers from 'effect/http/Headers'
@@ -12,7 +12,7 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
-import { RpcInit } from './__fixtures__/declared-spans.fixture.js'
+import { HostRun, LinkedWork, RpcInit } from './__fixtures__/declared-spans.fixture.js'
 import {
   makeTraceWorkerRecord,
   TRACE_WORKER_ENTRYPOINT,
@@ -20,9 +20,6 @@ import {
 } from './__fixtures__/substituted-trace-worker.fixture.js'
 
 const Feature = makeFeature({ it })
-
-const HostRun = Span.declare({ id: 'host.run', name: 'host.run', attrs: S.Struct({}) })
-const LinkedWork = Span.declare({ id: 'worker.async', name: 'worker.async', attrs: S.Struct({}) })
 
 const WorkerCalls = Taxonomy.make('worker-trace-propagation').pipe(
   Taxonomy.add(HostRun),
@@ -39,6 +36,7 @@ interface TraceWorkerPlan {
 interface TracedCall {
   readonly hostTraceId: string
   readonly hostSpanId: string
+  readonly workerTraceId: string | undefined
   readonly headers: Headers.Headers
 }
 
@@ -92,6 +90,7 @@ const reportInTracedPhase = Stimulus.make({
         return {
           hostTraceId: host.traceId,
           hostSpanId: host.spanId,
+          workerTraceId: record.linkedWorkTrace.traceId,
           headers: yield* readHeaders(record),
         }
       }),
@@ -115,6 +114,7 @@ const reportCarryingNewerContext = Stimulus.make({
         return {
           hostTraceId: host.traceId,
           hostSpanId: host.spanId,
+          workerTraceId: record.linkedWorkTrace.traceId,
           headers: yield* readHeaders(record),
         }
       }),
@@ -135,6 +135,36 @@ const newerContextContract = Contract.of(WorkerCalls).stimulate(reportCarryingNe
   workerSpanIsChildOfHost,
 )
 
+const LinkedWorkTaxonomy = Taxonomy.make('worker-linked-work').pipe(Taxonomy.add(LinkedWork))
+
+/** The linked work is a root span of its own trace, and its one link names the host span. */
+const linkedWorkIsRootLinkedToHost = (host: { readonly traceId: string; readonly spanId: string }) =>
+  Rel.all(
+    Rel.unique(LinkedWork),
+    Rel.forall(
+      LinkedWork,
+      (node) =>
+        node.parentSpanId === null && node.links.length === 1 &&
+        node.links.every((link) => link.traceId === host.traceId && link.spanId === host.spanId),
+      `expected no parent and the one link ${host.traceId}/${host.spanId}`,
+    ),
+  )
+
+/** Reads the trace the linked work started, which is not the host trace, and judges it as a contract does. */
+const judgedLinkedWork = (call: TracedCall) =>
+  Effect.gen(function*() {
+    const observation = yield* Observation.Observation
+    const traceId = call.workerTraceId ?? ''
+    const spans = yield* observation.collect(traceId).pipe(Effect.orDie)
+    const graph = yield* Effect.fromResult(Graph.decode(traceId, spans, LinkedWorkTaxonomy)).pipe(Effect.orDie)
+    const relation = linkedWorkIsRootLinkedToHost({ traceId: call.hostTraceId, spanId: call.hostSpanId })
+    const contract = Contract.of(LinkedWorkTaxonomy).stimulate(reportInTracedPhase).holds(relation)
+    return {
+      contract,
+      judgment: { run: { input: PLAN, traceId, output: call }, verdict: relation(graph), dumpPath: null },
+    }
+  })
+
 const harness = Layer.mergeAll(ObservationWindow.make('trace-test').layer, NodeFileSystem.layer)
 
 Feature('Linking a worker into the host run trace')
@@ -154,6 +184,13 @@ Feature('Linking a worker into the host run trace')
         Then(
           'the worker span is a child of the host span in the host trace, and the work the worker starts is not parented into that trace',
         )((s, expect) => Contract.verdictCheck(hostRunContract, expect, s.judged)),
+        When('the work the worker started is read from the trace it started')(
+          'linked',
+          (s) => judgedLinkedWork(s.judged.run.output),
+        ),
+        Then('that work is a root span of its own trace whose one link names the host span')((s, expect) =>
+          Contract.verdictCheck(s.linked.contract, expect, s.linked.judgment)
+        ),
         When('what the worker received at the boundary is read back')(
           'call',
           (s) => Effect.succeed(s.judged.run.output),

@@ -68,8 +68,10 @@ export const withinTime = (options: { readonly container: Span.Span; readonly sp
 }
 
 /**
- * Every `after` span starts no earlier than the moment every `before` span (within the time of `container`, when one is
- * given) has ended, and both were emitted.
+ * Every `after` span starts no earlier than the moment every `before` span has ended, and both were emitted. When a
+ * `container` is given, both are those within the time of a span named `container`.
+ * Times are the trace graph's float milliseconds since the epoch: they keep sub-millisecond digits down to about a
+ * quarter of a microsecond, the resolution of a double at that magnitude.
  */
 export const finishedBeforeStart = (options: {
   readonly container?: Span.Span
@@ -80,7 +82,9 @@ export const finishedBeforeStart = (options: {
     const earlier = options.container === undefined
       ? Graph.byId(graph, options.before)
       : timedInside(graph, options.container, options.before)
-    const later = Graph.byId(graph, options.after)
+    const later = options.container === undefined
+      ? Graph.byId(graph, options.after)
+      : timedInside(graph, options.container, options.after)
     const late = later.find((node) => earlier.some((first) => endOf(first) > node.startMillis))
     return {
       inspected: [...earlier, ...later].map((node) => node.spanId),
@@ -107,8 +111,15 @@ export const nearestWatchedAncestor = (options: {
       const names = new Set(options.watched.map((span) => span.name))
       const byId = new Map(graph.nodes.map((node) => [node.spanId, node] as const))
       const nearestOf = (node: Graph.GraphNode): string => {
-        const parent = byId.get(node.parentSpanId ?? '')
-        return parent === undefined ? 'nothing' : names.has(parent.name) ? parent.name : nearestOf(parent)
+        const visited = new Set<string>([node.spanId])
+        let parent = byId.get(node.parentSpanId ?? '')
+        while (parent !== undefined) {
+          if (names.has(parent.name)) return parent.name
+          if (visited.has(parent.spanId)) return 'a parent cycle'
+          visited.add(parent.spanId)
+          parent = byId.get(parent.parentSpanId ?? '')
+        }
+        return 'nothing'
       }
       const nodes = Graph.byId(graph, options.child)
       const expected = options.parent?.name ?? 'nothing'

@@ -1075,52 +1075,68 @@
     "name": "typescript-checker.compiler.check",
     "attributes": {
       "typescript.snapshot_updates.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.resplices.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.outside-function-body.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.body-dependent-signature.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.not-typescript-module.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.module-reference.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.syntax-error.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.original.shared-file.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.outside-function-body.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.body-dependent-signature.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.not-typescript-module.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.module-reference.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.syntax-error.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.mutated.shared-file.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       },
       "typescript.importer_shortcut.fallback.unread.count": {
-        "type": "number"
+        "type": "number",
+        "optional": true
       }
     }
   },

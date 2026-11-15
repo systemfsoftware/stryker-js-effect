@@ -2,68 +2,24 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Span } from '@systemfsoftware/trace-taxonomy'
 import * as S from 'effect/Schema'
 
-export const RpcInit = Span.declare({
-  id: SpanTaxonomy.Spans.rpcInit.name,
-  name: SpanTaxonomy.Spans.rpcInit.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.rpcInit.attributes),
-})
+const declaredFrom = <Attributes extends Readonly<Record<string, S.Codec<Span.AttributeValue>>>>(
+  member: { readonly name: string; readonly attributes: Attributes },
+) => Span.declare({ id: member.name, name: member.name, attrs: S.Struct(member.attributes) })
 
-export const InstrumentPhase = Span.declare({
-  id: SpanTaxonomy.Spans.instrumentPhase.name,
-  name: SpanTaxonomy.Spans.instrumentPhase.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.instrumentPhase.attributes),
-})
+export const RpcInit = declaredFrom(SpanTaxonomy.Spans.rpcInit)
+export const InstrumentPhase = declaredFrom(SpanTaxonomy.Spans.instrumentPhase)
+export const InstrumentGather = declaredFrom(SpanTaxonomy.Spans.instrumentGather)
+export const PhaseEntered = declaredFrom(SpanTaxonomy.Spans.phaseEntered)
+export const MutantRun = declaredFrom(SpanTaxonomy.Spans.mutantRun)
+export const SandboxAcquire = declaredFrom(SpanTaxonomy.Spans.sandboxAcquire)
+export const SandboxBuildRun = declaredFrom(SpanTaxonomy.Spans.sandboxBuildRun)
+export const SandboxSymlinkNodeModules = declaredFrom(SpanTaxonomy.Spans.sandboxSymlinkNodeModules)
+export const SandboxFindNodeModules = declaredFrom(SpanTaxonomy.Spans.sandboxFindNodeModules)
+export const SandboxLinkNodeModules = declaredFrom(SpanTaxonomy.Spans.sandboxLinkNodeModules)
+export const SandboxRestoreOriginal = declaredFrom(SpanTaxonomy.Spans.sandboxRestoreOriginal)
 
-export const InstrumentGather = Span.declare({
-  id: SpanTaxonomy.Spans.instrumentGather.name,
-  name: SpanTaxonomy.Spans.instrumentGather.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.instrumentGather.attributes),
-})
+/** A span only the host run test starts, to hold the call under test. */
+export const HostRun = Span.declare({ id: 'host.run', name: 'host.run', attrs: S.Struct({}) })
 
-export const PhaseEntered = Span.declare({
-  id: SpanTaxonomy.Spans.phaseEntered.name,
-  name: SpanTaxonomy.Spans.phaseEntered.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.phaseEntered.attributes),
-})
-
-export const MutantRun = Span.declare({
-  id: SpanTaxonomy.Spans.mutantRun.name,
-  name: SpanTaxonomy.Spans.mutantRun.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.mutantRun.attributes),
-})
-
-export const SandboxAcquire = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxAcquire.name,
-  name: SpanTaxonomy.Spans.sandboxAcquire.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxAcquire.attributes),
-})
-
-export const SandboxBuildRun = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxBuildRun.name,
-  name: SpanTaxonomy.Spans.sandboxBuildRun.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxBuildRun.attributes),
-})
-
-export const SandboxSymlinkNodeModules = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxSymlinkNodeModules.name,
-  name: SpanTaxonomy.Spans.sandboxSymlinkNodeModules.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxSymlinkNodeModules.attributes),
-})
-
-export const SandboxFindNodeModules = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxFindNodeModules.name,
-  name: SpanTaxonomy.Spans.sandboxFindNodeModules.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxFindNodeModules.attributes),
-})
-
-export const SandboxLinkNodeModules = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxLinkNodeModules.name,
-  name: SpanTaxonomy.Spans.sandboxLinkNodeModules.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxLinkNodeModules.attributes),
-})
-
-export const SandboxRestoreOriginal = Span.declare({
-  id: SpanTaxonomy.Spans.sandboxRestoreOriginal.name,
-  name: SpanTaxonomy.Spans.sandboxRestoreOriginal.name,
-  attrs: S.Struct(SpanTaxonomy.Spans.sandboxRestoreOriginal.attributes),
-})
+/** The span the substituted worker starts for the work it begins, as a root span linked to the host span. */
+export const LinkedWork = Span.declare({ id: 'worker.async', name: 'worker.async', attrs: S.Struct({}) })

@@ -26,6 +26,8 @@ export const CheckerRuns = Taxonomy.make('importer-shortcut-checker-runs').pipe(
  * without the attribute prefix; the other fields are checked only when given.
  */
 export interface ShortcutRecord {
+  /** How many compiler checks the run records, one per check call; the last one is the one read. Defaults to one. */
+  readonly compileChecks?: number
   readonly counts?: Readonly<Record<string, number>>
   readonly snapshotUpdates?: number
   readonly resplices?: number
@@ -43,6 +45,15 @@ const shortcutCountsOf = (attrs: Graph.GraphNode['attrs']): Readonly<Record<stri
       .map(([key, value]) => [key.slice(SHORTCUT_PREFIX.length), Number(value)]),
   )
 
+/** A completed compile always records these; only a compile that failed first lacks them. */
+const RECORDED_ON_COMPLETION = [
+  'typescript.importer_shortcut.count',
+  'typescript.snapshot_updates.count',
+  'typescript.resplices.count',
+] as const
+
+const endOf = (node: Graph.GraphNode): number => node.startMillis + node.durationMillis
+
 const briefOf = (record: ShortcutRecord): string => JSON.stringify(record)
 
 const brokenRecord = (
@@ -55,11 +66,18 @@ const brokenRecord = (
   if (runs.length !== 1 || run === undefined) {
     return { inspected: runs.map((node) => node.spanId), broken: `expected one check run labelled ${label}, found ${runs.length}` }
   }
-  const [last] = Graph.descendants(graph, run)
-    .filter((node) => node.name === CompilerCheck.name)
-    .toSorted((left, right) => right.startMillis + right.durationMillis - (left.startMillis + left.durationMillis))
-  if (last === undefined) {
-    return { inspected: [run.spanId], broken: `check run ${label} recorded no ${CompilerCheck.name} span` }
+  const checks = Graph.descendants(graph, run).filter((node) => node.name === CompilerCheck.name)
+  const [last] = checks.toSorted((left, right) => endOf(right) - endOf(left))
+  const expectedChecks = expected.compileChecks ?? 1
+  if (checks.length !== expectedChecks || last === undefined) {
+    return {
+      inspected: [run.spanId, ...checks.map((node) => node.spanId)],
+      broken: `check run ${label} expected ${expectedChecks} ${CompilerCheck.name} span(s), found ${checks.length}`,
+    }
+  }
+  const unrecorded = RECORDED_ON_COMPLETION.filter((key) => last.attrs[key] === undefined)
+  if (unrecorded.length > 0) {
+    return { inspected: [run.spanId, last.spanId], broken: `check run ${label} completed without recording ${unrecorded.join(', ')}` }
   }
   const seen: ShortcutRecord = {
     counts: shortcutCountsOf(last.attrs),

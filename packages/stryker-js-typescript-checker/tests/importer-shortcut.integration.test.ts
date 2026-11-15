@@ -428,9 +428,6 @@ const bothModesOf = (output: Readonly<Record<string, Run>>, prefix = '') => ({
   always: runLabelled(output, `${prefix}always`),
 })
 
-const unobservedBothModes = (calls: ReadonlyArray<ReadonlyArray<Edit>>) =>
-  Effect.map(checkRuns(modeRequests(calls, SINGLE_PROJECT)), (observed) => bothModesOf(observed.output))
-
 const SHORTCUT_COUNTS_RECORDED = 'each compiler check records the importer shortcut counts the run was expected to'
 
 const REFERENCED_EDIT: Edit = { id: AE10, file: 'lib/src/counter.ts', target: 'x + 1', replacement: 'x.missing' }
@@ -632,7 +629,22 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
       Gherkin.Do.pipe(
         When(
           'one call checks an edit that changes a type the consumer reads, and the next call checks an edit in that consumer',
-        )('seen', () => unobservedBothModes([[RETYPED_EDIT], [SECOND_CALL_EDIT]])),
+        )(
+          'judged',
+          () =>
+            bothModesAcross([[RETYPED_EDIT], [SECOND_CALL_EDIT]], {
+              rule: { compileChecks: 2 },
+              always: { compileChecks: 2, counts: { count: 0 } },
+            }),
+        ),
+        Then('each run records a completed compiler check per call, and the always run takes no shortcut')((
+          s,
+          expect,
+        ) => Contract.verdictCheck(s.judged.contract, expect, s.judged.judgment)),
+        When('what the checker answered is read back')(
+          'seen',
+          (s) => Effect.succeed(bothModesOf(s.judged.judgment.run.output)),
+        ),
         Then('the first edit is rejected in the consumer, and the consumer edit in the next call passes')((s, expect) =>
           expect({
             statuses: [s.seen.rule.statuses, s.seen.always.statuses],

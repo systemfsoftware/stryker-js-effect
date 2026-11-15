@@ -11,26 +11,43 @@ import type * as Scope from 'effect/Scope'
 import * as Socket from 'effect/socket/Socket'
 import * as SocketServer from 'effect/socket/SocketServer'
 
+import { LinkedWork } from './declared-spans.fixture.js'
 import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 
 export const TRACE_WORKER_ENTRYPOINT = '/project/node_modules/@acme/stryker-reporter/dist/worker.mjs'
 
 export const TRACE_WORKER_PID = 4545
 
+const LINKED_WORK_SPAN = LinkedWork.name
+
 export interface TraceWorkerRecord {
   readonly headers: Ref.Ref<Headers.Headers | undefined>
+  /** The trace the linked work started, noted when its span is created; the span itself is the traced tracer's. */
+  readonly linkedWorkTrace: { traceId: string | undefined }
 }
 
 export const makeTraceWorkerRecord: Effect.Effect<TraceWorkerRecord> = Effect.gen(function*() {
-  return { headers: yield* Ref.make<Headers.Headers | undefined>(undefined) }
+  return { headers: yield* Ref.make<Headers.Headers | undefined>(undefined), linkedWorkTrace: { traceId: undefined } }
 })
+
+/** Notes which trace the linked work's span started, and delegates every span to the tracer already in place. */
+const notingLinkedWorkTrace = (record: TraceWorkerRecord) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(Effect.tracer, (tracer) =>
+    Effect.withTracer(effect, {
+      context: tracer.context,
+      span(options) {
+        const span = tracer.span(options)
+        if (options.name === LINKED_WORK_SPAN) record.linkedWorkTrace.traceId = span.traceId
+        return span
+      },
+    }))
 
 const traceServer = (socket: Socket.Socket, record: TraceWorkerRecord): Layer.Layer<never> =>
   RpcServer.layer(Plugin.ReporterRpcs).pipe(
     Layer.provide(Plugin.ReporterRpcs.toLayer({
       init: (_payload, options) =>
         Ref.set(record.headers, options.headers).pipe(
-          Effect.andThen(Trace.withLinkedSpan('worker.async', {}, Effect.void)),
+          Effect.andThen(Trace.withLinkedSpan(LINKED_WORK_SPAN, {}, Effect.void).pipe(notingLinkedWorkTrace(record))),
         ),
       onEventBatch: () => Effect.void,
       flush: () => Effect.void,
