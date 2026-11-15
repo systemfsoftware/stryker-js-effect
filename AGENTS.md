@@ -24,7 +24,7 @@ An Effect-based fork of StrykerJS: mutation testing for TypeScript, shipped as t
 | `test/e2e`, `test/e2e-core`                        | The end-to-end lane: the shipped `stryker` package run in microVMs against fixtures                    |
 | `test/bench`                                       | Report-only A/B benchmarks                                                                             |
 | `repos/`                                           | Vendored reference subtrees (`subtrees.toml`); read them for upstream source, never edit or build them |
-| `docs/plans`, `docs/solutions`, `docs/adr`         | Plans (point-in-time records), solved problems, and decisions                                          |
+| `docs/plans`, `docs/solutions`                     | Plans (point-in-time records and decisions), solved problems                                           |
 
 ## Commands
 
