@@ -1,5 +1,12 @@
 # @systemfsoftware/stryker-js
 
+## 23.1.0
+
+`stryker audit` reports an orphaned test with one of two reasons:
+
+- `every-kill-held-by-a-kept-mutant`: every mutant the test kills is dropped, and every pair of those mutants is a contained Pass. The kept set therefore detects the same faults, and the orphan is reported without failing the audit.
+- `every-killed-mutant-dropped`: anything else. It still fails the audit, and `failures.orphanedTests` counts only these.
+
 ## 23.0.1
 
 The workspace dogfoods @systemfsoftware/stryker-js 23.0.0 and the TypeScript checker 10.0.0, and every package resolves one @systemfsoftware/effect-cell-types (12.1.4). The TypeScript checker and the vitest runner bundle 12.1.4 in place of 12.0.0, and stryker-js and the checker bundle @jsr/std__jsonc 1.0.3 in place of 1.0.2. Every package that takes @systemfsoftware/effect-cell-types from the catalog publishes the range ^12.1.4 in place of ^12.0.0.
