@@ -6,6 +6,7 @@ import * as S from 'effect/Schema'
 
 import {
   FormatAssigned,
+  FormatClaimSchema,
   FormatOverrideUnclaimed,
   FormatResolutionCommand,
   type FormatResolutionDecision,
@@ -31,53 +32,46 @@ const reversedCommand = (command: FormatResolutionCommand): FormatResolutionComm
     claims: [...command.claims].reverse(),
   })
 
-const claimArb = (idPattern: RegExp, extensionPattern: RegExp) =>
-  Arbitrary.all({
-    formatId: Arbitrary.schema(S.String.check(S.isPattern(idPattern))),
-    extensions: Arbitrary.array(Arbitrary.schema(S.String.check(S.isPattern(extensionPattern))), { maxLength: 2 }),
-    language: Arbitrary.schema(S.String),
-    kind: Arbitrary.schema(S.Literals(['script', 'embedded'])),
-  })
+const claimsArb = Arbitrary.schema(FormatResolutionCommand.fields.claims)
 
 const collisionArb = Arbitrary.all({
-  fileName: Arbitrary.schema(S.String),
-  extension: Arbitrary.schema(S.String.check(S.isPattern(/^\.x[a-z]{0,3}$/))),
-  pin: Arbitrary.schema(S.String.check(S.isPattern(/^pin-[a-z]{1,3}$/))),
-  byExtension: claimArb(/^ext-[a-z]{1,3}$/, /^\.y[a-z]{0,3}$/),
-  byPin: claimArb(/^unused$/, /^\.y[a-z]{0,3}$/),
-  decoys: Arbitrary.array(claimArb(/^decoy-[a-z]{1,3}$/, /^\.y[a-z]{0,3}$/), { maxLength: 3 }),
-  pinned: Arbitrary.schema(S.Boolean),
-  pinClaimed: Arbitrary.schema(S.Boolean),
-  extensionClaimed: Arbitrary.schema(S.Boolean),
-  position: Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 }))),
+  fileName: Arbitrary.schema(FormatResolutionCommand.fields.fileName),
+  extension: Arbitrary.schema(FormatResolutionCommand.fields.extension),
+  target: Arbitrary.schema(FormatClaimSchema),
+  decoy: Arbitrary.schema(FormatClaimSchema),
+  before: claimsArb,
+  between: claimsArb,
+  after: claimsArb,
 })
 
 type Collision = typeof collisionArb extends Arbitrary.Arbitrary<infer A> ? A : never
 
-const insertedAt = <A>(items: ReadonlyArray<A>, position: number, item: A): ReadonlyArray<A> => [
-  ...items.slice(0, position),
-  item,
-  ...items.slice(position),
-]
+const claimingTheExtension = (claim: Claim, extension: string): Claim => ({
+  ...claim,
+  extensions: [...claim.extensions, extension],
+})
 
-const collisionCommandOf = (drawn: Collision) => {
-  const byExtension = { ...drawn.byExtension, extensions: [...drawn.byExtension.extensions, drawn.extension] }
-  const byPin = { ...drawn.byPin, formatId: drawn.pin }
-  const withExtension = drawn.extensionClaimed
-    ? insertedAt(drawn.decoys, drawn.position, byExtension)
-    : drawn.decoys
-  const claims = drawn.pinClaimed ? insertedAt(withExtension, drawn.position, byPin) : withExtension
-  return {
-    byExtension,
-    byPin,
-    command: FormatResolutionCommand.make({
-      fileName: drawn.fileName,
-      extension: drawn.extension,
-      formatId: drawn.pinned ? drawn.pin : undefined,
-      claims,
-    }),
-  }
-}
+const pinnedCollisionOf = (drawn: Collision): FormatResolutionCommand =>
+  FormatResolutionCommand.make({
+    fileName: drawn.fileName,
+    extension: drawn.extension,
+    formatId: drawn.target.formatId,
+    claims: [
+      ...drawn.before,
+      claimingTheExtension(drawn.decoy, drawn.extension),
+      ...drawn.between,
+      drawn.target,
+      ...drawn.after,
+    ],
+  })
+
+const unpinnedCollisionOf = (drawn: Collision): FormatResolutionCommand =>
+  FormatResolutionCommand.make({
+    fileName: drawn.fileName,
+    extension: drawn.extension,
+    formatId: undefined,
+    claims: [...drawn.before, claimingTheExtension(drawn.target, drawn.extension), ...drawn.after],
+  })
 
 const assignedTo = (
   decision: FormatResolutionDecision,
@@ -133,33 +127,25 @@ describe('resolveFormat', () => {
   )
 
   it.prop(
-    '∀c_Pinned_≡PinSelectsItsClaimAndNeverFallsBackToTheExtension',
+    '∀c_Pinned_≡ThePinnedIdSelectsItsClaimEvenWhenAnEarlierClaimTakesTheExtension',
     { of: [collisionArb], subject: resolveFormat },
     (subject, [drawn]) => {
-      const { byPin, command } = collisionCommandOf({ ...drawn, pinned: true })
+      const command = pinnedCollisionOf(drawn)
+      const expected = coveringClaimOf(command)
       const result = subject(command)
-      if (drawn.pinClaimed) {
-        return Result.isSuccess(result) && assignedTo(result.success, drawn.fileName, byPin)
-      }
-      return Result.isSuccess(result) && S.is(FormatOverrideUnclaimed)(result.success) &&
-        result.success.fileName === drawn.fileName && result.success.formatId === drawn.pin
+      return expected !== undefined && expected.formatId === drawn.target.formatId && Result.isSuccess(result) &&
+        assignedTo(result.success, drawn.fileName, expected)
     },
   )
 
   it.prop(
-    '∀c_Unpinned_≡ExtensionSelectsItsClaimOrSkipsTheFile',
+    '∀c_Unpinned_≡TheFirstClaimOfTheExtensionIsAssigned',
     { of: [collisionArb], subject: resolveFormat },
     (subject, [drawn]) => {
-      const { byExtension, command } = collisionCommandOf({ ...drawn, pinned: false })
+      const command = unpinnedCollisionOf(drawn)
+      const expected = coveringClaimOf(command)
       const result = subject(command)
-      if (Result.isFailure(result)) {
-        return false
-      }
-      if (drawn.extensionClaimed) {
-        return assignedTo(result.success, drawn.fileName, byExtension)
-      }
-      return S.is(FormatSkipped)(result.success) && result.success.fileName === drawn.fileName &&
-        result.success.extension === drawn.extension
+      return expected !== undefined && Result.isSuccess(result) && assignedTo(result.success, drawn.fileName, expected)
     },
   )
 })

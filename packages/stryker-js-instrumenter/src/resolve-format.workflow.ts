@@ -4,7 +4,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-const FormatClaimSchema = S.Struct({
+export const FormatClaimSchema = S.Struct({
   formatId: S.String,
   extensions: S.Array(S.String),
   language: S.String,
