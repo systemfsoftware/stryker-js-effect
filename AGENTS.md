@@ -2,7 +2,7 @@
 
 An Effect-based fork of StrykerJS: mutation testing for TypeScript, shipped as the `@systemfsoftware/stryker-*` npm packages and the flake's `stryker` package. Every mutant verdict this tool prints is a claim a consumer acts on, so a wrong verdict is the worst defect this repository can ship.
 
-`AGENTS.md` is the canonical instruction file; `CLAUDE.md` is a symlink to it. Subtrees add their own `AGENTS.md` (`packages/`, `packages/frameworks/`, `packages/ignorers/`, `packages/toolchain/`, `test/`, `test/e2e/`); the nearest one to a file applies on top of this one.
+`AGENTS.md` is the canonical instruction file; `CLAUDE.md` includes it, `subtrees.toml` and `CONSTITUTION.md`. Subtrees add their own `AGENTS.md` (`packages/`, `packages/frameworks/`, `packages/ignorers/`, `packages/toolchain/`, `test/`, `test/e2e/`); the nearest one to a file applies on top of this one.
 
 - `CONSTITUTION.md` is the design law (domain modelling, code shape, proof, finish). It outranks every other file; read it before an architecture change, a design dispute or a new rule.
 - `CODING_STANDARDS.md` (with `packages/ignorers/CODING_STANDARDS.md` for its subtree) holds the defect classes code here must avoid. Read it before writing or reviewing code, and update it in the same change when a fix establishes or retires a rule.
@@ -67,4 +67,4 @@ This repository is public. Nothing from a private repository enters it: no priva
 
 - `ci.yml` calls the organization's shared CI workflow; its `check` job runs `pnpm check:ci` on a pull request and `pnpm check:full` on main, and is the required status check. Renaming or splitting that job renames the required check in the same change.
 - The e2e, checker-parity, bench and mutation lanes each run in their own workflow and never inside `check`: they need KVM, a collector or a released CLI that `check` does not have.
-- A CI job catches a defect a consumer of a shipped package would meet. It never grades this repository's own docs, plans, layout, timings or cost, and never duplicates another job (the ci-workflows pack).
+- What a CI job may check follows the ci-workflows pack.

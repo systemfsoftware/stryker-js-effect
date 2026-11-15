@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   release:
-    uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@9615867c17489fb04be8bc74f568659d687df612
+    uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@main
     with:
       ci-workflow: ci.yml
       npm-publish: true
