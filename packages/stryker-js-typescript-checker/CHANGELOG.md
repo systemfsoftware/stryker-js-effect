@@ -1,5 +1,20 @@
 # @systemfsoftware/stryker-js-typescript-checker
 
+## 10.0.0
+
+The package manifest's `inlinedDependencies` now names the effect 4.1.2 the checker bundles. It had said 4.1.4, a version the workspace pins away from.
+
+Check the TypeScript checker against frozen real source files in its own test suite, in place of the checker-parity lane.
+
+`effect` is a peer dependency (`^4.1.2`) of every package whose library entry points import it, so a consumer's schemas, layers and errors and these packages' share one effect instance.
+
+- cli-contract, plugin-interface, instrumenter, typescript-checker and plugin-runtime declared `effect` as a dependency. A consumer on another 4.1.x got a second copy, and the contract's `ShardPlan` no longer type-checked against the consumer's effect. They now peer on it; install `effect` yourself.
+- stryker-js and the html-reporter already peered on `effect`; the floor rises from 4.1.0 to 4.1.2, the version these packages are built and tested with.
+
+The processes Stryker starts are unchanged: the CLI (`main.mjs`), the TypeScript checker's worker and the vitest runner's worker bundle their own effect 4.1.2. The flake package `stryker-package` now declares `effect` itself.
+
+The install section names `pnpm add` and the npm packages instead of the flake. The workspace takes the released packages it dogfoods from npm; no published manifest changes.
+
 ## 9.0.1
 
 Updated dependency @systemfsoftware/stryker-js to 21.0.0

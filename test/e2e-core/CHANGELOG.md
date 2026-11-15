@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-e2e-core
 
+## 0.1.5
+
+Updated dependency @systemfsoftware/stryker-js to 23.0.0
+
 ## 0.1.4
 
 Updated dependency @systemfsoftware/stryker-js to 21.0.0
