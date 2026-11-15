@@ -1,5 +1,14 @@
 # @systemfsoftware/stryker-js-cli-contract
 
+## 3.0.0
+
+`effect` is a peer dependency (`^4.1.2`) of every package whose library entry points import it, so a consumer's schemas, layers and errors and these packages' share one effect instance.
+
+- cli-contract, plugin-interface, instrumenter, typescript-checker and plugin-runtime declared `effect` as a dependency. A consumer on another 4.1.x got a second copy, and the contract's `ShardPlan` no longer type-checked against the consumer's effect. They now peer on it; install `effect` yourself.
+- stryker-js and the html-reporter already peered on `effect`; the floor rises from 4.1.0 to 4.1.2, the version these packages are built and tested with.
+
+The processes Stryker starts are unchanged: the CLI (`main.mjs`), the TypeScript checker's worker and the vitest runner's worker bundle their own effect 4.1.2. The flake package `stryker-package` now declares `effect` itself.
+
 ## 2.0.0
 
 Tests: the contract version law fetches a treeless clone's missing trees by the base commit, which GitHub serves, not by tree hash, which it refuses.
