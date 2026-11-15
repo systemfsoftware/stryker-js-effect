@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-vitest-runner
 
+## 10.1.1
+
+The workspace dogfoods @systemfsoftware/stryker-js 23.0.0 and the TypeScript checker 10.0.0, and every package resolves one @systemfsoftware/effect-cell-types (12.1.4). The TypeScript checker and the vitest runner bundle 12.1.4 in place of 12.0.0, and stryker-js and the checker bundle @jsr/std__jsonc 1.0.3 in place of 1.0.2. Every package that takes @systemfsoftware/effect-cell-types from the catalog publishes the range ^12.1.4 in place of ^12.0.0.
+
 ## 10.1.0
 
 The runner's worker resolves `vitest` from the sandbox it runs in, so a runner installed outside the project, such as the flake's `stryker` package, runs the project's own vitest. It used to resolve vitest from its own install location and failed with `ERR_MODULE_NOT_FOUND` when nothing installed vitest beside it.

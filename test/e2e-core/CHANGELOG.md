@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-e2e-core
 
+## 0.1.6
+
+Updated dependency @systemfsoftware/stryker-ignorer-effect-schema-declarations to 0.3.2
+
 ## 0.1.5
 
 Updated dependency @systemfsoftware/stryker-js to 23.0.0
