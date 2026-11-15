@@ -635,7 +635,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-        if: needs.checker-parity-changes.outputs.run == 'true'
       - if: needs.checker-parity-changes.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
       - if: needs.checker-parity-changes.outputs.run == 'true'
