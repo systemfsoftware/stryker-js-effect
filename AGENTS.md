@@ -65,5 +65,5 @@ This repository is public. Nothing from a private repository enters it: no priva
 ## CI
 
 - `ci.yml` calls the organization's shared CI workflow; its `check` job runs `pnpm check:ci` on a pull request and `pnpm check:full` on main, and is the required status check. Renaming or splitting that job renames the required check in the same change.
-- The e2e, bench and mutation lanes each run in their own workflow and never inside `check`: they need KVM, a collector or a released CLI that `check` does not have.
+- The e2e and mutation lanes each run in their own workflow and never inside `check`: they need KVM, a collector or a released CLI that `check` does not have.
 - What a CI job may check follows the ci-workflows pack.
