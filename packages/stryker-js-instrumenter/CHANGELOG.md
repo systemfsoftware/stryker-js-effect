@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 16.0.1
+
+Updated dependency @systemfsoftware/stryker-framework-interface to 0.0.3
+
 ## 16.0.0
 
 `effect` is a peer dependency (`^4.1.2`) of every package whose library entry points import it, so a consumer's schemas, layers and errors and these packages' share one effect instance.
