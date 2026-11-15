@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -47,37 +46,11 @@ export type MutantSetOutcome = typeof MutantSetOutcome.Type
 
 export const MutantSetDecision = S.Array(MutantSetOutcome)
 
-const canonicalForm = (text: string): string => stripOuterParentheses(text.trim())
-
-const stripOuterParentheses = (text: string): string =>
-  Match.value(wrapsWhole(text)).pipe(
-    Match.when(true, () => stripOuterParentheses(text.slice(1, -1).trim())),
-    Match.orElse(() => text),
-  )
-
-const parenDepthDelta = (character: string): number =>
-  Match.value(character).pipe(
-    Match.when('(', () => 1),
-    Match.when(')', () => -1),
-    Match.orElse(() => 0),
-  )
-
-const depthsAfter = (text: string): readonly number[] =>
-  text.split('').reduce<readonly number[]>(
-    (depths, character) => [...depths, Option.getOrElse(Arr.last(depths), () => 0) + parenDepthDelta(character)],
-    [],
-  )
-
-const wrapsWhole = (text: string): boolean => {
-  const depths = depthsAfter(text)
-  return [
-    text.startsWith('('),
-    text.endsWith(')'),
-    depths.length > 0,
-    depths.slice(0, -1).every((depth) => depth >= 1),
-    Option.getOrElse(Arr.last(depths), () => 0) === 0,
-  ].every(Boolean)
-}
+/**
+ * The code a candidate plants, as the instrumenter's printer wrote it from the node the placers plant. Two candidates
+ * plant the same code exactly when these texts are equal, so the policy compares text and reparses nothing.
+ */
+const canonicalForm = (text: string): string => text.trim()
 
 const defaultOnly = <A>(
   policy: Options.MutantSetPolicyType,
