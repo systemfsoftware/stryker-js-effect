@@ -4,11 +4,13 @@ import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 
-import { ProgressReporterName, type ProgressState, renderProgressReport } from './render-progress-report.workflow.js'
+import { advanceProgressReport, type ProgressState } from './advance-progress-report.workflow.js'
+import { renderProgressLineBreak, renderProgressTick } from './render-progress-report.js'
 import { failAsReporter } from './reporter-failed.js'
+import { ProgressReporterName } from './reporter-name.js'
 import { ReporterOutput } from './reporter-output.service.js'
 
-const failAsProgress = failAsReporter(ProgressReporterName.literal)
+const failAsProgress = failAsReporter(ProgressReporterName)
 
 const readProgressStep = (input: {
   readonly state: ProgressState
@@ -25,10 +27,11 @@ const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
 
 export const progressReportCell = Sandwich.named(SpanTaxonomy.Spans.reportProgress.name)(readProgressStep)
-  .decide(renderProgressReport)
+  .decide(advanceProgressReport)
   .write({
-    ProgressBarTick: ({ chunk, state }) => Effect.as(writeChunk(chunk), state),
-    ProgressLineBreak: ({ chunk, state }) => Effect.as(writeChunk(chunk), state),
-    ProgressChunkSuppressed: ({ state }) => Effect.succeed(state),
+    ProgressBarTicked: ({ bar, state }, { now }) =>
+      Effect.as(writeChunk(renderProgressTick({ bar, tally: state.tally, now })), state),
+    ProgressBarLeftIncomplete: ({ state }) => Effect.as(writeChunk(renderProgressLineBreak()), state),
+    ProgressRecorded: ({ state }) => Effect.succeed(state),
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })

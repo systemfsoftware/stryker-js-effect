@@ -1,0 +1,84 @@
+import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+
+import type { ProgressBarState, ProgressTally } from './advance-progress-report.workflow.js'
+
+const PROGRESS_BAR_FORMAT =
+  'Mutation testing  [:bar] :percent (elapsed: :et, remaining: :etc) :tested/:mutants Mutants tested (:survived survived, :timedOut timed out)'
+
+const PROGRESS_BAR_WIDTH = 50
+const PROGRESS_BAR_COMPLETE = '='
+const PROGRESS_BAR_INCOMPLETE = ' '
+
+const floor = Math.floor
+const min = Math.min
+
+const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
+
+const secondsBetween = (now: number, startedAt: number): number => floor((now - startedAt) / 1000)
+
+const formatTime = (timeInSeconds: number): string => {
+  const hours = floor(timeInSeconds / 3600)
+  const minutes = floor((timeInSeconds % 3600) / 60)
+  return Match.value(hours > 0).pipe(
+    Match.when(true, () => `~${hours}h ${minutes}m`),
+    Match.when(false, () =>
+      Match.value(minutes > 0).pipe(
+        Match.when(true, () => `~${minutes}m`),
+        Match.when(false, () => '<1m'),
+        Match.exhaustive,
+      )),
+    Match.exhaustive,
+  )
+}
+
+const remainingSeconds = (tally: ProgressTally, now: number): number =>
+  floor((secondsBetween(now, tally.startedAt) / tally.ticks) * (tally.total - tally.ticks))
+
+const positiveTimeLabel = (remaining: number): string =>
+  Match.value(remaining > 0).pipe(
+    Match.when(true, () => formatTime(remaining)),
+    Match.when(false, () => 'n/a'),
+    Match.exhaustive,
+  )
+
+const remainingLabel = (tally: ProgressTally, now: number): string => {
+  const remaining = remainingSeconds(tally, now)
+  return Boolean.match(Number.isFinite(remaining), {
+    onTrue: () => positiveTimeLabel(remaining),
+    onFalse: () => 'n/a',
+  })
+}
+
+const progressData = (tally: ProgressTally, now: number): Record<string, string | number> => ({
+  survived: tally.survived,
+  timedOut: tally.timedOut,
+  tested: tally.tested,
+  mutants: tally.mutants,
+  total: tally.total,
+  ticks: tally.ticks,
+  et: formatTime(secondsBetween(now, tally.startedAt)),
+  etc: remainingLabel(tally, now),
+})
+
+const formatBar = (bar: ProgressBarState, data: Readonly<Record<string, string | number>>): string => {
+  const ratio = Match.value(bar.total === 0).pipe(
+    Match.when(true, () => 0),
+    Match.when(false, () => min(bar.curr / bar.total, 1)),
+    Match.exhaustive,
+  )
+  const filled = floor(ratio * PROGRESS_BAR_WIDTH)
+  const filledBar = PROGRESS_BAR_COMPLETE.repeat(filled) + PROGRESS_BAR_INCOMPLETE.repeat(PROGRESS_BAR_WIDTH - filled)
+  const percent = `${floor(ratio * 100).toString().padStart(3, ' ')}%`
+  const printed = PROGRESS_BAR_FORMAT.replace(':bar', filledBar).replace(':percent', percent)
+  return Object.entries(data).reduce((out, [key, value]) => out.replaceAll(`:${key}`, String(value)), printed)
+}
+
+export const renderProgressTick = (
+  tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number },
+): string =>
+  `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${
+    Boolean.match(isComplete(tick.bar), { onTrue: () => '\n', onFalse: () => '' })
+  }`
+
+export const renderProgressLineBreak = (): string => '\n'

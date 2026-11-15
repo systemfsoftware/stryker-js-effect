@@ -5,24 +5,21 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export const JsonReporterName = S.Literal('json')
-
 const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/JsonReport')
 type JsonReportTypeId = typeof JsonReportTypeId
 
 export class JsonReportCommand
   extends S.TaggedClass<JsonReportCommand, { readonly brand: unique symbol }>()('JsonReportCommand', {
     reported: S.optional(Report.MutationTestResult),
-    rendered: S.Boolean,
     debug: S.Boolean,
     fileName: S.String,
   })
 {
-  static readonly [Workflow.InstrumentationBrand] = { rendered: 'stryker.report.render' } as const
+  static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class JsonReportRendered
-  extends S.TaggedClass<JsonReportRendered, { readonly brand: unique symbol }>()('JsonReportRendered', {
+export class JsonReportEmitted
+  extends S.TaggedClass<JsonReportEmitted, { readonly brand: unique symbol }>()('JsonReportEmitted', {
     report: Report.MutationTestResult,
     announceFileName: S.Option(S.String),
   })
@@ -36,10 +33,10 @@ export class JsonReportSuppressed
   readonly [JsonReportTypeId] = JsonReportTypeId
 }
 
-export const JsonReportDecision = S.Union([JsonReportRendered, JsonReportSuppressed])
+export const JsonReportDecision = S.Union([JsonReportEmitted, JsonReportSuppressed])
 export type JsonReportDecision = typeof JsonReportDecision.Type
 
-export const renderJsonReport = Workflow.make({
+export const emitJsonReport = Workflow.make({
   command: JsonReportCommand,
   decision: JsonReportDecision,
   error: S.Never,
@@ -48,7 +45,7 @@ export const renderJsonReport = Workflow.make({
       onNone: () => Result.succeed(JsonReportSuppressed.make({})),
       onSome: (report) =>
         Result.succeed(
-          JsonReportRendered.make({
+          JsonReportEmitted.make({
             report,
             announceFileName: Boolean.match(command.debug, {
               onTrue: () => Option.some(command.fileName),

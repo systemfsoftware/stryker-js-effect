@@ -8,8 +8,6 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export const ProgressReporterName = S.Literal('progress')
-
 const ProgressReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ProgressReport')
 type ProgressReportTypeId = typeof ProgressReportTypeId
 
@@ -32,12 +30,8 @@ export const ProgressTallySchema = S.Struct({
 export type ProgressTally = typeof ProgressTallySchema.Type
 
 export const ProgressBarStateSchema = S.Struct({
-  format: S.String,
   total: S.Finite,
   curr: S.Finite,
-  width: S.Finite,
-  complete: S.String,
-  incomplete: S.String,
 })
 export type ProgressBarState = typeof ProgressBarStateSchema.Type
 
@@ -54,47 +48,36 @@ export class ProgressReportCommand
     now: S.Finite,
   })
 {
-  static readonly [Workflow.InstrumentationBrand] = { now: 'stryker.report.rendered' } as const
+  static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export class ProgressBarTick
-  extends S.TaggedClass<ProgressBarTick, { readonly brand: unique symbol }>()('ProgressBarTick', {
-    chunk: S.String,
+export class ProgressBarTicked
+  extends S.TaggedClass<ProgressBarTicked, { readonly brand: unique symbol }>()('ProgressBarTicked', {
+    bar: ProgressBarStateSchema,
     state: ProgressStateSchema,
   })
 {
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-export class ProgressLineBreak
-  extends S.TaggedClass<ProgressLineBreak, { readonly brand: unique symbol }>()('ProgressLineBreak', {
-    chunk: S.String,
+export class ProgressBarLeftIncomplete
+  extends S.TaggedClass<ProgressBarLeftIncomplete, { readonly brand: unique symbol }>()('ProgressBarLeftIncomplete', {
     state: ProgressStateSchema,
   })
 {
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-export class ProgressChunkSuppressed
-  extends S.TaggedClass<ProgressChunkSuppressed, { readonly brand: unique symbol }>()('ProgressChunkSuppressed', {
+export class ProgressRecorded
+  extends S.TaggedClass<ProgressRecorded, { readonly brand: unique symbol }>()('ProgressRecorded', {
     state: ProgressStateSchema,
   })
 {
   readonly [ProgressReportTypeId] = ProgressReportTypeId
 }
 
-export const ProgressReportDecision = S.Union([ProgressBarTick, ProgressLineBreak, ProgressChunkSuppressed])
+export const ProgressReportDecision = S.Union([ProgressBarTicked, ProgressBarLeftIncomplete, ProgressRecorded])
 export type ProgressReportDecision = typeof ProgressReportDecision.Type
-
-const PROGRESS_BAR_FORMAT =
-  'Mutation testing  [:bar] :percent (elapsed: :et, remaining: :etc) :tested/:mutants Mutants tested (:survived survived, :timedOut timed out)'
-
-const PROGRESS_BAR_WIDTH = 50
-const PROGRESS_BAR_COMPLETE = '='
-const PROGRESS_BAR_INCOMPLETE = ' '
-
-const floor = Math.floor
-const min = Math.min
 
 const TALLY_COUNTED: Record<Mutant.MutantStatus, { readonly survived: number; readonly timedOut: number }> = {
   Killed: { survived: 0, timedOut: 0 },
@@ -157,14 +140,7 @@ const planReadyState = (
       mutants: Object.keys(ticksByMutantId).length,
       total,
     },
-    bar: {
-      format: PROGRESS_BAR_FORMAT,
-      total,
-      curr: 0,
-      width: PROGRESS_BAR_WIDTH,
-      complete: PROGRESS_BAR_COMPLETE,
-      incomplete: PROGRESS_BAR_INCOMPLETE,
-    },
+    bar: { total, curr: 0 },
   }
 }
 
@@ -212,101 +188,31 @@ const progressStep = (
 
 const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
 
-const secondsBetween = (now: number, startedAt: number): number => floor((now - startedAt) / 1000)
-
-const formatTime = (timeInSeconds: number): string => {
-  const hours = floor(timeInSeconds / 3600)
-  const minutes = floor((timeInSeconds % 3600) / 60)
-  return Match.value(hours > 0).pipe(
-    Match.when(true, () => `~${hours}h ${minutes}m`),
-    Match.when(false, () =>
-      Match.value(minutes > 0).pipe(
-        Match.when(true, () => `~${minutes}m`),
-        Match.when(false, () => '<1m'),
-        Match.exhaustive,
-      )),
-    Match.exhaustive,
-  )
-}
-
-const remainingSeconds = (tally: ProgressTally, now: number): number =>
-  floor((secondsBetween(now, tally.startedAt) / tally.ticks) * (tally.total - tally.ticks))
-
-const positiveTimeLabel = (remaining: number): string =>
-  Match.value(remaining > 0).pipe(
-    Match.when(true, () => formatTime(remaining)),
-    Match.when(false, () => 'n/a'),
-    Match.exhaustive,
-  )
-
-const remainingLabel = (tally: ProgressTally, now: number): string => {
-  const remaining = remainingSeconds(tally, now)
-  return Boolean.match(Number.isFinite(remaining), {
-    onTrue: () => positiveTimeLabel(remaining),
-    onFalse: () => 'n/a',
-  })
-}
-
-const progressData = (tally: ProgressTally, now: number): Record<string, string | number> => ({
-  survived: tally.survived,
-  timedOut: tally.timedOut,
-  tested: tally.tested,
-  mutants: tally.mutants,
-  total: tally.total,
-  ticks: tally.ticks,
-  et: formatTime(secondsBetween(now, tally.startedAt)),
-  etc: remainingLabel(tally, now),
-})
-
-const formatBar = (bar: ProgressBarState, data: Readonly<Record<string, string | number>>): string => {
-  const ratio = Match.value(bar.total === 0).pipe(
-    Match.when(true, () => 0),
-    Match.when(false, () => min(bar.curr / bar.total, 1)),
-    Match.exhaustive,
-  )
-  const filled = floor(ratio * bar.width)
-  const filledBar = bar.complete.repeat(filled) + bar.incomplete.repeat(bar.width - filled)
-  const percent = `${floor(ratio * 100).toString().padStart(3, ' ')}%`
-  const printed = bar.format.replace(':bar', filledBar).replace(':percent', percent)
-  return Object.entries(data).reduce((out, [key, value]) => out.replaceAll(`:${key}`, String(value)), printed)
-}
-
-const renderTick = (
-  tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number },
-): string =>
-  `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${
-    Boolean.match(isComplete(tick.bar), { onTrue: () => '\n', onFalse: () => '' })
-  }`
-
-const renderDecisionOf = (command: ProgressReportCommand): ProgressReportDecision => {
+const progressDecisionOf = (command: ProgressReportCommand): ProgressReportDecision => {
   const step = progressStep(command.state, command.event, command.now)
   return Match.value(step.kind).pipe(
     Match.when('finalize', () =>
       Option.match(Option.fromNullishOr(step.state.bar), {
-        onNone: () => ProgressChunkSuppressed.make({ state: step.state }),
+        onNone: () => ProgressRecorded.make({ state: step.state }),
         onSome: (bar) =>
           Boolean.match(isComplete(bar), {
-            onTrue: () => ProgressChunkSuppressed.make({ state: step.state }),
-            onFalse: () => ProgressLineBreak.make({ chunk: '\n', state: step.state }),
+            onTrue: () => ProgressRecorded.make({ state: step.state }),
+            onFalse: () => ProgressBarLeftIncomplete.make({ state: step.state }),
           }),
       })),
-    Match.when('skip', () => ProgressChunkSuppressed.make({ state: step.state })),
+    Match.when('skip', () => ProgressRecorded.make({ state: step.state })),
     Match.when('tick', () =>
       Option.match(Option.fromNullishOr(step.state.bar), {
-        onNone: () => ProgressChunkSuppressed.make({ state: step.state }),
-        onSome: (bar) =>
-          ProgressBarTick.make({
-            chunk: renderTick({ bar, tally: step.state.tally, now: command.now }),
-            state: step.state,
-          }),
+        onNone: () => ProgressRecorded.make({ state: step.state }),
+        onSome: (bar) => ProgressBarTicked.make({ bar, state: step.state }),
       })),
     Match.exhaustive,
   )
 }
 
-export const renderProgressReport = Workflow.make({
+export const advanceProgressReport = Workflow.make({
   command: ProgressReportCommand,
   decision: ProgressReportDecision,
   error: S.Never,
-  decide: (command): Result.Result<ProgressReportDecision, never> => Result.succeed(renderDecisionOf(command)),
+  decide: (command): Result.Result<ProgressReportDecision, never> => Result.succeed(progressDecisionOf(command)),
 })

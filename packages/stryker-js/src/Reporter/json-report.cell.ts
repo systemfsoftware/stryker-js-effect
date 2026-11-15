@@ -12,11 +12,13 @@ import * as S from 'effect/Schema'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { JsonReporterName, renderJsonReport } from './render-json-report.workflow.js'
+import { emitJsonReport } from './emit-json-report.workflow.js'
+import { renderRelativePathNotice, renderReportLocationNotice } from './render-json-report.js'
 import { failAsReporter } from './reporter-failed.js'
+import { JsonReporterName } from './reporter-name.js'
 import { ReporterOutput } from './reporter-output.service.js'
 
-const failAsJsonReporter = failAsReporter(JsonReporterName.literal)
+const failAsJsonReporter = failAsReporter(JsonReporterName)
 
 const reportOf = Filter.make((
   event: Reporter.ReporterEvent,
@@ -39,7 +41,6 @@ const readJsonReport = (input: {
     (last) => ({
       _tag: 'JsonReportCommand' as const,
       reported: Option.getOrUndefined(last),
-      rendered: true,
       debug: input.options.logLevel === 'debug',
       fileName: input.options.jsonReporter.fileName,
       options: input.options,
@@ -67,19 +68,19 @@ const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(funct
   const fileName = path.resolve(raw.options.jsonReporter.fileName)
   yield* Effect.forEach(
     Option.toArray(rendered.announceFileName),
-    (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
+    (name) => Effect.ignore(output.write('stderr', [renderRelativePathNotice(path.normalize(name))])),
     { discard: true },
   )
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
   yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
   const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-  yield* Effect.ignore(output.write('stderr', [`Your report can be found at: ${url.href}\n`]))
+  yield* Effect.ignore(output.write('stderr', [renderReportLocationNotice(url.href)]))
 })
 
 export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
-  .decide(renderJsonReport)
+  .decide(emitJsonReport)
   .write({
-    JsonReportRendered: (rendered, raw) => writeJsonReport(rendered, raw),
+    JsonReportEmitted: (emitted, raw) => writeJsonReport(emitted, raw),
     JsonReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })
