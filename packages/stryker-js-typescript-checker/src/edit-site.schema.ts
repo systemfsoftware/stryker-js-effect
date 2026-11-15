@@ -221,19 +221,34 @@ if (import.meta.vitest !== void 0) {
     compilerOptions: { noEmit: true, target: 'es2022', module: 'esnext', types: [] },
   })
 
-  const readFile = <A>(fileName: string, text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> => {
+  // A property draws its files from a small finite set (35 across this file), so each distinct file is
+  // compiled once and every run reads that compile's source file, which stays readable after its tsgo
+  // session closes. A session per run spawned 181 tsgo processes here, which timed a law out on a loaded
+  // CI runner.
+  const compiled = new Map<string, Option.Option<SourceFile>>()
+
+  const compile = (fileName: string, text: string): Option.Option<SourceFile> => {
     const api = new API({ fs: createVirtualFileSystem({ [TSCONFIG]: TSCONFIG_TEXT, [fileName]: text }) })
     const snapshot = api.updateSnapshot({ openProjects: [TSCONFIG] })
-    const read_ = Option.map(
-      Option.flatMap(
-        Option.fromUndefinedOr(snapshot.getProject(TSCONFIG)),
-        (project) => Option.fromUndefinedOr(project.program.getSourceFile(fileName)),
-      ),
-      read,
+    const sourceFile = Option.flatMap(
+      Option.fromUndefinedOr(snapshot.getProject(TSCONFIG)),
+      (project) => Option.fromUndefinedOr(project.program.getSourceFile(fileName)),
     )
     api.close()
-    return read_
+    return sourceFile
   }
+
+  const compiledOf = (fileName: string, text: string): Option.Option<SourceFile> => {
+    const key = JSON.stringify([fileName, text])
+    const known = compiled.get(key)
+    if (known !== undefined) return known
+    const sourceFile = compile(fileName, text)
+    compiled.set(key, sourceFile)
+    return sourceFile
+  }
+
+  const readFile = <A>(fileName: string, text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> =>
+    Option.map(compiledOf(fileName, text), read)
 
   const readSite = <A>(text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> =>
     readFile(SITE, text, read)
