@@ -1,6 +1,5 @@
 # Mergify: policy lives in systemfsoftware/.github (.mergify.yml). This file only names this repo's CI checks.
-# A docs-only PR skips `check` through the change-lane filter, so `check` accepts "skipped" as well as
-# "success"; the always-running `lane` job proves CI actually ran.
+# `check / check` is the one job of ci.yml; a docs-only pull request runs it too, without Nix.
 extends: .github
 queue_rules:
   - name: subtree
@@ -8,22 +7,13 @@ queue_rules:
     queue_conditions:
       - 'commits[*].commit_message ~= (?ms)\A(?=.*^git-subtree-dir: \S+$)(?=.*^git-subtree-split: [0-9a-f]{40}$)'
       - -linear-history
-      - check-success = lane
-      - or:
-          - check-success = check
-          - check-skipped = check
+      - check-success = check / check
     merge_conditions:
-      - check-success = lane
-      - or:
-          - check-success = check
-          - check-skipped = check
+      - check-success = check / check
   - name: default
     # Checked on the PR itself before it enters the queue.
     queue_conditions:
-      - check-success = lane
-      - or:
-          - check-success = check
-          - check-skipped = check
+      - check-success = check / check
       - '-commits[*].commit_message ~= (?m)^git-subtree-dir: \S+$'
       - not:
           and:
@@ -36,7 +26,4 @@ queue_rules:
       - -modified-files ~= ^(repos/constitution|repos/worktrunk-scripts|repos/effect|repos/alchemy)/
     # Checked on Mergify's queue draft PR (mergify/merge-queue/*), i.e. CI on the PR rebased with main and any batch.
     merge_conditions:
-      - check-success = lane
-      - or:
-          - check-success = check
-          - check-skipped = check
+      - check-success = check / check

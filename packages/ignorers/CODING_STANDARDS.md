@@ -1,0 +1,6 @@
+# Coding Standards: packages/ignorers
+
+Adds to the root `CODING_STANDARDS.md` for ignorer packages.
+
+- Every mutant pattern an ignorer drops is proven equivalent: no test that the original passes can tell the mutant apart. One ruled exception: in the first argument of a Schema `annotate`/`annotations` call, `effect-schema-declarations` drops the mutants inside a `recursionBudget` value, as test- and generation-only metadata, and the mutants of the object holding it, whatever its other keys, because the recursion-budget transform reads that object as a literal. Its only readers are `@systemfsoftware/effect-schema-recursion-budget` and the recursion laws of `@systemfsoftware/effect-schema-law`; a production reader voids the exception (#259, #270). Wrong: dropping the mutants inside `toEquivalence: () => eq` beside a budget. Right: dropping `{ maxDepth: 6 }` under `recursionBudget`, and the `{}` replacement of `{ recursionBudget: …, toEquivalence: … }`.
+- An ignorer talks to the host only through the types-only `@systemfsoftware/stryker-ignorer-interface` protocol, and the root entry of `@systemfsoftware/stryker-ignorer-kit` stays parser-free; parser dependencies live behind `./tester`.

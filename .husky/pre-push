@@ -43,20 +43,11 @@ if ! git cat-file -e "$main_sha^{commit}" 2>/dev/null; then
 fi
 
 # Gate every ref being pushed: its tip must contain the remote main commit.
-repo_checks() {
-  nix run --no-write-lock-file "$(git rev-parse --show-toplevel)#repo-checks" -- "$@"
-}
-
 status=0
 if [ -t 0 ]; then
   if ! git merge-base --is-ancestor "$main_sha" HEAD 2>/dev/null; then
     echo "pre-push: refusing HEAD — its tip is behind $remote/main ($main_sha)." >&2
     echo "Rebase or merge $remote/main before pushing." >&2
-    status=1
-  fi
-
-  # Gate: allow at most ONE plan file addition in docs/plans relative to remote main.
-  if ! repo_checks single-plan --plans docs/plans --base "$main_sha" --head HEAD; then
     status=1
   fi
 else
@@ -72,11 +63,6 @@ else
     if ! git merge-base --is-ancestor "$main_sha" "$local_sha"; then
       echo "pre-push: refusing $remote_ref — its tip ($local_sha) is behind $remote/main ($main_sha)." >&2
       echo "Rebase or merge $remote/main before pushing." >&2
-      status=1
-    fi
-
-    # Gate: allow at most ONE plan file addition in docs/plans relative to remote main.
-    if ! repo_checks single-plan --plans docs/plans --base "$main_sha" --head "$local_sha"; then
       status=1
     fi
   done

@@ -86,6 +86,7 @@ import {
   type SpanRecord,
 } from './span-counts.js'
 import { branchTypeQueryLines, BranchWorkerRpcs, type FileContent, type TypeQueryInput } from './type-query-side.js'
+import { WorkspacePackages } from './WorkspacePackages.schema.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -197,6 +198,35 @@ const gitTrackedFiles = (
     execText({ file: 'git', args: ['ls-files', '-z'], cwd: repoRoot }),
     (stdout) => stdout.split('\u0000').filter(Str.isNonEmpty),
   )
+
+/** The repo-relative directories of the workspace packages, as pnpm reads them from `pnpm-workspace.yaml`. */
+const workspacePackageDirectories = (
+  repoRoot: string,
+): Effect.Effect<
+  ReadonlyArray<string>,
+  DriverFailure,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const fs = yield* FileSystem.FileSystem
+    const stdout = yield* execText({ file: 'pnpm', args: ['ls', '-r', '--depth', '-1', '--json'], cwd: repoRoot })
+    const packages = yield* S.decodeEffect(WorkspacePackages)(stdout).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(
+          `pnpm ls -r --json did not decode: ${cause.message}`,
+          'Run `pnpm install` so pnpm can list the workspace.',
+        )
+      ),
+    )
+    // pnpm reports real paths; a repository root reached through a symlink would make every entry relative `../`.
+    const realRoot = yield* fs.realPath(repoRoot).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(`${repoRoot} did not resolve: ${cause.message}`, 'Run from a readable checkout.')
+      ),
+    )
+    return packages.map((entry) => path.relative(realRoot, entry.path)).filter(Str.isNonEmpty)
+  })
 
 const decodeOptions = (tsconfigFile: string): Options.StrykerOptions =>
   Result.getOrThrow(S.decodeResult(Options.StrykerOptionsSchema)({ tsconfigFile, typescriptChecker: {} }))
@@ -1313,7 +1343,10 @@ const requireWorker = (
 const corpusProjects = (repoRoot: string): Effect.Effect<ReadonlyArray<string>, DriverFailure, DriverServices> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const entries = corpusEntries(yield* gitTrackedFiles(repoRoot))
+    const entries = corpusEntries({
+      tracked: yield* gitTrackedFiles(repoRoot),
+      packageDirectories: yield* workspacePackageDirectories(repoRoot),
+    })
     const e2eProjects = yield* Effect.forEach(
       entries.e2eConfigs,
       (configPath) =>
