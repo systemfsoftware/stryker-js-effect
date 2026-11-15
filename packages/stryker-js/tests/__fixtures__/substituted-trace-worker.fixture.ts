@@ -22,7 +22,7 @@ const LINKED_WORK_SPAN = LinkedWork.name
 
 export interface TraceWorkerRecord {
   readonly headers: Ref.Ref<Headers.Headers | undefined>
-  /** The trace the linked work started, noted when its span is created; the span itself is the traced tracer's. */
+  /** The trace the linked work runs in, read from the span current inside that work. */
   readonly linkedWorkTrace: { traceId: string | undefined }
 }
 
@@ -30,24 +30,23 @@ export const makeTraceWorkerRecord: Effect.Effect<TraceWorkerRecord> = Effect.ge
   return { headers: yield* Ref.make<Headers.Headers | undefined>(undefined), linkedWorkTrace: { traceId: undefined } }
 })
 
-/** Notes which trace the linked work's span started, and delegates every span to the tracer already in place. */
-const notingLinkedWorkTrace = (record: TraceWorkerRecord) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.flatMap(Effect.tracer, (tracer) =>
-    Effect.withTracer(effect, {
-      context: tracer.context,
-      span(options) {
-        const span = tracer.span(options)
-        if (options.name === LINKED_WORK_SPAN) record.linkedWorkTrace.traceId = span.traceId
-        return span
-      },
-    }))
+/** Linked work that reads the span it runs under, as a plugin's own spans would nest beneath it. */
+const linkedWork = (record: TraceWorkerRecord) =>
+  Trace.withLinkedSpan(
+    LINKED_WORK_SPAN,
+    {},
+    Effect.flatMap(Effect.orDie(Effect.currentSpan), (span) =>
+      Effect.sync(() => {
+        record.linkedWorkTrace.traceId = span.traceId
+      })),
+  )
 
 const traceServer = (socket: Socket.Socket, record: TraceWorkerRecord): Layer.Layer<never> =>
   RpcServer.layer(Plugin.ReporterRpcs).pipe(
     Layer.provide(Plugin.ReporterRpcs.toLayer({
       init: (_payload, options) =>
         Ref.set(record.headers, options.headers).pipe(
-          Effect.andThen(Trace.withLinkedSpan(LINKED_WORK_SPAN, {}, Effect.void).pipe(notingLinkedWorkTrace(record))),
+          Effect.andThen(linkedWork(record)),
         ),
       onEventBatch: () => Effect.void,
       flush: () => Effect.void,
