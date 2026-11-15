@@ -29,6 +29,7 @@ import type {
   RunRefused,
 } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
+import { stderrLineOf } from './format-run-event-line.js'
 import {
   frameRunEvent,
   FrameRunEventCommand,
@@ -575,7 +576,7 @@ export const makeRunEventStream = Effect.fn(SpanTaxonomy.Spans.runEventStreamMak
         Option.match(decision, {
           onNone: () => Effect.void,
           onSome: (d) =>
-            Option.match(Option.fromNullishOr(d.stderrLine), {
+            Option.match(stderrLineOf(d), {
               onNone: () => Effect.void,
               onSome: (line) => writeStderr(stdio, line),
             }),

@@ -1,5 +1,6 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -32,6 +33,23 @@ const arbitraryNonTerminalEvent = Arbitrary.schema(
 const arbitraryEvent = Arbitrary.schema(RunEvent.RunEvent)
 
 const arbitraryState = Arbitrary.schema(FramingState)
+
+const isTerminal = (event: RunEvent.RunEvent): boolean =>
+  Match.value(event).pipe(
+    Match.tag('verdict', 'error', 'help', 'refused', () => true),
+    Match.orElse(() => false),
+  )
+
+const expectedNextState = (state: FramingState, event: RunEvent.RunEvent): FramingState =>
+  Match.value(event).pipe(
+    Match.tag('mutantTested', (tested) => ({ ...state, completed: tested.completed, total: tested.total })),
+    Match.tag('plan', (plan) => ({ ...state, total: plan.total })),
+    Match.orElse(() => ({ ...state, terminalSeen: state.terminalSeen || isTerminal(event) })),
+  )
+
+const sameState = (left: FramingState, right: FramingState): boolean =>
+  left.mode === right.mode && left.signal === right.signal && left.headerWritten === right.headerWritten &&
+  left.terminalSeen === right.terminalSeen && left.completed === right.completed && left.total === right.total
 
 describe('frameRunEvent', () => {
   it.prop(
@@ -85,6 +103,30 @@ describe('frameRunEvent', () => {
         result.success.state.completed === mutantEvent.completed &&
         result.success.state.total === mutantEvent.total
       )
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡FramedExactlyUntilATerminalEventIsSeen',
+    { of: [arbitraryState, arbitraryEvent], subject: frameRunEvent },
+    (subject, [state, event]) => {
+      const result = subject(FrameRunEventCommand.make({ state, event }))
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      const decision = result.success
+      return state.terminalSeen
+        ? S.is(EventSuppressed)(decision)
+        : S.is(EventFramed)(decision) && decision.event === event
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡NextStateFollowsTheEvent',
+    { of: [arbitraryState, arbitraryEvent], subject: frameRunEvent },
+    (subject, [state, event]) => {
+      const result = subject(FrameRunEventCommand.make({ state, event }))
+      return Result.isSuccess(result) && sameState(result.success.state, expectedNextState(state, event))
     },
   )
 })

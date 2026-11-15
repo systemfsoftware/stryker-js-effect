@@ -1,44 +1,5 @@
-import { Workflow } from '@systemfsoftware/effect-cell-types'
-import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
-
-const ConfigErrorDescriptionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ConfigErrorDescription')
-type ConfigErrorDescriptionTypeId = typeof ConfigErrorDescriptionTypeId
-
-export class DescribeConfigErrorCommand
-  extends S.TaggedClass<DescribeConfigErrorCommand, { readonly brand: unique symbol }>()(
-    'DescribeConfigErrorCommand',
-    {
-      message: S.String.pipe(S.optional),
-      errors: S.Array(S.String).pipe(S.optional),
-    },
-  )
-{
-  static readonly [Workflow.InstrumentationBrand] = {} as const
-}
-
-export class ConfigErrorDescribed
-  extends S.TaggedClass<ConfigErrorDescribed, { readonly brand: unique symbol }>()('ConfigErrorDescribed', {
-    errors: S.Array(S.String),
-    text: S.String,
-  })
-{
-  readonly [ConfigErrorDescriptionTypeId] = ConfigErrorDescriptionTypeId
-}
-
-export class ConfigErrorUnparsed
-  extends S.TaggedClass<ConfigErrorUnparsed, { readonly brand: unique symbol }>()('ConfigErrorUnparsed', {
-    errors: S.Array(S.String),
-    text: S.String,
-  })
-{
-  readonly [ConfigErrorDescriptionTypeId] = ConfigErrorDescriptionTypeId
-}
-
-export type ConfigErrorDescriptionDecision = ConfigErrorDescribed | ConfigErrorUnparsed
 
 const PATH_LINE = /^at\s+(\[[^\]]*\])$/
 const PATH_SEGMENT = /\["([^"]*)"\]|\[(\d+)\]/g
@@ -145,38 +106,75 @@ const messageErrorsOf = (message: string): readonly string[] => {
   return completedErrorMessages(state)
 }
 
-const messageErrorsOrFallback = (messages: readonly string[], fallback: string): readonly string[] =>
-  errorMessageOrFallback(messages, fallback)
-
 const configErrorHeadline = (errors: readonly string[]): string =>
   Match.value(errors.length === 1).pipe(
     Match.when(true, () => 'Please correct this configuration error and try again.'),
     Match.orElse(() => 'Please correct these configuration errors and try again.'),
   )
 
-const configErrorMessage = (errors: readonly string[]): string => `${configErrorHeadline(errors)} ${errors.join(' ')}`
+export const configErrorTextOf = (errors: readonly string[]): string =>
+  `${configErrorHeadline(errors)} ${errors.join(' ')}`
 
-const describedOf = (command: DescribeConfigErrorCommand): ConfigErrorDescriptionDecision =>
-  Option.match(Option.fromUndefinedOr(command.errors), {
-    onSome: (errors) => ConfigErrorDescribed.make({ errors, text: configErrorMessage(errors) }),
-    onNone: () => unparsedOrDescribedOf(Option.getOrElse(Option.fromUndefinedOr(command.message), () => '')),
-  })
+export const configErrorsOf = (input: {
+  readonly message?: string | undefined
+  readonly errors?: readonly string[] | undefined
+}): readonly string[] =>
+  Option.getOrElse(
+    Option.fromUndefinedOr(input.errors),
+    () => {
+      const message = Option.getOrElse(Option.fromUndefinedOr(input.message), () => '')
+      return errorMessageOrFallback(messageErrorsOf(message), message)
+    },
+  )
 
-const unparsedOrDescribedOf = (message: string): ConfigErrorDescriptionDecision => {
-  const parsed = messageErrorsOf(message)
-  return Boolean.match(parsed.length > 0, {
-    onTrue: () => ConfigErrorDescribed.make({ errors: parsed, text: configErrorMessage(parsed) }),
-    onFalse: () =>
-      ConfigErrorUnparsed.make({
-        errors: messageErrorsOrFallback(parsed, message),
-        text: configErrorMessage(messageErrorsOrFallback(parsed, message)),
-      }),
-  })
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arbitrary = await import('effect/Arbitrary')
+  const S = await import('effect/Schema')
+
+  const errorsArb = S.String.pipe(S.Array, Arbitrary.schema)
+
+  const issueArb = Arbitrary.schema(
+    S.Struct({
+      segment: S.String.check(S.isPattern(/^[a-z]{1,5}$/)),
+      issue: S.String.check(S.isPattern(/^[a-z]{1,10}$/)),
+    }),
+  )
+
+  const blankArb = Arbitrary.schema(S.String.check(S.isPattern(/^\s*$/)))
+
+  it.prop(
+    '∀es_Errors_≡GivenErrorsAreKept',
+    { of: [errorsArb], subject: configErrorsOf },
+    (subject, [errors]) => subject({ errors }).join('\u0000') === errors.join('\u0000'),
+  )
+
+  it.prop(
+    '∀m_Message_≡NestedPathNamesEverySegmentInOrder',
+    { of: [issueArb], subject: configErrorsOf },
+    (subject, [{ segment, issue }]) => {
+      const errors = subject({ message: `Expected ${issue}\nat ["${segment}"]` })
+      return errors.length === 1 && errors.at(0) === `Config option "${segment}" should be ${issue}.`
+    },
+  )
+
+  it.prop(
+    '∀m_Blank_≡BlankMessageIsItsOwnError',
+    { of: [blankArb], subject: configErrorsOf },
+    (subject, [message]) => {
+      const errors = subject({ message })
+      return errors.length === 1 && errors.at(0) === message
+    },
+  )
+
+  it.prop(
+    '∀es_Errors_≡HeadlinedByCount',
+    { of: [errorsArb], subject: configErrorTextOf },
+    (subject, [errors]) => {
+      const headline = errors.length === 1
+        ? 'Please correct this configuration error and try again.'
+        : 'Please correct these configuration errors and try again.'
+      return subject(errors) === `${headline} ${errors.join(' ')}`
+    },
+  )
 }
-
-export const describeConfigError = Workflow.make({
-  command: DescribeConfigErrorCommand,
-  decision: S.Union([ConfigErrorDescribed, ConfigErrorUnparsed]),
-  error: S.Never,
-  decide: (command: DescribeConfigErrorCommand) => Result.succeed(describedOf(command)),
-})

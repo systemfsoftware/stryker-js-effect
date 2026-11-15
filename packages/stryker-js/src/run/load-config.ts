@@ -5,14 +5,13 @@ import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import type * as Path from 'effect/Path'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { forkOptionsSchema } from '../Config.schema.js'
 import type { ConfigEnv } from '../config/stryker-config.schema.js'
 import { ConfigError } from '../ConfigError.schema.js'
-import { describeConfigError, DescribeConfigErrorCommand } from './describe-config-error.workflow.js'
+import { configErrorsOf, configErrorTextOf } from './config-error-text.js'
 import { type ConfigReadError, readConfigDocument } from './read-config-document.js'
 import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { phaseEntered } from './RunEnvironment.service.js'
@@ -54,11 +53,10 @@ export const forkCoreSchema = S.toJsonSchemaDocument(forkOptionsSchema).schema
 export const describedConfigErrorOf = (input: {
   readonly message?: string | undefined
   readonly errors?: readonly string[] | undefined
-}) =>
-  Result.getOrElse(
-    describeConfigError(DescribeConfigErrorCommand.make({ message: input.message, errors: input.errors })),
-    (neverError) => neverError,
-  )
+}): { readonly errors: readonly string[]; readonly text: string } => {
+  const errors = configErrorsOf(input)
+  return { errors, text: configErrorTextOf(errors) }
+}
 
 export const describeErrors = (error: S.SchemaError): readonly string[] =>
   describedConfigErrorOf({ message: error.message }).errors

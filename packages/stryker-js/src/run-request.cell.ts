@@ -42,6 +42,7 @@ import {
 } from './ConfigError.schema.js'
 import { recordFeedbackCell } from './Feedback/Feedback.cell.js'
 import { FeedbackUnusable } from './Feedback/Feedback.schema.js'
+import { annotateFailureTextOf, annotationLinesOf } from './format-annotations.js'
 import {
   type GateEntry,
   GateInputUnusable,
@@ -61,7 +62,6 @@ import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
 import type { PlanShardsRefused } from './plan-request.schema.js'
-import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
 import {
   mutantRerunAdmissionCell,
   type MutantRerunInput,
@@ -75,6 +75,7 @@ import { readConfig } from './run/load-config.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
+import { selectAnnotations, SelectAnnotationsCommand } from './select-annotations.workflow.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
@@ -86,8 +87,8 @@ import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 import { DEFAULT_PROGRESS_STREAM_FILE } from './stryker-outputs.js'
-import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
-import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
+import { surfacedSurvivorsOf } from './surfacing.js'
+import { AnnotationsUnusable, type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
 import { SurvivorsRejection } from './Survivors/mod.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
@@ -617,7 +618,9 @@ const readAnnotateReport = (
     fs.readFileString(file).pipe(
       Effect.mapError(() =>
         AnnotationsUnusable.make({
-          reason: `cannot read the finished mutation report at ${file}; run \`stryker run\` first`,
+          message: annotateFailureTextOf(
+            `cannot read the finished mutation report at ${file}; run \`stryker run\` first`,
+          ),
         })
       ),
       Effect.flatMap((text) =>
@@ -626,7 +629,9 @@ const readAnnotateReport = (
             decodeAnnotateReport(text),
             (error) =>
               AnnotationsUnusable.make({
-                reason: `cannot decode the finished mutation report at ${file}: ${error.message}`,
+                message: annotateFailureTextOf(
+                  `cannot decode the finished mutation report at ${file}: ${error.message}`,
+                ),
               }),
           ),
         )
@@ -638,13 +643,17 @@ const readAnnotateBaseline = (
 ): Effect.Effect<ReadonlyArray<Mutant.MutantId>, AnnotationsUnusable, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFileString(file).pipe(
-      Effect.mapError(() => AnnotationsUnusable.make({ reason: `cannot read the committed baseline at ${file}` })),
+      Effect.mapError(() =>
+        AnnotationsUnusable.make({ message: annotateFailureTextOf(`cannot read the committed baseline at ${file}`) })
+      ),
       Effect.flatMap((text) =>
         Effect.fromResult(
           Result.mapError(
             decodeGateBaseline(text),
             (error) =>
-              AnnotationsUnusable.make({ reason: `cannot decode the committed baseline at ${file}: ${error.message}` }),
+              AnnotationsUnusable.make({
+                message: annotateFailureTextOf(`cannot decode the committed baseline at ${file}: ${error.message}`),
+              }),
           ),
         )
       ),
@@ -664,8 +673,8 @@ const annotateReport = (
       (file) => readAnnotateBaseline(path.resolve(basePath, file)),
     )
     const decision = Result.getOrThrow(
-      renderAnnotations(
-        RenderAnnotationsCommand.make({
+      selectAnnotations(
+        SelectAnnotationsCommand.make({
           report,
           survivors: surfacedSurvivorsOf(report, surfacingCapsOf(report)),
           baseline: baseline.flat(),

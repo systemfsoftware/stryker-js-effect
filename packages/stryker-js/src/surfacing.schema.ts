@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const SurvivorRef = S.Struct({
@@ -22,3 +22,11 @@ export const SurfacingFields = S.Struct({
 })
 
 export type SurfacingFields = typeof SurfacingFields.Type
+
+export class AnnotationsUnusable
+  extends S.TaggedError<AnnotationsUnusable, { readonly brand: unique symbol }>()('AnnotationsUnusable', {
+    message: S.String,
+  })
+{
+  readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
+}
