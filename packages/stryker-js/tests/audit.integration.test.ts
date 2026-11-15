@@ -282,7 +282,7 @@ Feature('Auditing the mutants the default policy drops against a kill matrix', {
     )
 
     scenario(
-      'A named test that kills only the dropped mutant is orphaned and fails the audit though the pair passes',
+      'A named test that kills only a dropped mutant its dominator holds is reported as orphaned and the audit passes',
       Gherkin.Do.pipe(
         Given('a project whose one relational comparison drops its complement')('root', () => prepareProject()),
         Given('the drop and its dominator as the audit names them')('pair', (s) => discoverDroppedPair(s.root)),
@@ -290,12 +290,12 @@ Feature('Auditing the mutants the default policy drops against a kill matrix', {
           'audited',
           (s) => auditWith(s.root, s.pair, { mutant: [NAMED_TEST, OTHER_TEST], dominator: [NAMED_TEST] }),
         ),
-        Then('the process exits 1, the pair passes and the second test is reported as orphaned')((s, expect) =>
+        Then('the process exits 0, the pair passes and the second test is reported as orphaned')((s, expect) =>
           expect({
             exitCode: s.audited.ran.exitCode,
             reasons: reasonsOf(s.audited.audit),
             orphans: s.audited.audit.orphanedTests.map((orphan) => orphan.test),
-          }).toStrictEqual({ exitCode: 1, reasons: ['killers-contained'], orphans: [OTHER_TEST] })
+          }).toStrictEqual({ exitCode: 0, reasons: ['killers-contained'], orphans: [OTHER_TEST] })
         ),
       ),
     )

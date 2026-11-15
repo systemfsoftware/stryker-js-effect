@@ -74,8 +74,12 @@ const NEXT_ACTION: { readonly [reason in Reason]: string } = {
 const UNATTESTED_NEXT =
   `No drop of this rule joined the kill matrix, so nothing checks it. ${RERUN_MATRIX} Do not ship the rule until a pair joins.`
 
-const ORPHANED_NEXT =
-  `Signal lost: this test kills only dropped mutants, so it kills nothing once they are dropped. ${FIX_THE_RULE}`
+const ORPHAN_NEXT = {
+  'every-killed-mutant-dropped':
+    `Signal lost: this test kills only dropped mutants, and some of them are not held by a kept mutant whose killers they share. ${FIX_THE_RULE}`,
+  'every-kill-held-by-a-kept-mutant':
+    'No signal lost: every mutant this test kills is dropped for a kept mutant whose every killer also kills it, so the kept set detects the same faults. The test no longer adds to the score; keep it as a specification, or extend it to kill the kept mutant.',
+} as const
 
 interface ProjectIndex {
   readonly mutants: Record.ReadonlyRecord<string, MatrixMutant>
@@ -271,10 +275,42 @@ const ruleSummaryOf = (
 const isUnattested = (rule: RuleSummary): boolean =>
   Match.valueTags(rule, { Attested: () => false, Unattested: () => true })
 
+const isContainmentVerdict = (verdict: PairVerdict): boolean =>
+  Match.valueTags(verdict, {
+    Pass: (passed) => passed.reason === 'killers-contained',
+    Vacuous: () => false,
+    AttributionUnverified: () => false,
+    Fail: () => false,
+  })
+
+const isContainedPass = (pair: AuditedPair): boolean =>
+  Match.valueTags(pair, {
+    UnjoinablePair: () => false,
+    JoinedPair: (joined) => isContainmentVerdict(joined.verdict),
+  })
+
+/** The dropped mutants of a project whose every pair is a contained Pass: a kept mutant holds each of their kills. */
+const heldOf = (pairs: ReadonlyArray<AuditedPair>): Record.ReadonlyRecord<string, true> =>
+  lookupOf(
+    Object.entries(Arr.groupBy(pairs, (pair) => pair.mutant))
+      .filter(([, mutantPairs]) => mutantPairs.every(isContainedPass))
+      .map(([mutant]) => mutant),
+  )
+
+const orphanReasonOf = (
+  killed: ReadonlyArray<string>,
+  held: Record.ReadonlyRecord<string, true>,
+): OrphanedTest['reason'] =>
+  Boolean.match(killed.every((mutant) => Record.has(held, mutant)), {
+    onTrue: (): OrphanedTest['reason'] => 'every-kill-held-by-a-kept-mutant',
+    onFalse: (): OrphanedTest['reason'] => 'every-killed-mutant-dropped',
+  })
+
 const orphansOf = (
   project: MatrixProject,
   index: ProjectIndex,
   dropped: ReadonlyArray<AuditedDrop>,
+  held: Record.ReadonlyRecord<string, true>,
 ): ReadonlyArray<OrphanedTest> => {
   const droppedIds = lookupOf(dropped.map((drop) => drop.mutant))
   const kills = project.mutants
@@ -283,13 +319,11 @@ const orphansOf = (
     .filter((kill) => Record.has(index.tests, kill.test))
   return Object.entries(Arr.groupBy(kills, (kill) => kill.test)).flatMap(([test, killedBy]) =>
     Boolean.match(killedBy.every((kill) => Record.has(droppedIds, kill.mutant)), {
-      onTrue: (): ReadonlyArray<OrphanedTest> => [{
-        project: project.project,
-        test,
-        killed: Arr.map(killedBy, (kill) => kill.mutant),
-        reason: 'every-killed-mutant-dropped',
-        next: ORPHANED_NEXT,
-      }],
+      onTrue: (): ReadonlyArray<OrphanedTest> => {
+        const killed = Arr.map(killedBy, (kill) => kill.mutant)
+        const reason = orphanReasonOf(killed, held)
+        return [{ project: project.project, test, killed, reason, next: ORPHAN_NEXT[reason] }]
+      },
       onFalse: () => [],
     })
   )
@@ -314,9 +348,15 @@ const decide = (command: AuditDropsCommand): DropAuditReport => {
     }),
     Order.mapInput(Order.String, (rule: RuleSummary) => rule.rule),
   )
+  const pairsByProject = Arr.groupBy(pairs, (pair) => pair.project)
   const orphanedTests = Arr.sort(
     command.matrix.flatMap((project) =>
-      orphansOf(project, Option.getOrElse(Record.get(indexes, project.project), () => EMPTY_INDEX), dropsOf(project))
+      orphansOf(
+        project,
+        Option.getOrElse(Record.get(indexes, project.project), () => EMPTY_INDEX),
+        dropsOf(project),
+        heldOf(Option.getOrElse(Record.get(pairsByProject, project.project), () => [])),
+      )
     ),
     orphanOrder,
   )
@@ -335,7 +375,7 @@ const decide = (command: AuditDropsCommand): DropAuditReport => {
   const failures = {
     pairs: tallyCountsOf(pairs).fail,
     unattestedRules: rules.filter(isUnattested).length,
-    orphanedTests: orphanedTests.length,
+    orphanedTests: orphanedTests.filter((orphan) => orphan.reason === 'every-killed-mutant-dropped').length,
   }
   return Boolean.match(failures.pairs + failures.unattestedRules + failures.orphanedTests === 0, {
     onTrue: (): DropAuditReport => DropAuditPassed.make(fields),

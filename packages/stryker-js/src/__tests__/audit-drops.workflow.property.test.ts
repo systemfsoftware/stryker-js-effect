@@ -258,6 +258,10 @@ const auditDrawArb = Arbitrary.all({
   orphaned: namedKillerArb.pipe(
     Arbitrary.map((killer) => namedProjectOf([{ id: MUTANT, status: 'Killed', killedBy: [killer] }])),
   ),
+  held: Arbitrary.Constant(namedProjectOf([
+    { id: MUTANT, status: 'Killed', killedBy: ['t1', 't2'] },
+    { id: DOMINATOR, status: 'Killed', killedBy: ['t1'] },
+  ])),
   failing: Arbitrary.all({ status: Arbitrary.schema(Mutant.SurvivorStatusSchema), killer: namedKillerArb }).pipe(
     Arbitrary.map(({ status, killer }) =>
       namedProjectOf([
@@ -288,7 +292,8 @@ const tagMatchesFailures = (report: DropAuditReport): boolean => {
     onNone: () => false,
     onSome: (rule) => Match.valueTags(rule, { Attested: () => false, Unattested: () => true }),
   })
-  const failing = isFail(onlyVerdictOf(report)) || ruleUnattested || report.orphanedTests.length > 0
+  const failing = isFail(onlyVerdictOf(report)) || ruleUnattested ||
+    report.orphanedTests.some((orphan) => orphan.reason === 'every-killed-mutant-dropped')
   return passes(report) === !failing
 }
 
@@ -375,11 +380,15 @@ describe('auditDrops', () => {
   )
 
   it.prop(
-    '∀p_KillMatrix_≡ShouldFailTheAuditExactlyWhenAPairFailsARuleIsUnattestedOrATestIsOrphaned',
+    '∀p_KillMatrix_≡ShouldFailTheAuditExactlyWhenAPairFailsARuleIsUnattestedOrAnOrphanKillIsNotHeld',
     { of: [auditDrawArb], subject: auditDrops },
     (subject, [draw]) =>
       passes(auditOf(subject, draw.clean)) && !passes(auditOf(subject, draw.unattested)) &&
       !passes(auditOf(subject, draw.orphaned)) && !passes(auditOf(subject, draw.failing)) &&
+      passes(auditOf(subject, draw.held)) &&
+      auditOf(subject, draw.held).orphanedTests.some((orphan) =>
+        orphan.test === 't2' && orphan.reason === 'every-kill-held-by-a-kept-mutant'
+      ) &&
       tagMatchesFailures(auditOf(subject, draw.free)),
   )
 })
