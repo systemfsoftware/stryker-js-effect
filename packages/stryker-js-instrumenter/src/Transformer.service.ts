@@ -1018,6 +1018,10 @@ const mutablesFor = (
   const ignorerAnswer = Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
   const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy, context.aridImportTable))
   const originalCode = printNode(frame.node)
+  // The mutant-set policy compares what the placers plant: each replacement without its outer parentheses, as
+  // replacementRecord and expressionMutantPlacer unwrap it, against the original node unwrapped the same way. The
+  // printer keeps every inner ParenthesizedExpression, so the text differs whenever the planted code does.
+  const plantedOriginal = printNode(unwrapParenthesizedExpression(frame.node))
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
     const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
@@ -1031,7 +1035,10 @@ const mutablesFor = (
         location,
         ignorerAnswer,
         ...(aridReason === undefined ? {} : { aridReason }),
-        mutantSet: { originalCode, replacementCode },
+        mutantSet: {
+          originalCode: plantedOriginal,
+          replacementCode: printNode(unwrapParenthesizedExpression(replacement)),
+        },
         subsumption: subsumptionReplacementOf(mutatorName, replacement),
       },
     }
