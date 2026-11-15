@@ -1073,7 +1073,56 @@
   {
     "id": "typescript-checker.compiler.check",
     "name": "typescript-checker.compiler.check",
-    "attributes": {}
+    "attributes": {
+      "typescript.snapshot_updates.count": {
+        "type": "number"
+      },
+      "typescript.resplices.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.outside-function-body.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.body-dependent-signature.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.not-typescript-module.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.module-reference.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.syntax-error.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.original.shared-file.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.outside-function-body.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.body-dependent-signature.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.not-typescript-module.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.module-reference.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.syntax-error.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.mutated.shared-file.count": {
+        "type": "number"
+      },
+      "typescript.importer_shortcut.fallback.unread.count": {
+        "type": "number"
+      }
+    }
   },
   {
     "id": "typescript-checker.compiler.close",

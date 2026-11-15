@@ -1,7 +1,13 @@
 import { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { SpanAttributeCount, SpanAttributeText, type SpanMember, SpanRunStatus } from './SpanTaxonomy.schema.js'
+import {
+  CompilerCheckAttributes,
+  SpanAttributeCount,
+  SpanAttributeText,
+  type SpanMember,
+  SpanRunStatus,
+} from './SpanTaxonomy.schema.js'
 
 const protocolMethods: ReadonlyArray<string> = [
   ...new Set([
@@ -242,7 +248,7 @@ export const Spans = {
     attributes: { 'stryker.mutants.count': SpanAttributeCount },
   },
   typescriptCheckerCheckMutants: { name: 'stryker.typescript_checker.check_mutants', attributes: {} },
-  typescriptCheckerCompilerCheck: { name: 'typescript-checker.compiler.check', attributes: {} },
+  typescriptCheckerCompilerCheck: { name: 'typescript-checker.compiler.check', attributes: CompilerCheckAttributes },
   typescriptCheckerCompilerClose: { name: 'typescript-checker.compiler.close', attributes: {} },
   typescriptCheckerCompilerDryRun: { name: 'typescript-checker.compiler.dryRun', attributes: {} },
   typescriptCheckerCompilerGroups: { name: 'typescript-checker.compiler.groups', attributes: {} },
