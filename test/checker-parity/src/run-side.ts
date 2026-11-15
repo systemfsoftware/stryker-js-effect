@@ -202,9 +202,14 @@ const gitTrackedFiles = (
 /** The repo-relative directories of the workspace packages, as pnpm reads them from `pnpm-workspace.yaml`. */
 const workspacePackageDirectories = (
   repoRoot: string,
-): Effect.Effect<ReadonlyArray<string>, DriverFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+): Effect.Effect<
+  ReadonlyArray<string>,
+  DriverFailure,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
+    const fs = yield* FileSystem.FileSystem
     const stdout = yield* execText({ file: 'pnpm', args: ['ls', '-r', '--depth', '-1', '--json'], cwd: repoRoot })
     const packages = yield* S.decodeEffect(WorkspacePackages)(stdout).pipe(
       Effect.mapError((cause) =>
@@ -214,7 +219,13 @@ const workspacePackageDirectories = (
         )
       ),
     )
-    return packages.map((entry) => path.relative(repoRoot, entry.path)).filter(Str.isNonEmpty)
+    // pnpm reports real paths; a repository root reached through a symlink would make every entry relative `../`.
+    const realRoot = yield* fs.realPath(repoRoot).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(`${repoRoot} did not resolve: ${cause.message}`, 'Run from a readable checkout.')
+      ),
+    )
+    return packages.map((entry) => path.relative(realRoot, entry.path)).filter(Str.isNonEmpty)
   })
 
 const decodeOptions = (tsconfigFile: string): Options.StrykerOptions =>

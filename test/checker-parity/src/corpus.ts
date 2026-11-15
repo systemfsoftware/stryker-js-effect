@@ -32,14 +32,13 @@ const distinctSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
 export const corpusEntries = (input: {
   readonly tracked: ReadonlyArray<string>
   readonly packageDirectories: ReadonlyArray<string>
-}): CorpusEntries => ({
-  workspaceTsconfigs: distinctSorted(
-    input.tracked.filter((file) =>
-      Arr.contains(input.packageDirectories.map((dir) => `${dir}/${WORKSPACE_TSCONFIG_APP}`), file)
-    ),
-  ),
-  e2eConfigs: distinctSorted(input.tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
-})
+}): CorpusEntries => {
+  const projectConfigs = new Set(input.packageDirectories.map((dir) => `${dir}/${WORKSPACE_TSCONFIG_APP}`))
+  return {
+    workspaceTsconfigs: distinctSorted(input.tracked.filter((file) => projectConfigs.has(file))),
+    e2eConfigs: distinctSorted(input.tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
+  }
+}
 
 const checkedOnEveryPullRequest = (project: string): boolean => project === ISOLATED_DECLARATIONS_PROJECT
 

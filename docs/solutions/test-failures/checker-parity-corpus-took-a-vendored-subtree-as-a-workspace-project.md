@@ -25,9 +25,9 @@ The corpus was decided by file name alone. A file name says nothing about which 
 
 ## Fix
 
-The corpus is now the `tsconfig.app.json` at the root of each directory that `pnpm ls -r --depth -1 --json` reports as a workspace package (`test/checker-parity/src/run-side.ts`, `workspacePackageDirectories`; `test/checker-parity/src/corpus.ts`, `corpusEntries`). A tracked file outside those directories is not a project of this repository, whatever its name.
+The corpus is now the `tsconfig.app.json` at the root of each directory that `pnpm ls -r --depth -1 --json` reports as a workspace package (`test/checker-parity/src/run-side.ts`, `workspacePackageDirectories`; `test/checker-parity/src/corpus.ts`, `corpusEntries`). A tracked file outside those directories is not a project of this repository, whatever its name. pnpm reports real paths, so the repository root is resolved to its real path before the package directories are made relative to it; otherwise a checkout reached through a symlink gets `../` paths and an empty corpus.
 
-Verified on the fixed branch: `plan --deadline 2160 --block-mutants 16` succeeds, and the plan names no path under `repos/`.
+Verified on the fixed branch: `plan --deadline 2160 --block-mutants 16` succeeds from both a symlinked and a real working directory, the plan names no path under `repos/`, and every one of the 23 tracked `tsconfig.app.json` outside `repos/` stays in the corpus.
 
 ## Prevention
 
