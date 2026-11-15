@@ -22,8 +22,8 @@
     "attw": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} attw",
     "bootstrap": "pnpm install --frozen-lockfile",
     "build": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} build api:check",
-    "check:ci": "s=0; pnpm format:check || { s=1; echo 'check:ci: formatting differs; fix with: pnpm format'; }; pnpm lint:conventions || { s=1; echo 'check:ci: a convention rule failed; reproduce with: pnpm lint:conventions'; }; TURBO_SCM_BASE=${TURBO_SCM_BASE:-origin/main} turbo run build api:check lint lint:tsgo typecheck typecheck:node test --affected --continue --concurrency=${TURBO_CONCURRENCY:-100%} || { s=1; echo 'check:ci: a task above failed; reproduce each task named under Failed with: pnpm exec turbo run <package>#<task>'; }; exit $s",
-    "check:full": "s=0; pnpm format:check || { s=1; echo 'check:full: formatting differs; fix with: pnpm format'; }; pnpm lint:conventions || { s=1; echo 'check:full: a convention rule failed; reproduce with: pnpm lint:conventions'; }; turbo run build api:check lint lint:tsgo typecheck typecheck:node test --continue --concurrency=${TURBO_CONCURRENCY:-100%} || { s=1; echo 'check:full: a task above failed; reproduce each task named under Failed with: pnpm exec turbo run <package>#<task>'; }; exit $s",
+    "check:ci": "s=0; pnpm format:check || { s=1; echo 'check:ci: formatting differs; fix with: pnpm format'; }; pnpm lint:conventions || { s=1; echo 'check:ci: a convention rule failed; reproduce with: pnpm lint:conventions'; }; TURBO_SCM_BASE=${TURBO_SCM_BASE:-origin/main} turbo run build api:check lint lint:tsgo typecheck typecheck:node test test:scripts --affected --continue --concurrency=${TURBO_CONCURRENCY:-100%} || { s=1; echo 'check:ci: a task above failed; reproduce each task named under Failed with: pnpm exec turbo run <package>#<task>'; }; exit $s",
+    "check:full": "s=0; pnpm format:check || { s=1; echo 'check:full: formatting differs; fix with: pnpm format'; }; pnpm lint:conventions || { s=1; echo 'check:full: a convention rule failed; reproduce with: pnpm lint:conventions'; }; turbo run build api:check lint lint:tsgo typecheck typecheck:node test test:scripts --continue --concurrency=${TURBO_CONCURRENCY:-100%} || { s=1; echo 'check:full: a task above failed; reproduce each task named under Failed with: pnpm exec turbo run <package>#<task>'; }; exit $s",
     "clean": "turbo clean",
     "format": "./bin/dprint fmt",
     "format:check": "./bin/dprint check",
@@ -34,6 +34,7 @@
     "precommit": "pnpm exec lint-staged --no-revert --config .lintstagedrc.js",
     "prepare": "concurrently \"husky\" \"effect-tsgo patch --oxlint --no-typescript --skip-missing\"",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test",
+    "test:scripts": "./bin/deno test -P --config=scripts/deno.json scripts/",
     "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test:e2e",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} --continue typecheck typecheck:node",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit"

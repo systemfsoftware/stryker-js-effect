@@ -59,7 +59,7 @@ Each refusal is its own `Schema.TaggedError` variant (CONST-D2), and callers bra
   - A full or shallow clone already holds the trees, so it fetches nothing. The presence check is what keeps a full clone full: a filtered fetch in a full clone registers `origin` as a promisor remote (`remote.origin.promisor true`, `core.repositoryformatversion 1`) even when it transfers nothing.
   - What the law decides is unchanged.
 - **The weighed package set is checked, not trusted.** The packages the law reads must equal the workspace packages whose manifest `files` declares `contract`, found by expanding the `pnpm-workspace.yaml` `<dir>/*` globs.
-- **The law's verdict is never cached.** It reads git state and the root `.changeset/` directory, neither a turbo input of the package. The cli-contract `turbo.json` turns the `test` cache off. Gate: `turbo run test --dry=json` resolves `cache: false` for `@systemfsoftware/stryker-js-cli-contract#test`.
+- **The law's verdict is never cached.** It reads git state, which no turbo input can carry. The cli-contract `turbo.json` turns the `test` cache off, and declares the root `.changeset/` directory, the workspace manifests and the contract documents as `test` inputs, so a change to them selects the law under `--affected`. Gate: `turbo run test --dry=json` resolves `cache: false` for `@systemfsoftware/stryker-js-cli-contract#test`.
 - **The dogfood pin is a separate process.** `stryker-published` still drives the Mutation CLI. Nothing forces it forward after a release any more, and a lagging pin no longer turns main red. Moving it stays the Dogfood step in root `AGENTS.md`.
 
 ## Assumptions
