@@ -33,8 +33,7 @@
     "@opentelemetry/api": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "effect": "catalog:"
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
@@ -47,6 +46,7 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
+    "effect": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
     "rimraf": "catalog:",
@@ -72,5 +72,8 @@
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
   }
 }
