@@ -4,14 +4,18 @@ import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
 import { MutationTestResult } from './generated/report.schema.js'
 import { Location } from './Location.schema.js'
-import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt, StaticClassSummarySchema } from './Metrics.schema.js'
+import { MetricsResultSchema, NonNegativeInt, StaticClassSummarySchema } from './Metrics.schema.js'
 import { CanonicalFileName, MutantId, MutantStatusSchema, MutatorName } from './Mutant.schema.js'
 import type { StrykerOptions } from './stryker-options.schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
 
+export const DurationMs = S.Finite.pipe(
+  S.check(S.isGreaterThanOrEqualTo(0), S.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+)
+
 export const RunTimingSchema = S.Struct({
-  net: NonNegativeFinite,
-  overhead: NonNegativeFinite,
+  net: DurationMs,
+  overhead: DurationMs,
 })
 export type RunTiming = typeof RunTimingSchema.Type
 
@@ -20,7 +24,7 @@ export const ReporterPlanKind = S.Literals(['EarlyResult', 'Run'])
 export const ReporterPlanDescriptorSchema = S.Struct({
   mutantId: MutantId,
   plan: ReporterPlanKind,
-  netTime: NonNegativeFinite,
+  netTime: DurationMs,
   reloadEnvironment: S.Boolean,
 })
 export type ReporterPlanDescriptor = typeof ReporterPlanDescriptorSchema.Type

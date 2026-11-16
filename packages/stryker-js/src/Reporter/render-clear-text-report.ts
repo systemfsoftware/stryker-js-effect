@@ -1,108 +1,47 @@
-import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { NonEmptyReadonlyArray } from 'effect/Array'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import { max, min } from 'effect/Number'
 import * as Option from 'effect/Option'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-const ClearTextReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ClearTextReport')
-type ClearTextReportTypeId = typeof ClearTextReportTypeId
+import { AnsiCode, type AnsiColor } from '../reporting/ansi.schema.js'
+import type { FileScore, ReportedMutant } from './summarize-clear-text-report.workflow.js'
 
-export const ToneSchema = S.Literals([
-  'plain',
-  'identifier',
-  'emphasis',
-  'positive',
-  'warning',
-  'negative',
-  'muted',
-])
-export type Tone = typeof ToneSchema.Type
-
-const ReportSpanSchema = S.TaggedStruct('ReportSpan', {
-  text: S.String,
-  tone: ToneSchema,
-  leftPad: S.Finite,
-  rightPad: S.Finite,
-  repeat: S.Finite,
-})
-export type ReportSpan = typeof ReportSpanSchema.Type
-
-const ReportLineSchema = S.Array(ReportSpanSchema)
-export type ReportLine = typeof ReportLineSchema.Type
-
-const ReportChunkSchema = S.Array(ReportLineSchema)
-export type ReportChunk = typeof ReportChunkSchema.Type
-
-export const ClearTextRenderOptions = S.Struct({
-  allowColor: S.Boolean,
-  allowEmojis: S.Boolean,
-  logTests: S.Boolean,
-  maxTestsToLog: S.Finite,
-  reportMutants: S.Boolean,
-  reportScoreTable: S.Boolean,
-  skipFull: S.Boolean,
-  debug: S.Boolean,
-  thresholds: Options.MutationScoreThresholdsSchema,
-})
-export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
-
-export class ClearTextReportCommand
-  extends S.TaggedClass<ClearTextReportCommand, { readonly brand: unique symbol }>()('ClearTextReportCommand', {
-    reported: S.optional(Report.MutationTestResult),
-    computed: S.optional(Report.MetricsResultSchema),
-    static: S.optional(Report.StaticClassSummarySchema),
-    render: ClearTextRenderOptions,
-    rendered: S.Boolean,
-  })
-{
-  static readonly [Workflow.InstrumentationBrand] = { rendered: 'stryker.report.render' } as const
+export interface ClearTextRenderOptions {
+  readonly allowColor: boolean
+  readonly allowEmojis: boolean
+  readonly logTests: boolean
+  readonly maxTestsToLog: number
+  readonly reportMutants: boolean
+  readonly reportScoreTable: boolean
+  readonly skipFull: boolean
+  readonly thresholds: Options.MutationScoreThresholds
 }
 
-export class ClearTextReportRendered
-  extends S.TaggedClass<ClearTextReportRendered, { readonly brand: unique symbol }>()('ClearTextReportRendered', {
-    stdout: S.Array(ReportChunkSchema),
-    diagnostics: S.Array(ReportChunkSchema),
-    stderr: S.Array(ReportChunkSchema),
-  })
-{
-  readonly [ClearTextReportTypeId] = ClearTextReportTypeId
+export interface ClearTextSummary {
+  readonly scores: FileScore
+  readonly totalMutants: number
+  readonly testsCompleted: number
+  readonly undetected: readonly ReportedMutant[]
+  readonly static?: Report.StaticClassSummary | undefined
 }
 
-export class ClearTextReportSuppressed
-  extends S.TaggedClass<ClearTextReportSuppressed, { readonly brand: unique symbol }>()('ClearTextReportSuppressed', {})
-{
-  readonly [ClearTextReportTypeId] = ClearTextReportTypeId
+type Tone = 'plain' | 'identifier' | 'emphasis' | 'positive' | 'warning' | 'negative' | 'muted'
+
+interface ReportSpan {
+  readonly text: string
+  readonly tone: Tone
+  readonly leftPad: number
+  readonly rightPad: number
+  readonly repeat: number
 }
 
-export const ClearTextReportDecision = S.Union([ClearTextReportRendered, ClearTextReportSuppressed])
-export type ClearTextReportDecision = typeof ClearTextReportDecision.Type
+type ReportLine = readonly ReportSpan[]
 
-type ReportMutant = Report.MutantResult & { fileName: string }
-
-interface ReportMutantEntry {
-  readonly fileName: string
-  readonly mutant: ReportMutant
-  readonly source: string | undefined
-}
-
-type ReportChannel = 'stdout' | 'diagnostic' | 'none'
-
-const CHANNEL_BY_STATUS: Record<Mutant.MutantStatus, ReportChannel> = {
-  Killed: 'diagnostic',
-  Timeout: 'diagnostic',
-  RuntimeError: 'diagnostic',
-  CompileError: 'diagnostic',
-  Survived: 'stdout',
-  NoCoverage: 'stdout',
-  Ignored: 'none',
-  Pending: 'none',
-}
+type ReportChunk = readonly ReportLine[]
 
 const EMOJI_BY_STATUS: Record<Mutant.MutantStatus, string> = {
   'Killed': '✅',
@@ -128,7 +67,6 @@ const KNOWN_EMOJI: Record<string, true> = {
 }
 
 const spanOf = (text: string, tone: Tone): ReportSpan => ({
-  _tag: 'ReportSpan',
   text,
   tone,
   leftPad: 0,
@@ -139,7 +77,6 @@ const spanOf = (text: string, tone: Tone): ReportSpan => ({
 const plain = (text: string): ReportSpan => spanOf(text, 'plain')
 
 const rule = (fill: string, width: number): ReportSpan => ({
-  _tag: 'ReportSpan',
   text: fill,
   tone: 'plain',
   leftPad: 0,
@@ -176,7 +113,7 @@ interface CellContent {
   readonly indent: number
 }
 
-type CellFactory = (row: Report.MetricsResult, ancestorCount: number) => CellContent
+type CellFactory = (row: FileScore, ancestorCount: number) => CellContent
 
 type PadStyle = 'file' | 'first' | 'inner'
 
@@ -208,7 +145,7 @@ interface Column {
 
 interface LeafColumn extends Column {
   readonly cell: CellFactory
-  readonly tone: (row: Report.MetricsResult) => Tone
+  readonly tone: (row: FileScore) => Tone
 }
 
 interface GroupColumn extends Column {
@@ -243,7 +180,6 @@ const placedLine = (line: ReportLine, style: PadStyle, netWidth: number): Report
 const placedCell = (content: CellContent, style: PadStyle, netWidth: number, tone: Tone): ReportSpan => {
   const pads = padsOf(style, content.indent + stringWidth(content.text), netWidth)
   return {
-    _tag: 'ReportSpan',
     text: content.text,
     tone,
     leftPad: pads.leftPad + content.indent,
@@ -281,11 +217,6 @@ const sourceLocation = (fileName: string, position: Mutant.Position, allowColor:
   spanOf(String(position.column), emphasized(allowColor, 'emphasis')),
 ]
 
-const extractReportMutants = (report: Report.MutationTestResult): readonly ReportMutantEntry[] =>
-  Object.entries(report.files).flatMap(([fileName, file]) =>
-    file.mutants.map((mutant) => ({ fileName, mutant: { ...mutant, fileName }, source: file.source }))
-  )
-
 const indexedLine = (lines: readonly string[], index: number): string =>
   Option.getOrElse(Option.fromNullishOr(lines[index]), () => '')
 
@@ -298,19 +229,12 @@ const tailFromColumn = (raw: string, column: number): readonly string[] =>
     onFalse: () => [raw.slice(column - 1)],
   })
 
-const sliceSource = (source: string | undefined, position: Mutant.Position): readonly string[] =>
-  Option.match(Option.fromUndefinedOr(source), {
-    onNone: () => [],
-    onSome: (text) => tailFromColumn(sourceLine(text, position), position.column),
-  })
-
-const originalLines = (
-  source: string | undefined,
-  position: Mutant.Position,
-  allowColor: boolean,
-): readonly ReportLine[] => {
+const originalLines = (source: string, position: Mutant.Position, allowColor: boolean): readonly ReportLine[] => {
   const tone = emphasized(allowColor, 'negative')
-  return sliceSource(source, position).map((line) => [spanOf('-   ', tone), spanOf(line, tone)])
+  return tailFromColumn(sourceLine(source, position), position.column).map((line) => [
+    spanOf('-   ', tone),
+    spanOf(line, tone),
+  ])
 }
 
 const replacementLines = (replacement: string | undefined, allowColor: boolean): readonly ReportLine[] => {
@@ -347,37 +271,37 @@ const formatCoveredTests = (tests: readonly string[], render: ClearTextRenderOpt
   })
 }
 
-const loggedTests = (mutant: ReportMutant, render: ClearTextRenderOptions): Option.Option<readonly string[]> =>
+const loggedTests = (mutant: Report.MutantResult, render: ClearTextRenderOptions): Option.Option<readonly string[]> =>
   Boolean.match(render.logTests, {
     onTrue: () => Option.fromUndefinedOr(mutant.coveredBy),
     onFalse: () => Option.none(),
   })
 
-const coveredTestsTail = (mutant: ReportMutant, render: ClearTextRenderOptions): readonly ReportLine[] =>
+const coveredTestsTail = (mutant: Report.MutantResult, render: ClearTextRenderOptions): readonly ReportLine[] =>
   Option.match(loggedTests(mutant, render), {
     onNone: () => [],
     onSome: (tests) => formatCoveredTests(tests, render),
   })
 
-const survivorTail = (mutant: ReportMutant, render: ClearTextRenderOptions): readonly ReportLine[] =>
+const survivorTail = (mutant: Report.MutantResult, render: ClearTextRenderOptions): readonly ReportLine[] =>
   Boolean.match(mutant.static === true, {
     onTrue: () => [[plain('Ran all tests for this mutant.')]],
     onFalse: () => coveredTestsTail(mutant, render),
   })
 
-const killerTail = (mutant: ReportMutant): readonly ReportLine[] =>
+const killerTail = (mutant: Report.MutantResult): readonly ReportLine[] =>
   Option.match(Option.flatMap(Option.fromUndefinedOr(mutant.killedBy), Arr.head), {
     onNone: () => [],
     onSome: (killer) => [[plain('Killed by: '), plain(killer)]],
   })
 
-const statusReasonTail = (mutant: ReportMutant): readonly ReportLine[] =>
+const statusReasonTail = (mutant: Report.MutantResult): readonly ReportLine[] =>
   Option.match(Option.fromUndefinedOr(mutant.statusReason), {
     onNone: () => [],
     onSome: (statusReason) => [[plain('Error message: '), plain(statusReason)]],
   })
 
-const statusTail = (mutant: ReportMutant, render: ClearTextRenderOptions): readonly ReportLine[] =>
+const statusTail = (mutant: Report.MutantResult, render: ClearTextRenderOptions): readonly ReportLine[] =>
   Match.value(mutant.status).pipe(
     Match.when('Survived', () => survivorTail(mutant, render)),
     Match.when('Killed', () => killerTail(mutant)),
@@ -385,15 +309,7 @@ const statusTail = (mutant: ReportMutant, render: ClearTextRenderOptions): reado
     Match.orElse((): readonly ReportLine[] => []),
   )
 
-const completedTests = (entry: ReportMutantEntry): number =>
-  Option.getOrElse(Option.fromUndefinedOr(entry.mutant.testsCompleted), () => 0)
-
-const chunkListFor = (entries: readonly ReportMutantEntry[], channel: ReportChannel, render: ClearTextRenderOptions) =>
-  entries
-    .filter((entry) => CHANNEL_BY_STATUS[entry.mutant.status] === channel)
-    .flatMap((entry) => mutantBlock(entry, render))
-
-const mutantBlock = (entry: ReportMutantEntry, render: ClearTextRenderOptions): readonly ReportChunk[] =>
+const mutantBlock = (entry: ReportedMutant, render: ClearTextRenderOptions): readonly ReportChunk[] =>
   [
     mutantHeader(entry.mutant.status, entry.mutant.mutatorName, render.allowEmojis),
     sourceLocation(entry.fileName, entry.mutant.location.start, render.allowColor),
@@ -403,91 +319,60 @@ const mutantBlock = (entry: ReportMutantEntry, render: ClearTextRenderOptions): 
     EMPTY_LINE,
   ].map(chunkOf)
 
-interface ReportSections {
-  readonly stdout: readonly ReportChunk[]
-  readonly diagnostics: readonly ReportChunk[]
-}
+const mutantBlocks = (mutants: readonly ReportedMutant[], render: ClearTextRenderOptions): readonly ReportChunk[] =>
+  mutants.flatMap((entry) => mutantBlock(entry, render))
 
-const EMPTY_SECTIONS: ReportSections = { stdout: [], diagnostics: [] }
-
-interface ReportBlocks {
-  readonly stdout: readonly ReportChunk[]
-  readonly diagnostics: readonly ReportChunk[]
-  readonly totalTests: number
-}
-
-const collectMutants = (report: Report.MutationTestResult, render: ClearTextRenderOptions): ReportBlocks => {
-  const entries = extractReportMutants(report)
-  return {
-    stdout: chunkListFor(entries, 'stdout', render),
-    diagnostics: chunkListFor(entries, 'diagnostic', render),
-    totalTests: Arr.reduce(entries, 0, (total, entry) => total + completedTests(entry)),
-  }
-}
-
-const testsPerMutant = (metrics: Report.MetricsResult, totalTests: number): string => {
-  const total = metrics.metrics.totalMutants
-  return Boolean.match(total === 0, {
+const testsPerMutant = (totalMutants: number, testsCompleted: number): string =>
+  Boolean.match(totalMutants === 0, {
     onTrue: () => '0.00',
-    onFalse: () => (totalTests / total).toFixed(2),
+    onFalse: () => (testsCompleted / totalMutants).toFixed(2),
   })
-}
 
-const testsPerMutantLine = (metrics: Report.MetricsResult, totalTests: number): ReportLine => [
+const testsPerMutantLine = (summary: ClearTextSummary): ReportLine => [
   plain('Ran '),
-  plain(testsPerMutant(metrics, totalTests)),
+  plain(testsPerMutant(summary.totalMutants, summary.testsCompleted)),
   plain(' tests per mutant on average.'),
 ]
 
-const mutantReportSection = (
-  report: Report.MutationTestResult,
-  metrics: Report.MetricsResult,
-  render: ClearTextRenderOptions,
-): ReportSections =>
+const mutantReportChunks = (summary: ClearTextSummary, render: ClearTextRenderOptions): readonly ReportChunk[] =>
   Boolean.match(render.reportMutants, {
-    onTrue: () => {
-      const blocks = collectMutants(report, render)
-      return {
-        stdout: [
-          chunkOf(EMPTY_LINE),
-          ...blocks.stdout,
-          chunkOf(testsPerMutantLine(metrics, blocks.totalTests)),
-        ],
-        diagnostics: blocks.diagnostics,
-      }
-    },
-    onFalse: () => EMPTY_SECTIONS,
+    onTrue: () => [
+      chunkOf(EMPTY_LINE),
+      ...mutantBlocks(summary.undetected, render),
+      chunkOf(testsPerMutantLine(summary)),
+    ],
+    onFalse: () => [],
   })
 
-const hasFullScore = (metrics: Report.MetricsResult['metrics']): boolean =>
-  Match.valueTags(metrics.mutationScore, {
+const hasFullScore = (row: FileScore): boolean =>
+  Match.valueTags(row.mutationScore, {
     Scored: ({ percentage }) => percentage === 100,
     Unscored: () => false,
   })
 
-const partialScoresVisible = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): boolean =>
+const partialScoresVisible = (scores: FileScore, render: ClearTextRenderOptions): boolean =>
   Boolean.match(render.skipFull, {
-    onTrue: () => metrics.childResults.some((child) => !hasFullScore(child.metrics)),
+    onTrue: () => scores.childResults.some((child) => !hasFullScore(child)),
     onFalse: () => true,
   })
 
-const drawsScoreTable = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): boolean =>
+const drawsScoreTable = (scores: FileScore, render: ClearTextRenderOptions): boolean =>
   Boolean.match(render.reportScoreTable, {
-    onTrue: () => partialScoresVisible(metrics, render),
+    onTrue: () => partialScoresVisible(scores, render),
     onFalse: () => false,
   })
 
 type ScoreType = 'total' | 'covered'
 
-const mutationScoreOf = (scoreType: ScoreType, metrics: Report.MetricsResult['metrics']): Report.MutationScore =>
+const mutationScoreOf = (scoreType: ScoreType, row: FileScore): Report.MutationScore =>
   Match.value(scoreType).pipe(
-    Match.when('total', () => metrics.mutationScore),
-    Match.when('covered', () => metrics.mutationScoreBasedOnCoveredCode),
+    Match.when('total', () => row.mutationScore),
+    Match.when('covered', () => row.mutationScoreBasedOnCoveredCode),
     Match.exhaustive,
   )
 
-const scoreText = (scoreType: ScoreType, row: Report.MetricsResult): string =>
-  Match.valueTags(mutationScoreOf(scoreType, row.metrics), {
+const scoreText = (scoreType: ScoreType, row: FileScore): string =>
+  Match.valueTags(mutationScoreOf(scoreType, row), {
     Scored: ({ percentage }) => percentage.toFixed(2),
     Unscored: () => 'n/a',
   })
@@ -507,15 +392,15 @@ const scoreTone = (
   thresholds: Options.MutationScoreThresholds,
   scoreType: ScoreType,
   allowColor: boolean,
-): (row: Report.MetricsResult) => Tone =>
+): (row: FileScore) => Tone =>
   Boolean.match(allowColor, {
-    onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row.metrics)),
+    onTrue: () => (row) => thresholdTone(thresholds, mutationScoreOf(scoreType, row)),
     onFalse: () => (): Tone => 'plain',
   })
 
 const contentWidth = (content: CellContent): number => content.indent + content.text.length
 
-const determineContentWidth = (row: Report.MetricsResult, cell: CellFactory, ancestorCount: number): number =>
+const determineContentWidth = (row: FileScore, cell: CellFactory, ancestorCount: number): number =>
   widest([
     contentWidth(cell(row, ancestorCount)),
     ...row.childResults.map((child) => determineContentWidth(child, cell, ancestorCount + 1)),
@@ -525,8 +410,8 @@ const leafColumn = (
   header: ReportLine,
   style: PadStyle,
   cell: CellFactory,
-  tone: (row: Report.MetricsResult) => Tone,
-  rows: Report.MetricsResult,
+  tone: (row: FileScore) => Tone,
+  rows: FileScore,
 ): LeafColumn => ({
   header,
   style,
@@ -535,7 +420,7 @@ const leafColumn = (
   netWidth: widest([determineContentWidth(rows, cell, 0), lineWidth(header)]),
 })
 
-const fileCell = (row: Report.MetricsResult, ancestorCount: number): CellContent => ({
+const fileCell = (row: FileScore, ancestorCount: number): CellContent => ({
   text: Boolean.match(ancestorCount === 0, {
     onTrue: () => FILES_ROOT_NAME,
     onFalse: () => row.name,
@@ -543,11 +428,10 @@ const fileCell = (row: Report.MetricsResult, ancestorCount: number): CellContent
   indent: ancestorCount,
 })
 
-const fileColumn = (rows: Report.MetricsResult): LeafColumn =>
-  leafColumn([plain('File')], 'file', fileCell, () => 'plain', rows)
+const fileColumn = (rows: FileScore): LeafColumn => leafColumn([plain('File')], 'file', fileCell, () => 'plain', rows)
 
 const scoreColumn = (
-  rows: Report.MetricsResult,
+  rows: FileScore,
   thresholds: Options.MutationScoreThresholds,
   scoreType: ScoreType,
   allowColor: boolean,
@@ -563,15 +447,15 @@ const scoreColumn = (
 interface StatusColumnSpec {
   readonly emoji: string
   readonly label: string
-  readonly count: (metrics: Report.MetricsResult['metrics']) => number
+  readonly count: (row: FileScore) => number
 }
 
 const STATUS_COLUMNS: readonly StatusColumnSpec[] = [
-  { emoji: '✅', label: 'killed', count: (metrics) => metrics.killed },
-  { emoji: '⌛️', label: 'timeout', count: (metrics) => metrics.timeout },
-  { emoji: '👽', label: 'survived', count: (metrics) => metrics.survived },
-  { emoji: '🙈', label: 'no cov', count: (metrics) => metrics.noCoverage },
-  { emoji: '💥', label: 'errors', count: (metrics) => metrics.runtimeErrors + metrics.compileErrors },
+  { emoji: '✅', label: 'killed', count: (row) => row.killed },
+  { emoji: '⌛️', label: 'timeout', count: (row) => row.timeout },
+  { emoji: '👽', label: 'survived', count: (row) => row.survived },
+  { emoji: '🙈', label: 'no cov', count: (row) => row.noCoverage },
+  { emoji: '💥', label: 'errors', count: (row) => row.invalid },
 ]
 
 const statusHeader = (allowEmojis: boolean, emoji: string, label: string): ReportLine =>
@@ -580,11 +464,11 @@ const statusHeader = (allowEmojis: boolean, emoji: string, label: string): Repor
     onFalse: () => [plain('# '), plain(label)],
   })
 
-const statusColumn = (spec: StatusColumnSpec, allowEmojis: boolean, rows: Report.MetricsResult): LeafColumn =>
+const statusColumn = (spec: StatusColumnSpec, allowEmojis: boolean, rows: FileScore): LeafColumn =>
   leafColumn(
     statusHeader(allowEmojis, spec.emoji, spec.label),
     'inner',
-    (row) => ({ text: spec.count(row.metrics).toString(), indent: 0 }),
+    (row) => ({ text: spec.count(row).toString(), indent: 0 }),
     () => 'plain',
     rows,
   )
@@ -613,15 +497,13 @@ const groupColumn = (header: ReportLine, style: PadStyle, leaves: NonEmptyReadon
   return { header, style, netWidth, leaves: widenFirst(leaves, columnsWidth, netWidth) }
 }
 
-const createColumns = (metricsResult: Report.MetricsResult, render: ClearTextRenderOptions): readonly GroupColumn[] => [
-  groupColumn([plain('')], 'first', [fileColumn(metricsResult)]),
+const createColumns = (scores: FileScore, render: ClearTextRenderOptions): readonly GroupColumn[] => [
+  groupColumn([plain('')], 'first', [fileColumn(scores)]),
   groupColumn([plain('% Mutation score')], 'inner', [
-    scoreColumn(metricsResult, render.thresholds, 'total', render.allowColor),
-    scoreColumn(metricsResult, render.thresholds, 'covered', render.allowColor),
+    scoreColumn(scores, render.thresholds, 'total', render.allowColor),
+    scoreColumn(scores, render.thresholds, 'covered', render.allowColor),
   ]),
-  ...STATUS_COLUMNS.map((spec) =>
-    groupColumn([plain('')], 'inner', [statusColumn(spec, render.allowEmojis, metricsResult)])
-  ),
+  ...STATUS_COLUMNS.map((spec) => groupColumn([plain('')], 'inner', [statusColumn(spec, render.allowEmojis, scores)])),
 ]
 
 const leafRules = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
@@ -630,13 +512,13 @@ const leafRules = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
 const leafHeaders = (columns: readonly GroupColumn[]): readonly ReportLine[] =>
   columns.flatMap((column) => column.leaves.map((leaf) => placedLine(leaf.header, leaf.style, leaf.netWidth)))
 
-const fullRowVisible = (render: ClearTextRenderOptions, row: Report.MetricsResult): boolean =>
+const fullRowVisible = (render: ClearTextRenderOptions, row: FileScore): boolean =>
   Boolean.match(render.skipFull, {
-    onTrue: () => !hasFullScore(row.metrics),
+    onTrue: () => !hasFullScore(row),
     onFalse: () => true,
   })
 
-const bodyRow = (columns: readonly GroupColumn[], row: Report.MetricsResult, ancestorCount: number): ReportLine =>
+const bodyRow = (columns: readonly GroupColumn[], row: FileScore, ancestorCount: number): ReportLine =>
   rowOfLines(
     columns.flatMap((column) =>
       column.leaves.map((
@@ -648,7 +530,7 @@ const bodyRow = (columns: readonly GroupColumn[], row: Report.MetricsResult, anc
 const ownRow = (
   columns: readonly GroupColumn[],
   render: ClearTextRenderOptions,
-  row: Report.MetricsResult,
+  row: FileScore,
   ancestorCount: number,
 ) =>
   Boolean.match(fullRowVisible(render, row), {
@@ -659,90 +541,162 @@ const ownRow = (
 const bodyRows = (
   columns: readonly GroupColumn[],
   render: ClearTextRenderOptions,
-  current: Report.MetricsResult,
+  current: FileScore,
   ancestorCount: number,
 ): readonly ReportLine[] => [
   ...ownRow(columns, render, current, ancestorCount),
   ...current.childResults.flatMap((child) => bodyRows(columns, render, child, ancestorCount + 1)),
 ]
 
-const scoreTable = (metricsResult: Report.MetricsResult, render: ClearTextRenderOptions): ReportChunk => {
-  const columns = createColumns(metricsResult, render)
+const scoreTable = (scores: FileScore, render: ClearTextRenderOptions): ReportChunk => {
+  const columns = createColumns(scores, render)
   return [
     rowOfLines(columns.map((column) => [rule('-', slotWidthOf(column))])),
     rowOfLines(columns.map((column) => placedLine(column.header, column.style, column.netWidth))),
     rowOfLines(leafHeaders(columns)),
     rowOfLines(leafRules(columns)),
-    ...bodyRows(columns, render, metricsResult, 0),
+    ...bodyRows(columns, render, scores, 0),
     rowOfLines(leafRules(columns)),
   ]
 }
 
-const scoreTableOf = (metrics: Report.MetricsResult, render: ClearTextRenderOptions): Option.Option<ReportChunk> =>
-  Boolean.match(drawsScoreTable(metrics, render), {
-    onTrue: () => Option.some(scoreTable(metrics, render)),
-    onFalse: () => Option.none(),
+const scoreTableChunks = (scores: FileScore, render: ClearTextRenderOptions): readonly ReportChunk[] =>
+  Boolean.match(drawsScoreTable(scores, render), {
+    onTrue: () => [scoreTable(scores, render)],
+    onFalse: () => [],
   })
 
 const STATIC_SUMMARY_PREFIX = 'Static mutants: '
 
-const staticSummaryChunks = (
-  summary: Report.StaticClassSummary | undefined,
-  metrics: Report.MetricsResult,
-): readonly ReportChunk[] =>
-  Option.match(Option.fromUndefinedOr(summary), {
+const staticSummaryChunks = (summary: ClearTextSummary): readonly ReportChunk[] =>
+  Option.match(Option.fromUndefinedOr(summary.static), {
     onNone: () => [],
     onSome: (present) => [
       chunkOf([
-        plain(
-          `${STATIC_SUMMARY_PREFIX}${present.count} of ${metrics.metrics.totalMutants} (${
-            present.costMs.toFixed(0)
-          }ms)`,
-        ),
+        plain(`${STATIC_SUMMARY_PREFIX}${present.count} of ${summary.totalMutants} (${present.costMs.toFixed(0)}ms)`),
       ]),
     ],
   })
 
-const renderClearText = (
-  report: Report.MutationTestResult,
-  metrics: Report.MetricsResult,
-  render: ClearTextRenderOptions,
-  staticSummary: Report.StaticClassSummary | undefined,
-): ReportSections => {
-  const section = mutantReportSection(report, metrics, render)
-  return {
-    stdout: [
-      chunkOf(EMPTY_LINE),
-      ...section.stdout,
-      ...staticSummaryChunks(staticSummary, metrics),
-      ...Option.toArray(scoreTableOf(metrics, render)),
-    ],
-    diagnostics: section.diagnostics,
-  }
+const tint = (color: AnsiColor, text: string): string =>
+  `${AnsiCode.fields[color].literal}${text}${AnsiCode.fields.reset.literal}`
+
+const TINT_BY_TONE: Record<Tone, (text: string) => string> = {
+  plain: (text) => text,
+  identifier: (text) => tint('cyan', text),
+  emphasis: (text) => tint('yellow', text),
+  positive: (text) => tint('green', text),
+  warning: (text) => tint('yellow', text),
+  negative: (text) => tint('red', text),
+  muted: (text) => tint('grey', text),
 }
 
-export const renderClearTextReport = Workflow.make({
-  command: ClearTextReportCommand,
-  decision: ClearTextReportDecision,
-  error: S.Never,
-  decide: (command) =>
-    Option.match(
-      Option.all([Option.fromUndefinedOr(command.reported), Option.fromUndefinedOr(command.computed)]),
-      {
-        onNone: () => Result.succeed(ClearTextReportSuppressed.make({})),
-        onSome: ([report, metrics]) => {
-          const sections = renderClearText(report, metrics, command.render, command.static)
-          return Result.succeed(
-            ClearTextReportRendered.make({
-              stdout: [...sections.stdout],
-              diagnostics: [...sections.diagnostics],
-              stderr: Boolean.match(command.render.debug, {
-                onTrue: () => [...sections.diagnostics],
-                onFalse: () => [],
-              }),
-            }),
-          )
-        },
+const bytesOf = (span: ReportSpan): string =>
+  `${' '.repeat(span.leftPad)}${span.text.repeat(span.repeat)}${' '.repeat(span.rightPad)}`
+
+interface ToneRun {
+  readonly tone: Tone
+  readonly bytes: string
+}
+
+const appendSpan = (runs: ReadonlyArray<ToneRun>, span: ReportSpan): ReadonlyArray<ToneRun> =>
+  Option.match(Option.filter(Arr.last(runs), (last) => last.tone === span.tone), {
+    onNone: () => [...runs, { tone: span.tone, bytes: bytesOf(span) }],
+    onSome: (last) => [...runs.slice(0, -1), { tone: last.tone, bytes: `${last.bytes}${bytesOf(span)}` }],
+  })
+
+const renderLine = (line: ReportLine): string =>
+  Arr.reduce(line, Arr.empty<ToneRun>(), appendSpan).map((run) => TINT_BY_TONE[run.tone](run.bytes)).join('')
+
+const renderChunk = (chunk: ReportChunk): string => `${chunk.map(renderLine).join('\n')}\n`
+
+const clearTextChunks = (summary: ClearTextSummary, render: ClearTextRenderOptions): readonly ReportChunk[] => [
+  chunkOf(EMPTY_LINE),
+  ...mutantReportChunks(summary, render),
+  ...staticSummaryChunks(summary),
+  ...scoreTableChunks(summary.scores, render),
+]
+
+const settledChunks = (settled: readonly ReportedMutant[], render: ClearTextRenderOptions): readonly ReportChunk[] =>
+  Boolean.match(render.reportMutants, {
+    onTrue: () => mutantBlocks(settled, render),
+    onFalse: () => [],
+  })
+
+export const renderClearTextReport = (
+  report: { readonly summary: ClearTextSummary; readonly render: ClearTextRenderOptions },
+): readonly string[] => clearTextChunks(report.summary, report.render).map(renderChunk)
+
+export const renderSettledMutants = (
+  report: { readonly settled: readonly ReportedMutant[]; readonly render: ClearTextRenderOptions },
+): readonly string[] => settledChunks(report.settled, report.render).map(renderChunk)
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arbitrary = await import('effect/Arbitrary')
+  const { Options: OptionSchemas } = await import('@systemfsoftware/stryker-js-plugin-interface')
+  const { ClearTextReportDetailed, ClearTextReportSummarized } = await import(
+    './summarize-clear-text-report.workflow.js'
+  )
+
+  const renderOf = (options: Options.StrykerOptions): ClearTextRenderOptions => ({
+    ...options.clearTextReporter,
+    thresholds: options.thresholds,
+  })
+  const summaryArb = Arbitrary.schema(ClearTextReportSummarized)
+  const renderArb = Arbitrary.schema(OptionSchemas.StrykerOptionsSchema).pipe(Arbitrary.map(renderOf))
+  const settledArb = Arbitrary.schema(ClearTextReportDetailed).pipe(Arbitrary.map((detailed) => detailed.settled))
+
+  const fileRowsOf = (scores: FileScore): number =>
+    1 + Arr.reduce(scores.childResults, 0, (rows, child) => rows + fileRowsOf(child))
+
+  const TABLE_CHROME_ROWS = 5
+
+  const staticSummaryTextsOf = (chunks: readonly ReportChunk[]): readonly string[] =>
+    chunks
+      .flatMap((chunk) => chunk.flatMap((line) => line.map((span) => span.text)))
+      .filter((text) => text.startsWith(STATIC_SUMMARY_PREFIX))
+
+  const namesSuppliedCount = (texts: readonly string[], supplied: Report.StaticClassSummary): boolean =>
+    texts.length === 1 && texts.every((text) => text.includes(String(supplied.count)))
+
+  it.prop(
+    '∀srs_ColorOff_≡PlainSpans',
+    { of: [summaryArb, renderArb, settledArb], subject: clearTextChunks },
+    (subject, [summary, render, settled]) => {
+      const colorless = { ...render, allowColor: false }
+      return [...subject(summary, colorless), ...settledChunks(settled, colorless)]
+        .flat(2)
+        .every((span) => span.tone === 'plain')
+    },
+  )
+
+  it.prop(
+    '∀sr_StaticSummary_≡PresentExactlyWhenSupplied',
+    {
+      of: [Arbitrary.all([summaryArb, renderArb])],
+      subject: clearTextChunks,
+      cover: {
+        supplied: [([summary]) => summary.static !== undefined, 0.05],
+        absent: [([summary]) => summary.static === undefined, 0.05],
       },
-    ),
-})
+    },
+    (subject, [[summary, render]]) => {
+      const texts = staticSummaryTextsOf(subject(summary, render))
+      return Option.match(Option.fromUndefinedOr(summary.static), {
+        onNone: () => texts.length === 0,
+        onSome: (supplied) => namesSuppliedCount(texts, supplied),
+      })
+    },
+  )
+
+  it.prop(
+    '∀sr_Scores_≡OneTableRowPerFile',
+    { of: [summaryArb, renderArb], subject: clearTextChunks },
+    (subject, [summary, render]) =>
+      Option.match(Arr.last(subject(summary, { ...render, reportScoreTable: true, skipFull: false })), {
+        onNone: () => false,
+        onSome: (table) => table.length - TABLE_CHROME_ROWS === fileRowsOf(summary.scores),
+      }),
+  )
+}

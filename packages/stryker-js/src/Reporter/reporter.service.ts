@@ -9,12 +9,12 @@ import * as Path from 'effect/Path'
 import * as Ref from 'effect/Ref'
 import * as Stream from 'effect/Stream'
 
+import type { ProgressState } from './advance-progress-report.workflow.js'
 import { clearTextReportCell } from './clear-text-report.cell.js'
 import { jsonReportCell } from './json-report.cell.js'
 import { progressReportCell } from './progress-report.cell.js'
-import { JsonReporterName } from './render-json-report.workflow.js'
-import { ProgressReporterName, type ProgressState } from './render-progress-report.workflow.js'
 import { failAsReporter } from './reporter-failed.js'
+import { JsonReporterName, ProgressReporterName } from './reporter-name.js'
 import { ReporterOutput } from './reporter-output.service.js'
 import { HumanStreamRole, MachineStreamRole } from './reporter-role.schema.js'
 import { sarifReportCell } from './sarif-report.cell.js'
@@ -61,7 +61,7 @@ const INITIAL_PROGRESS: ProgressState = {
   bar: null,
 }
 
-const failAsProgress = failAsReporter(ProgressReporterName.literal)
+const failAsProgress = failAsReporter(ProgressReporterName)
 
 const progressReporterFactory = (context: Context.Context<ReporterServices>): InterfaceReporter.ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
@@ -101,9 +101,9 @@ export class Reporter extends Context.Service<Reporter, ReporterShape>()(
       )
       return Reporter.of({
         builtin: [
-          { name: JsonReporterName.literal, stdout: false, factory: fromReportCell(jsonReportCell, context) },
+          { name: JsonReporterName, stdout: false, factory: fromReportCell(jsonReportCell, context) },
           { name: HumanStreamRole.literal, stdout: true, factory: fromReportCell(clearTextReportCell, context) },
-          { name: ProgressReporterName.literal, stdout: true, factory: progressReporterFactory(context) },
+          { name: ProgressReporterName, stdout: true, factory: progressReporterFactory(context) },
           { name: SarifReporterName.literal, stdout: false, factory: fromReportCell(sarifReportCell, context) },
           { name: MachineStreamRole.literal, stdout: false, factory: drainReporterFactory },
         ],

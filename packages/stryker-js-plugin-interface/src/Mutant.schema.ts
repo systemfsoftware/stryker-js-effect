@@ -170,7 +170,7 @@ export const Mutant = S.TaggedStruct('Mutant', {
   statusReason: S.optional(S.String),
   coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
-  testsCompleted: S.optional(S.Finite),
+  testsCompleted: S.optional(S.Natural),
   description: S.optional(S.String),
   subsumption: S.optional(Subsumption),
   probeEligibility: ProbeEligibility.pipe(
