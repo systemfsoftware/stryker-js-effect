@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-cli-contract
 
+## 3.1.1
+
+Bundles the plugin interface whose reporter counts and durations are bounded, so a reporter sum can no longer overflow to Infinity.
+
 ## 3.1.0
 
 The span taxonomy declares stryker.html_report.file_name on html_report.write, the attribute the html reporter already records on that span.

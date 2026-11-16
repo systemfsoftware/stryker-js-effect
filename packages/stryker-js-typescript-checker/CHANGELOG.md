@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-typescript-checker
 
+## 10.0.3
+
+Bundles the plugin interface whose reporter counts and durations are bounded, so a reporter sum can no longer overflow to Infinity.
+
 ## 10.0.2
 
 Updated dependency @systemfsoftware/stryker-js to 23.2.1

@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 16.0.3
+
+Bundles the plugin interface whose reporter counts and durations are bounded, so a reporter sum can no longer overflow to Infinity.
+
 ## 16.0.2
 
 Rebuilt against the span taxonomy that declares the html report write attribute; behaviour is unchanged. The html reporter test of that span is a trace-spec contract.
