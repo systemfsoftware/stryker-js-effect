@@ -9,11 +9,12 @@ import * as Result from 'effect/Result'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { type ClearTextRenderOptions, renderClearTextReport, renderSettledMutants } from './render-clear-text-report.js'
+import { ClearTextReportCommand } from './clear-text-report.schema.js'
+import type { ClearTextRenderOptions } from './render-clear-text-report.js'
 import { failAsReporter } from './reporter-failed.js'
 import { ReporterOutput } from './reporter-output.service.js'
 import { HumanStreamRole } from './reporter-role.schema.js'
-import { summarizeClearTextReport } from './summarize-clear-text-report.workflow.js'
+import { clearTextOutputOf } from './summarize-clear-text-report.js'
 
 const failAsClearText = failAsReporter(HumanStreamRole.literal)
 
@@ -74,16 +75,9 @@ const writeClearTextReport = Effect.fn(SpanTaxonomy.Spans.reportClearTextWrite.n
   },
 )
 
-export const clearTextReportCell = Sandwich.named(SpanTaxonomy.Spans.reportClearText.name)(readClearTextReport)
-  .decide(summarizeClearTextReport)
+export const clearTextReportCell = Sandwich.writer(SpanTaxonomy.Spans.reportClearText.name)(readClearTextReport)
+  .decode(ClearTextReportCommand)
   .write({
-    ClearTextReportSummarized: (summary, raw) =>
-      writeClearTextReport({ stdout: renderClearTextReport({ summary, render: raw.render }), stderr: [] }),
-    ClearTextReportDetailed: (detailed, raw) =>
-      writeClearTextReport({
-        stdout: renderClearTextReport({ summary: detailed, render: raw.render }),
-        stderr: renderSettledMutants({ settled: detailed.settled, render: raw.render }),
-      }),
-    ClearTextReportSuppressed: () => Effect.void,
+    Decoded: (command, raw) => writeClearTextReport(clearTextOutputOf({ command, render: raw.render })),
     CommandRejected: ({ issue }) => Effect.fail(failAsClearText(issue)),
   })

@@ -1,7 +1,7 @@
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 
-import type { ProgressBarState, ProgressTally } from './advance-progress-report.workflow.js'
+import { isBarComplete, type ProgressBarState, type ProgressTally } from './progress-report.schema.js'
 
 const PROGRESS_BAR_FORMAT =
   'Mutation testing  [:bar] :percent (elapsed: :et, remaining: :etc) :tested/:mutants Mutants tested (:survived survived, :timedOut timed out)'
@@ -12,8 +12,6 @@ const PROGRESS_BAR_INCOMPLETE = ' '
 
 const floor = Math.floor
 const min = Math.min
-
-const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
 
 const secondsBetween = (now: number, startedAt: number): number => floor((now - startedAt) / 1000)
 
@@ -71,14 +69,49 @@ const formatBar = (bar: ProgressBarState, data: Readonly<Record<string, string |
   const filledBar = PROGRESS_BAR_COMPLETE.repeat(filled) + PROGRESS_BAR_INCOMPLETE.repeat(PROGRESS_BAR_WIDTH - filled)
   const percent = `${floor(ratio * 100).toString().padStart(3, ' ')}%`
   const printed = PROGRESS_BAR_FORMAT.replace(':bar', filledBar).replace(':percent', percent)
-  return Object.entries(data).reduce((out, [key, value]) => out.replaceAll(`:${key}`, String(value)), printed)
+  return Object.entries(data).sort(([left], [right]) => right.length - left.length).reduce(
+    (out, [key, value]) => out.replaceAll(`:${key}`, String(value)),
+    printed,
+  )
 }
 
 export const renderProgressTick = (
   tick: { readonly bar: ProgressBarState; readonly tally: ProgressTally; readonly now: number },
 ): string =>
   `\r${formatBar(tick.bar, progressData(tick.tally, tick.now))}${
-    Boolean.match(isComplete(tick.bar), { onTrue: () => '\n', onFalse: () => '' })
+    Boolean.match(isBarComplete(tick.bar), { onTrue: () => '\n', onFalse: () => '' })
   }`
 
 export const renderProgressLineBreak = (): string => '\n'
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const S = await import('effect/Schema')
+  const { ProgressBarStateSchema, ProgressTallySchema } = await import('./progress-report.schema.js')
+
+  const tickInputSchema = S.Struct({
+    bar: ProgressBarStateSchema,
+    tally: ProgressTallySchema,
+    now: S.Finite,
+  })
+
+  it.prop(
+    '∀t_ProgressTick_≡FixedWidthBarAndNewlineIffComplete',
+    { of: [tickInputSchema], subject: renderProgressTick },
+    (subject, [input]) => {
+      const rendered = subject(input)
+      const opening = rendered.indexOf('[')
+      const closing = rendered.indexOf(']')
+      return [
+        rendered.startsWith('\r'),
+        opening >= 0,
+        closing > opening,
+        closing - opening - 1 === PROGRESS_BAR_WIDTH,
+        rendered.endsWith('\n') === (input.bar.curr >= input.bar.total),
+        rendered.includes(
+          `${input.tally.tested}/${input.tally.mutants} Mutants tested (${input.tally.survived} survived, ${input.tally.timedOut} timed out)`,
+        ),
+      ].every((holds) => holds)
+    },
+  )
+}
