@@ -1,81 +1,22 @@
-import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-const ProgressReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ProgressReport')
-type ProgressReportTypeId = typeof ProgressReportTypeId
+import {
+  isBarComplete,
+  type ProgressBarState,
+  type ProgressReportCommand,
+  type ProgressState,
+  type ProgressTally,
+} from './progress-report.schema.js'
+import { renderProgressLineBreak, renderProgressTick } from './render-progress-report.js'
 
-const ProgressCapabilitiesSchema = S.Struct({ reloadEnvironment: S.Boolean })
-
-export const ProgressTallySchema = S.Struct({
-  survived: Report.NonNegativeInt,
-  timedOut: Report.NonNegativeInt,
-  tested: Report.NonNegativeInt,
-  mutants: Report.NonNegativeInt,
-  total: Report.NonNegativeFinite,
-  ticks: Report.NonNegativeFinite,
-  ticksByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeFinite),
-  timing: Reporter.RunTimingSchema,
-  capabilities: ProgressCapabilitiesSchema,
-  startedAt: S.Finite,
-})
-export type ProgressTally = typeof ProgressTallySchema.Type
-
-export const ProgressBarStateSchema = S.Struct({
-  total: Report.NonNegativeFinite,
-  curr: Report.NonNegativeFinite,
-})
-export type ProgressBarState = typeof ProgressBarStateSchema.Type
-
-export const ProgressStateSchema = S.Struct({
-  tally: ProgressTallySchema,
-  bar: S.NullOr(ProgressBarStateSchema),
-})
-export type ProgressState = typeof ProgressStateSchema.Type
-
-export class ProgressReportCommand
-  extends S.TaggedClass<ProgressReportCommand, { readonly brand: unique symbol }>()('ProgressReportCommand', {
-    state: ProgressStateSchema,
-    event: S.UndefinedOr(Reporter.ReporterEventUnion),
-    now: S.Finite,
-  })
-{
-  static readonly [Workflow.InstrumentationBrand] = {} as const
+export interface ProgressStepOutput {
+  readonly state: ProgressState
+  readonly stdout: readonly string[]
 }
-
-export class ProgressBarTicked
-  extends S.TaggedClass<ProgressBarTicked, { readonly brand: unique symbol }>()('ProgressBarTicked', {
-    bar: ProgressBarStateSchema,
-    state: ProgressStateSchema,
-  })
-{
-  readonly [ProgressReportTypeId] = ProgressReportTypeId
-}
-
-export class ProgressBarLeftIncomplete
-  extends S.TaggedClass<ProgressBarLeftIncomplete, { readonly brand: unique symbol }>()('ProgressBarLeftIncomplete', {
-    state: ProgressStateSchema,
-  })
-{
-  readonly [ProgressReportTypeId] = ProgressReportTypeId
-}
-
-export class ProgressRecorded
-  extends S.TaggedClass<ProgressRecorded, { readonly brand: unique symbol }>()('ProgressRecorded', {
-    state: ProgressStateSchema,
-  })
-{
-  readonly [ProgressReportTypeId] = ProgressReportTypeId
-}
-
-export const ProgressReportDecision = S.Union([ProgressBarTicked, ProgressBarLeftIncomplete, ProgressRecorded])
-export type ProgressReportDecision = typeof ProgressReportDecision.Type
 
 const TALLY_COUNTED: Record<Mutant.MutantStatus, { readonly survived: number; readonly timedOut: number }> = {
   Killed: { survived: 0, timedOut: 0 },
@@ -184,33 +125,54 @@ const progressStep = (
     onSome: (present) => advance(state, present, now),
   })
 
-const isComplete = (bar: ProgressBarState): boolean => bar.curr >= bar.total
+const recorded = (state: ProgressState): ProgressStepOutput => ({ state, stdout: [] })
 
-const progressDecisionOf = (command: ProgressReportCommand): ProgressReportDecision => {
+export const advanceProgress = (command: ProgressReportCommand): ProgressStepOutput => {
   const step = progressStep(command.state, command.event, command.now)
   return Match.value(step.kind).pipe(
     Match.when('finalize', () =>
       Option.match(Option.fromNullishOr(step.state.bar), {
-        onNone: () => ProgressRecorded.make({ state: step.state }),
+        onNone: () => recorded(step.state),
         onSome: (bar) =>
-          Boolean.match(isComplete(bar), {
-            onTrue: () => ProgressRecorded.make({ state: step.state }),
-            onFalse: () => ProgressBarLeftIncomplete.make({ state: step.state }),
+          Boolean.match(isBarComplete(bar), {
+            onTrue: () => recorded(step.state),
+            onFalse: (): ProgressStepOutput => ({ state: step.state, stdout: [renderProgressLineBreak()] }),
           }),
       })),
-    Match.when('skip', () => ProgressRecorded.make({ state: step.state })),
+    Match.when('skip', () => recorded(step.state)),
     Match.when('tick', () =>
       Option.match(Option.fromNullishOr(step.state.bar), {
-        onNone: () => ProgressRecorded.make({ state: step.state }),
-        onSome: (bar) => ProgressBarTicked.make({ bar, state: step.state }),
+        onNone: () => recorded(step.state),
+        onSome: (bar): ProgressStepOutput => ({
+          state: step.state,
+          stdout: [renderProgressTick({ bar, tally: step.state.tally, now: command.now })],
+        }),
       })),
     Match.exhaustive,
   )
 }
 
-export const advanceProgressReport = Workflow.make({
-  command: ProgressReportCommand,
-  decision: ProgressReportDecision,
-  error: S.Never,
-  decide: (command): Result.Result<ProgressReportDecision, never> => Result.succeed(progressDecisionOf(command)),
-})
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const { Reporter } = await import('@systemfsoftware/stryker-js-plugin-interface')
+  const S = await import('effect/Schema')
+  const { ProgressStateSchema } = await import('./progress-report.schema.js')
+
+  it.prop(
+    '∀spn_PlanReady_≡FreshConsistentProgressBar',
+    {
+      of: [ProgressStateSchema, Reporter.MutationTestingPlanReady, S.Finite],
+      subject: planReadyState,
+    },
+    (subject, [state, event, now]) => {
+      const output = subject(state, event, now)
+      const bar = output.bar
+      return bar !== null && [
+        bar.curr === 0,
+        bar.total === output.tally.total,
+        Number.isFinite(bar.total),
+        output.tally.mutants === event.plans.filter((plan) => plan.plan === 'Run').length,
+      ].every((holds) => holds)
+    },
+  )
+}

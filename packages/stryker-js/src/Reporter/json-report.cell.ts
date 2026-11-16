@@ -12,8 +12,8 @@ import * as S from 'effect/Schema'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
-import { emitJsonReport } from './emit-json-report.workflow.js'
-import { renderRelativePathNotice, renderReportLocationNotice } from './render-json-report.js'
+import { JsonReportCommand } from './json-report.schema.js'
+import { renderDebugNotices, renderReportLocationNotice } from './render-json-report.js'
 import { failAsReporter } from './reporter-failed.js'
 import { JsonReporterName } from './reporter-name.js'
 import { ReporterOutput } from './reporter-output.service.js'
@@ -40,36 +40,31 @@ const readJsonReport = (input: {
     ),
     (last) => ({
       _tag: 'JsonReportCommand' as const,
-      reported: Option.getOrUndefined(last),
+      reports: Option.toArray(last),
       debug: input.options.logLevel === 'debug',
       fileName: input.options.jsonReporter.fileName,
-      options: input.options,
     }),
   )
 
-const jsonBytesOf = (
-  report: typeof Report.MutationTestResult.Encoded,
-): Effect.Effect<string, Reporter.ReporterFailed> =>
-  S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
+const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, Reporter.ReporterFailed> =>
+  S.encodeEffect(S.fromJsonString(Report.MutationTestResult, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
 
 const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(function*(
-  rendered: {
-    readonly report: typeof Report.MutationTestResult.Encoded
-    readonly announceFileName: Option.Option<string>
-  },
-  raw: { readonly options: Options.StrykerOptions },
+  report: Report.MutationTestResult,
+  command: { readonly debug: boolean; readonly fileName: string },
 ) {
   const output = yield* ReporterOutput
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const json = yield* jsonBytesOf(rendered.report)
-  const fileName = path.resolve(raw.options.jsonReporter.fileName)
-  yield* Effect.forEach(
-    Option.toArray(rendered.announceFileName),
-    (name) => Effect.ignore(output.write('stderr', [renderRelativePathNotice(path.normalize(name))])),
-    { discard: true },
+  const json = yield* jsonBytesOf(report)
+  const fileName = path.resolve(command.fileName)
+  yield* Effect.ignore(
+    output.write(
+      'stderr',
+      renderDebugNotices({ debug: command.debug, normalizedFileName: path.normalize(command.fileName) }),
+    ),
   )
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
   yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
@@ -77,10 +72,10 @@ const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(funct
   yield* Effect.ignore(output.write('stderr', [renderReportLocationNotice(url.href)]))
 })
 
-export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
-  .decide(emitJsonReport)
+export const jsonReportCell = Sandwich.writer(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
+  .decode(JsonReportCommand)
   .write({
-    JsonReportEmitted: (emitted, raw) => writeJsonReport(emitted, raw),
-    JsonReportSuppressed: () => Effect.void,
+    Decoded: (command) =>
+      Effect.forEach(command.reports, (report) => writeJsonReport(report, command), { discard: true }),
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })

@@ -59,6 +59,47 @@ const verifyRunIdConsistency = (
 
 const Feature = makeFeature({ it })
 
+const ANSI_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
+
+const clearTextOf = (stdout: string): string => {
+  const progressStart = stdout.indexOf('\rMutation testing')
+  const progressEnd = progressStart === -1 ? -1 : stdout.indexOf('\n', progressStart)
+  const withoutProgress = progressStart === -1 || progressEnd === -1
+    ? stdout
+    : `${stdout.slice(0, progressStart)}${stdout.slice(progressEnd + 1)}`
+  return withoutProgress.replace(ANSI_SEQUENCE, '')
+}
+
+const EXPECTED_CALC_CLEAR_TEXT = `Found 1 of 6 file(s) to be mutated.
+
+
+[Survived] BlockStatement
+src/calc.ts:17:43
+-   {
++   {}
+Tests ran:
+    2
+
+
+[Survived] ArithmeticOperator
+src/calc.ts:19:10
+-   n * 2
++   n / 2
+Tests ran:
+    2
+
+
+Ran 2.67 tests per mutant on average.
+----------|------------------|----------|-----------|------------|----------|----------|
+          | % Mutation score |          |           |            |          |          |
+File      |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+All files |  75.00 |   75.00 |        6 |         0 |          2 |        0 |        0 |
+ src      |  75.00 |   75.00 |        6 |         0 |          2 |        0 |        0 |
+  calc.ts |  75.00 |   75.00 |        6 |         0 |          2 |        0 |        0 |
+----------|--------|---------|----------|-----------|------------|----------|----------|
+`
+
 Feature('Running one mutation run through the packed CLI')
   .withLayer(E2eHarnessLive)
   .live(
@@ -104,6 +145,37 @@ Feature('Running one mutation run through the packed CLI')
         Then('every event carries the verdict run id')((s, expect) =>
           verifyRunIdConsistency(expect, s.runIds, s.verdict)
         ),
+      ),
+    )
+
+    scenario(
+      'A human-mode run prints exact clear-text and uncorrupted progress output',
+      Gherkin.Do.pipe(
+        When('the CLI runs the calc fixture with clear-text, progress and JSON reporters')(
+          'run',
+          () =>
+            runStryker({
+              fixture: CALC_FIXTURE_URL,
+              label: 'calc-fixture-human',
+              args: ['run', '--format', 'text', '--reporters', 'clear-text,progress,json', '--logLevel', 'off'],
+            }),
+        ),
+        Then('the clear-text report and progress remaining-time labels are exact')((s, expect) => {
+          const stdout = s.run.output.result.stdout
+          return expect({
+            exitCode: s.run.output.result.exitCode,
+            clearText: clearTextOf(stdout),
+            progressSeen: stdout.includes('\rMutation testing'),
+            remainingTimeFixed: stdout.includes('remaining: <1m)'),
+            remainingTimeCorrupted: stdout.includes('<1mc'),
+          }).toStrictEqual({
+            exitCode: 0,
+            clearText: EXPECTED_CALC_CLEAR_TEXT,
+            progressSeen: true,
+            remainingTimeFixed: true,
+            remainingTimeCorrupted: false,
+          })
+        }),
       ),
     )
   })

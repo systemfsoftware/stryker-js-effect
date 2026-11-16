@@ -1,11 +1,11 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 
-import { advanceProgressReport, type ProgressState } from './advance-progress-report.workflow.js'
-import { renderProgressLineBreak, renderProgressTick } from './render-progress-report.js'
+import { advanceProgress, type ProgressStepOutput } from './advance-progress-report.js'
+import { ProgressReportCommand, type ProgressState } from './progress-report.schema.js'
 import { failAsReporter } from './reporter-failed.js'
 import { ProgressReporterName } from './reporter-name.js'
 import { ReporterOutput } from './reporter-output.service.js'
@@ -23,15 +23,12 @@ const readProgressStep = (input: {
     now,
   }))
 
-const writeChunk = (chunk: string) =>
-  Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
+const writeStep = (step: ProgressStepOutput) =>
+  Effect.as(Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', step.stdout))), step.state)
 
-export const progressReportCell = Sandwich.named(SpanTaxonomy.Spans.reportProgress.name)(readProgressStep)
-  .decide(advanceProgressReport)
+export const progressReportCell = Sandwich.writer(SpanTaxonomy.Spans.reportProgress.name)(readProgressStep)
+  .decode(ProgressReportCommand)
   .write({
-    ProgressBarTicked: ({ bar, state }, { now }) =>
-      Effect.as(writeChunk(renderProgressTick({ bar, tally: state.tally, now })), state),
-    ProgressBarLeftIncomplete: ({ state }) => Effect.as(writeChunk(renderProgressLineBreak()), state),
-    ProgressRecorded: ({ state }) => Effect.succeed(state),
+    Decoded: (command) => writeStep(advanceProgress(command)),
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })

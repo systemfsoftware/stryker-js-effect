@@ -8,7 +8,7 @@ import { max, min } from 'effect/Number'
 import * as Option from 'effect/Option'
 
 import { AnsiCode, type AnsiColor } from '../reporting/ansi.schema.js'
-import type { FileScore, ReportedMutant } from './summarize-clear-text-report.workflow.js'
+import type { ClearTextSummary, FileScore, ReportedMutant } from './clear-text-report.schema.js'
 
 export interface ClearTextRenderOptions {
   readonly allowColor: boolean
@@ -19,14 +19,6 @@ export interface ClearTextRenderOptions {
   readonly reportScoreTable: boolean
   readonly skipFull: boolean
   readonly thresholds: Options.MutationScoreThresholds
-}
-
-export interface ClearTextSummary {
-  readonly scores: FileScore
-  readonly totalMutants: number
-  readonly testsCompleted: number
-  readonly undetected: readonly ReportedMutant[]
-  readonly static?: Report.StaticClassSummary | undefined
 }
 
 type Tone = 'plain' | 'identifier' | 'emphasis' | 'positive' | 'warning' | 'negative' | 'muted'
@@ -635,17 +627,16 @@ if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arbitrary = await import('effect/Arbitrary')
   const { Options: OptionSchemas } = await import('@systemfsoftware/stryker-js-plugin-interface')
-  const { ClearTextReportDetailed, ClearTextReportSummarized } = await import(
-    './summarize-clear-text-report.workflow.js'
-  )
+  const S = await import('effect/Schema')
+  const { ClearTextSummarySchema, ReportedMutant: ReportedMutantSchema } = await import('./clear-text-report.schema.js')
 
   const renderOf = (options: Options.StrykerOptions): ClearTextRenderOptions => ({
     ...options.clearTextReporter,
     thresholds: options.thresholds,
   })
-  const summaryArb = Arbitrary.schema(ClearTextReportSummarized)
+  const summaryArb = Arbitrary.schema(ClearTextSummarySchema)
   const renderArb = Arbitrary.schema(OptionSchemas.StrykerOptionsSchema).pipe(Arbitrary.map(renderOf))
-  const settledArb = Arbitrary.schema(ClearTextReportDetailed).pipe(Arbitrary.map((detailed) => detailed.settled))
+  const settledArb = Arbitrary.schema(S.Array(ReportedMutantSchema))
 
   const fileRowsOf = (scores: FileScore): number =>
     1 + Arr.reduce(scores.childResults, 0, (rows, child) => rows + fileRowsOf(child))
@@ -661,13 +652,13 @@ if (import.meta.vitest !== void 0) {
     texts.length === 1 && texts.every((text) => text.includes(String(supplied.count)))
 
   it.prop(
-    '∀srs_ColorOff_≡PlainSpans',
+    '∀srs_ColorOff_≡NoAnsiBytes',
     { of: [summaryArb, renderArb, settledArb], subject: clearTextChunks },
     (subject, [summary, render, settled]) => {
       const colorless = { ...render, allowColor: false }
       return [...subject(summary, colorless), ...settledChunks(settled, colorless)]
-        .flat(2)
-        .every((span) => span.tone === 'plain')
+        .map(renderChunk)
+        .every((text) => !text.includes('\u001b['))
     },
   )
 
