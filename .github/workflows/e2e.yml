@@ -143,7 +143,7 @@ jobs:
   report:
     name: e2e report
     needs: leg
-    if: failure() && needs.leg.result != 'skipped'
+    if: always() && (failure() || cancelled()) && needs.leg.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

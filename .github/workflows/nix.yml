@@ -43,7 +43,7 @@ jobs:
           fetch-depth: 2
       - id: lane
         uses: ./.github/actions/change-lane
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@91f6a0f59e94dfb2cfed0f4000f36a68ead1d20c
         if: steps.lane.outputs.docs-only != 'true' || github.event_name == 'workflow_dispatch'
         with:
           extra_nix_config: |
