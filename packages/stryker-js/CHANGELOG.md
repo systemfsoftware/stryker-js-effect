@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js
 
+## 23.2.2
+
+The progress reporter no longer appends a stray `c` to its remaining-time estimate. Clear-text and JSON reporter output is unchanged.
+
 ## 23.2.1
 
 Rebuilt against the instrumenter whose format resolution now decides only the claim; behaviour and output are unchanged.

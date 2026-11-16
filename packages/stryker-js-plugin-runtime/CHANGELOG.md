@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 9.0.3
+
+Bundles the plugin interface whose reporter counts and durations are bounded, so a reporter sum can no longer overflow to Infinity.
+
 ## 9.0.2
 
 Trace.withLinkedSpan runs the wrapped effect under the linked span, so spans the asynchronous work starts nest beneath it in the linked trace.
