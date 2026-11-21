@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  checks:
     uses: systemfsoftware/systemfsoftware/.github/workflows/reusable-ci.yml@main
     with:
       commitlint: true
