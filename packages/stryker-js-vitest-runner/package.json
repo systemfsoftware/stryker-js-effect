@@ -29,7 +29,7 @@
     "attw": "attw --pack .",
     "test": "vitest run",
     "mutation": "stryker run",
-    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; effect-tsgo oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local"
   },
