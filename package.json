@@ -32,7 +32,7 @@
     "lint": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} lint",
     "lint:conventions": "./bin/gritlint check",
     "precommit": "pnpm exec lint-staged --no-revert --config .lintstagedrc.js",
-    "prepare": "concurrently \"husky\" \"effect-tsgo patch --oxlint --no-typescript --skip-missing\"",
+    "prepare": "concurrently \"husky\" \"effect-tsgo patch --oxlint --no-typescript\"",
     "test": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test",
     "test:e2e": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} test:e2e",
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} --continue typecheck typecheck:node",

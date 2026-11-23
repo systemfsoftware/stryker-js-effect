@@ -24,7 +24,7 @@
     "fixtures:lockfile-oracle": "./scripts/lockfile-oracle.sh",
     "mutation": "stryker run",
     "attw": "attw --pack .",
-    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; effect-tsgo oxlint . --format=${f:-default}",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local",
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
