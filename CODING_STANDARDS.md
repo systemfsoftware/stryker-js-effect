@@ -1,6 +1,6 @@
 # Coding Standards
 
-Review criteria for every change in this repository. `packages/ignorers/CODING_STANDARDS.md` adds criteria for its subtree; all governing files apply together, and `CONSTITUTION.md` outranks every one of them. Rules a linter, type checker, build or test already enforces are not repeated here.
+Review criteria for every change in this repository. `packages/ignorers/CODING_STANDARDS.md` adds criteria for its subtree; all governing files apply together, and the org-wide `repos/constitution/CODING_STANDARDS.md` applies with them. Rules a linter, type checker, build or test already enforces are not repeated here.
 
 ## Mutant identity and placement
 

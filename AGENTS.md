@@ -2,9 +2,9 @@
 
 An Effect-based fork of StrykerJS: mutation testing for TypeScript, shipped as the `@systemfsoftware/stryker-*` npm packages and the flake's `stryker` package. Every mutant verdict this tool prints is a claim a consumer acts on, so a wrong verdict is the worst defect this repository can ship.
 
-`AGENTS.md` is the canonical instruction file; `CLAUDE.md` includes it, `subtrees.toml` and `CONSTITUTION.md`. Subtrees add their own `AGENTS.md` (`packages/`, `packages/frameworks/`, `packages/ignorers/`, `packages/toolchain/`, `test/`, `test/e2e/`); the nearest one to a file applies on top of this one.
+`AGENTS.md` is the canonical instruction file; `CLAUDE.md` includes it, `subtrees.toml` and `repos/constitution/WORKING.md`. Subtrees add their own `AGENTS.md` (`packages/`, `packages/frameworks/`, `packages/ignorers/`, `packages/toolchain/`, `test/`, `test/e2e/`); the nearest one to a file applies on top of this one.
 
-- `CONSTITUTION.md` is the design law (domain modelling, code shape, proof, finish). It outranks every other file; read it before an architecture change, a design dispute or a new rule.
+- `repos/constitution/CODING_STANDARDS.md` holds the org-wide coding standards (impossible states first, then code shape and proof); read it before you plan or write a change.
 - `CODING_STANDARDS.md` (with `packages/ignorers/CODING_STANDARDS.md` for its subtree) holds the defect classes code here must avoid. Read it before writing or reviewing code, and update it in the same change when a fix establishes or retires a rule.
 - `REVIEW.md` holds how review behaves here: severities and the evidence a finding needs. Read it before reviewing.
 
@@ -45,7 +45,7 @@ A check that fails prints what failed and the command that reproduces it locally
 
 | Surface        | Target                                                                                 | Rule                                                                                                                     |
 | -------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Read-only      | `CONSTITUTION.md`, `subtrees.toml`, `repos/**`, `commitlint.config.ts`                 | Change only on an explicit request; `repos/` moves only through a subtree update                                         |
+| Read-only      | `subtrees.toml`, `repos/**`, `commitlint.config.ts`                                    | Change only on an explicit request; `repos/` moves only through a subtree update                                         |
 | Dogfood        | The `@systemfsoftware/stryker-*` devDependencies the mutation runs install             | Caret ranges on released npm versions, never `workspace:^`: those runs test the released CLI; a release moves the ranges |
 | Human approval | Releases, publishing, credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | Ask first                                                                                                                |
 | Editable       | Workspace source, tests, fixtures, workflows, documentation                            | Edit freely; see "CI" below before changing a workflow                                                                   |
